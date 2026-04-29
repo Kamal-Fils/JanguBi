@@ -4,7 +4,8 @@ export
 
 .PHONY: up down restart build logs shell dbshell makemigrations migrate check test \
        init-data create-admin init-all createsuperuser import-aelf clear-cache \
-       flush-redis flush-db seed-availability check-embeddings seed-embeddings \
+	   down-v rebuild \
+       flush-redis flush-db check-embeddings seed-embeddings \
 	celery-logs celery-restart rabbitmq-stats clean-audio collectstatic reinit-bible init-tv-categories
 
 # ==============================================================================
@@ -14,7 +15,15 @@ up:
 	docker compose up -d
 
 down:
+	docker compose down
+
+down-v:
 	docker compose down -v
+
+rebuild:
+	docker compose down
+	docker compose build
+	docker compose up -d
 
 restart:
 	docker compose restart
@@ -24,6 +33,7 @@ build:
 
 logs:
 	docker compose logs -f django
+
 
 # ==============================================================================
 # COMMANDES DJANGO (exécutées dans le container)
@@ -63,9 +73,6 @@ flush-redis:
 
 flush-db:
 	docker compose exec django python manage.py flush --no-input
-
-seed-availability:
-	docker compose exec django python manage.py seed_availability
 
 init-tv-categories:
 	docker compose exec django python manage.py init_tv_categories

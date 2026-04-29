@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, AsyncMock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 import apps.bible.services.aelf_service
 
@@ -33,14 +33,15 @@ class TaskTests(TestCase):
         self.assertIsNotNone(self.verse.tsv)
         self.assertIn("dieu", str(self.verse.tsv).lower())
 
+    @override_settings(EMBEDDING_PROVIDER="stub")
     def test_compute_embeddings_task_with_stub(self):
         # Run the task synchronously. It should use the stub embedder.
         compute_embeddings_task(self.book.id)
         
         self.verse.refresh_from_db()
-        # The stub embedder creates a list of 1536 zeros
+        # The stub embedder creates a list of 768 zeros
         self.assertIsNotNone(self.verse.embedding)
-        self.assertEqual(len(self.verse.embedding), 1536)
+        self.assertEqual(len(self.verse.embedding), 768)
         self.assertEqual(self.verse.embedding[0], 0.0)
 
     @patch("apps.bible.services.import_service.ImportService.import_file")

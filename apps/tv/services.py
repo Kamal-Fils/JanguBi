@@ -1,9 +1,29 @@
 from django.conf import settings
 from django.db import transaction
-from rest_framework import serializers
 
+from apps.core.exceptions import ApplicationError
 from apps.tv.models import Category, Video
 from apps.tv.utils.youtube import extract_youtube_video_id, fetch_youtube_metadata
+
+_DEFAULT_CATEGORIES = [
+    ("Messes", "messes", 1),
+    ("Enseignement", "enseignement", 2),
+    ("Documentaires", "documentaires", 3),
+    ("Reportages", "reportages", 4),
+]
+
+
+@transaction.atomic
+def category_ensure_defaults() -> int:
+    created_count = 0
+    for name, slug, order in _DEFAULT_CATEGORIES:
+        _, created = Category.objects.get_or_create(
+            slug=slug,
+            defaults={"name": name, "order": order},
+        )
+        if created:
+            created_count += 1
+    return created_count
 
 
 class TvService:
@@ -11,7 +31,7 @@ class TvService:
     def _get_category_or_error(slug: str) -> Category:
         category = Category.objects.filter(slug=slug).first()
         if not category:
-            raise serializers.ValidationError({"category_slug": "Category not found."})
+            raise ApplicationError(f"Catégorie '{slug}' introuvable.")
         return category
 
     @staticmethod

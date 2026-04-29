@@ -3,13 +3,18 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.exceptions import ApplicationError
 from apps.tv.models import Category, Video
-#from apps.tv.permissions import IsAdminOrReadOnly
+from apps.tv.permissions import IsAdminOrReadOnly
 from apps.tv.serializers import CategorySerializer, VideoCreateUpdateSerializer, VideoListSerializer
 
 
+def _error(exc: ApplicationError) -> Response:
+    return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class CategoryListApi(APIView):
-    #permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrReadOnly]
 
     @extend_schema(
         tags=["TV"],
@@ -37,7 +42,7 @@ class CategoryListApi(APIView):
 
 
 class CategoryDetailApi(APIView):
-    #permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrReadOnly]
 
     def _get_category(self, slug):
         category = Category.objects.filter(slug=slug).first()
@@ -104,7 +109,7 @@ class CategoryDetailApi(APIView):
 
 
 class VideoListApi(APIView):
-    #permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrReadOnly]
 
     @extend_schema(
         tags=["TV"],
@@ -140,12 +145,15 @@ class VideoListApi(APIView):
     def post(self, request):
         serializer = VideoCreateUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        video = serializer.save()
+        try:
+            video = serializer.save()
+        except ApplicationError as e:
+            return _error(e)
         return Response(VideoListSerializer(video).data, status=status.HTTP_201_CREATED)
 
 
 class VideoDetailApi(APIView):
-    #permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrReadOnly]
 
     def _get_video(self, video_id):
         video = Video.objects.select_related("category").filter(id=video_id).first()

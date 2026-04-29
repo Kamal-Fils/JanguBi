@@ -71,7 +71,6 @@ class TvApiTests(APITestCase):
         response = self.client.post(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", response.data)
-        self.assertIn("category_slug", response.data["detail"])
 
     def test_update_video_requires_admin(self):
         url = reverse("api:tv:tv-video-detail", args=[self.video.id])

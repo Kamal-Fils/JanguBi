@@ -152,7 +152,7 @@ class VerseListApi(APIView):
     class FilterSerializer(serializers.Serializer):
         excerpt = serializers.BooleanField(required=False, default=False)
         verses = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="bible_fr")
+        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
 
     @extend_schema(
         parameters=[
@@ -223,7 +223,7 @@ class SearchApi(APIView):
         testament = serializers.CharField(required=False, allow_blank=True, allow_null=True)
         book_slug = serializers.CharField(required=False, allow_blank=True, allow_null=True)
         chapter_number = serializers.IntegerField(required=False, allow_null=True)
-        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="bible_fr")
+        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
         hybrid = serializers.BooleanField(default=False)
         limit = serializers.IntegerField(default=50, max_value=500)
 

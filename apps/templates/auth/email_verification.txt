@@ -1,0 +1,11 @@
+Bonjour {{ user.profile.first_name|default:user.email }},
+
+Merci de vous être inscrit sur Jaaykoo !
+
+Cliquez sur le lien ci-dessous pour vérifier votre adresse e-mail et activer votre compte :
+{{ verification_url }}
+
+Si vous n'avez pas créé de compte sur Jaaykoo, ignorez ce message.
+
+L'équipe Jaaykoo
+Ce message est automatique, merci de ne pas y répondre.

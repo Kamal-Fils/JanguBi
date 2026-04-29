@@ -4,7 +4,6 @@ from typing import Dict
 from apps.rag.extractor import ExtractedIntentSchema
 from apps.rag.bible_engine import BibleEngine
 from apps.rag.rosary_engine import RosaryEngine
-from apps.rag.availability_engine import AvailabilityEngine
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +12,13 @@ class QueryRouter:
     Takes the structured intent output and dispatches queries concurrently
     to the respective engines WITH TIMEOUTS.
     """
-    
+
     # Temps maximal alloué à la résolution du contexte (en secondes)
-    ENGINE_TIMEOUT = 15.0 
+    ENGINE_TIMEOUT = 15.0
 
     def __init__(self):
         self.bible_engine = BibleEngine()
         self.rosary_engine = RosaryEngine()
-        self.availability_engine = AvailabilityEngine()
 
     async def _safe_execute(self, engine_name: str, coroutine) -> str:
         """Enveloppe l'exécution d'un moteur avec un délai d'attente strict et gestion de crash."""
@@ -48,10 +46,7 @@ class QueryRouter:
         
         if "ROSARY" in domains:
             tasks["rosary"] = self._safe_execute("Rosaire", self.rosary_engine.search(entities))
-        
-        if "AVAILABILITY" in domains:
-            tasks["availability"] = self._safe_execute("Disponibilité", self.availability_engine.get_slots(entities))
-        
+
         results = {}
         if tasks:
             keys = list(tasks.keys())

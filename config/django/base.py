@@ -31,8 +31,27 @@ CELERY_BEAT_SCHEDULE = {
     "sync_aelf_liturgy_data_daily": {
         "task": "apps.liturgy.tasks.daily_sync",
         "schedule": crontab(hour=3, minute=0),
-    }
+    },
+    "purge_expired_admin_accounts": {
+        "task": "apps.users.tasks.purge_expired_unactivated_admin_accounts",
+        "schedule": crontab(hour=4, minute=0),
+    },
+    "purge_expired_conversations": {
+        "task": "apps.messaging.tasks.purge_expired_conversations",
+        "schedule": crontab(hour=3, minute=0),
+    },
+    "notify_purge_upcoming": {
+        "task": "apps.messaging.tasks.notify_purge_upcoming",
+        "schedule": crontab(hour=3, minute=30),
+    },
+    "document_requests_auto_escalate": {
+        "task": "apps.documents.tasks.document_requests_auto_escalate",
+        "schedule": crontab(hour=8, minute=0),
+    },
 }
+
+EMAIL_FROM_ADDRESS = env.str("EMAIL_FROM_ADDRESS", default="noreply@jangubi.sn")
+ADMIN_ACCOUNT_EXPIRY_DAYS = env.int("ADMIN_ACCOUNT_EXPIRY_DAYS", default=7)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DJANGO_DEBUG", default=True)
@@ -53,11 +72,12 @@ LOCAL_APPS = [
     "apps.files.apps.FilesConfig",
     "apps.emails.apps.EmailsConfig",
     "apps.bible.apps.BibleConfig",
-    "apps.availability.apps.AvailabilityConfig",
     "apps.rosary.apps.RosaryConfig",
     "apps.rag.apps.RagConfig",
     "apps.liturgy.apps.LiturgyConfig",
     "apps.tv.apps.TvConfig",
+    "apps.messaging.apps.MessagingConfig",
+    "apps.documents.apps.DocumentsConfig",
     #"apps.blog_examples.apps.BlogExamplesConfig",
 ]
 
@@ -68,11 +88,14 @@ THIRD_PARTY_APPS = [
     "django_filters",
     "corsheaders",
     "django_extensions",
-    "rest_framework_jwt",
+    "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
+    "channels",
 ]
 
 INSTALLED_APPS = [
+    "daphne",  # must be before django.contrib.staticfiles for ASGI
     "django.contrib.admin",
     # If you want to have required 2FA for the Django admin
     # Uncomment the line below and comment out the default admin
@@ -119,6 +142,26 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [env("REDIS_URL", default="redis://redis:6379/0")],
+            "capacity": 1500,
+            "expiry": 10,
+        },
+    }
+}
+
+MESSAGING_ENCRYPTION_KEY = env.str("MESSAGING_ENCRYPTION_KEY", default=SECRET_KEY)
+MESSAGING_PURGE_DAYS = env.int("MESSAGING_PURGE_DAYS", default=180)
+MESSAGING_RATE_LIMIT_PER_DAY = env.int("MESSAGING_RATE_LIMIT_PER_DAY", default=50)
+
+DOCS_ESCALATE_DAYS = env.int("DOCS_ESCALATE_DAYS", default=7)
+DOCS_DEPOSIT_REMINDER_DAYS = env.int("DOCS_DEPOSIT_REMINDER_DAYS", default=3)
+DOCS_REQUESTER_REMINDER_DAYS = env.int("DOCS_REQUESTER_REMINDER_DAYS", default=5)
 
 # Database
 # https://docs.djangoproject.com/en/3.0/ref/settings/#databases
@@ -227,7 +270,7 @@ from config.settings.cors import *  # noqa
 from config.settings.email_sending import *  # noqa
 from config.settings.files_and_storages import *  # noqa
 #from config.settings.google_oauth2 import *  # noqa
-#from config.settings.jwt import *  # noqa
+from config.settings.jwt import *  # noqa
 from config.settings.sentry import *  # noqa
 from config.settings.sessions import *  # noqa
 from config.settings.drf_spectacular import *  # noqa

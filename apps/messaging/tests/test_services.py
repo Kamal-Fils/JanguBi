@@ -1,0 +1,664 @@
+"""
+Service-layer tests for apps/messaging.
+
+Strategy:
+- Every service function has a happy-path test and a test for each ApplicationError branch.
+- transaction.on_commit callbacks (WebSocket fanout, task dispatch) are suppressed by
+  patching Django's transaction.on_commit to call the callback immediately, then patching
+  the actual side-effect (channel layer / celery task) so nothing hits the network.
+- The channel layer helpers are patched at the services module level.
+"""
+
+import uuid
+from unittest.mock import MagicMock, patch
+
+import pytest
+from django.utils import timezone
+
+from apps.core.exceptions import ApplicationError
+from apps.messaging.models import (
+    Message,
+    MessageBlock,
+    MessageReaction,
+    Notification,
+    PriestProfile,
+)
+from apps.messaging.services import (
+    block_user,
+    conversation_accept_cgu,
+    conversation_archive,
+    conversation_delete,
+    conversation_export_request,
+    conversation_get_or_create,
+    message_delete,
+    message_mark_read,
+    message_react,
+    message_send,
+    message_unreact,
+    notification_mark_read,
+    notification_send,
+    priest_profile_accept_cgu,
+    priest_profile_create,
+    priest_profile_update,
+    unblock_user,
+)
+from apps.users.tests.factories import BaseUserFactory, SuperAdminFactory
+
+from .factories import (
+    ConversationFactory,
+    MessageBlockFactory,
+    MessageFactory,
+    MessageReactionFactory,
+    NotificationFactory,
+    PriestProfileFactory,
+)
+
+# ---------------------------------------------------------------------------
+# Patch targets
+# ---------------------------------------------------------------------------
+
+_ON_COMMIT = "django.db.transaction.on_commit"
+_FANOUT_WS = "apps.messaging.services._fanout_ws"
+_FANOUT_NOTIF = "apps.messaging.services._fanout_notification"
+_CACHE = "apps.messaging.services.cache"
+
+
+# ---------------------------------------------------------------------------
+# PriestProfile services
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_priest_profile_create_success():
+    # Arrange
+    user = BaseUserFactory()
+    admin = SuperAdminFactory()
+
+    # Act
+    profile = priest_profile_create(user=user, accepted_by=admin)
+
+    # Assert
+    assert profile.id is not None
+    assert profile.user == user
+    assert PriestProfile.objects.filter(user=user).exists()
+
+
+@pytest.mark.django_db
+def test_priest_profile_create_raises_when_profile_already_exists():
+    # Arrange
+    existing = PriestProfileFactory()
+    admin = SuperAdminFactory()
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="déjà un profil"):
+        priest_profile_create(user=existing.user, accepted_by=admin)
+
+
+@pytest.mark.django_db
+def test_priest_profile_accept_cgu_success():
+    # Arrange
+    profile = PriestProfileFactory(cgu_accepted_at=None)
+
+    # Act
+    updated = priest_profile_accept_cgu(priest_profile=profile)
+
+    # Assert
+    assert updated.cgu_accepted_at is not None
+    profile.refresh_from_db()
+    assert profile.cgu_accepted_at is not None
+
+
+@pytest.mark.django_db
+def test_priest_profile_accept_cgu_raises_when_already_accepted():
+    # Arrange
+    profile = PriestProfileFactory(cgu_accepted_at=timezone.now())
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="CGU"):
+        priest_profile_accept_cgu(priest_profile=profile)
+
+
+@pytest.mark.django_db
+def test_priest_profile_update_all_fields():
+    # Arrange
+    profile = PriestProfileFactory(accepts_pastoral_chat=False, bio="", ordination_year=2000)
+
+    # Act
+    updated = priest_profile_update(
+        priest_profile=profile,
+        accepts_pastoral_chat=True,
+        bio="Updated bio",
+        ordination_year=1999,
+    )
+
+    # Assert
+    assert updated.accepts_pastoral_chat is True
+    assert updated.bio == "Updated bio"
+    assert updated.ordination_year == 1999
+
+
+@pytest.mark.django_db
+def test_priest_profile_update_partial_leaves_other_fields_unchanged():
+    # Arrange
+    profile = PriestProfileFactory(accepts_pastoral_chat=False, bio="Original")
+
+    # Act — only bio updated
+    updated = priest_profile_update(priest_profile=profile, bio="New bio")
+
+    # Assert
+    assert updated.bio == "New bio"
+    assert updated.accepts_pastoral_chat is False
+
+
+# ---------------------------------------------------------------------------
+# Conversation services
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_conversation_get_or_create_creates_new():
+    # Arrange
+    fidele = BaseUserFactory()
+    priest = BaseUserFactory()
+
+    # Act
+    conversation, created = conversation_get_or_create(fidele=fidele, priest=priest)
+
+    # Assert
+    assert created is True
+    assert conversation.id is not None
+    participant_ids = {conversation.participant_a_id, conversation.participant_b_id}
+    assert fidele.id in participant_ids
+    assert priest.id in participant_ids
+
+
+@pytest.mark.django_db
+def test_conversation_get_or_create_returns_existing():
+    # Arrange
+    existing = ConversationFactory()
+    a = existing.participant_a
+    b = existing.participant_b
+
+    # Act
+    conversation, created = conversation_get_or_create(fidele=a, priest=b)
+
+    # Assert
+    assert created is False
+    assert conversation.id == existing.id
+
+
+@pytest.mark.django_db
+def test_conversation_accept_cgu_participant_a_success():
+    # Arrange
+    conv = ConversationFactory(cgu_accepted_by_a=None)
+
+    # Act
+    updated = conversation_accept_cgu(conversation=conv, user=conv.participant_a)
+
+    # Assert
+    assert updated.cgu_accepted_by_a is not None
+
+
+@pytest.mark.django_db
+def test_conversation_accept_cgu_participant_b_success():
+    # Arrange
+    conv = ConversationFactory(cgu_accepted_by_b=None)
+
+    # Act
+    updated = conversation_accept_cgu(conversation=conv, user=conv.participant_b)
+
+    # Assert
+    assert updated.cgu_accepted_by_b is not None
+
+
+@pytest.mark.django_db
+def test_conversation_accept_cgu_raises_when_already_accepted_by_a():
+    # Arrange
+    conv = ConversationFactory(cgu_accepted_by_a=timezone.now())
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="CGU"):
+        conversation_accept_cgu(conversation=conv, user=conv.participant_a)
+
+
+@pytest.mark.django_db
+def test_conversation_accept_cgu_raises_when_already_accepted_by_b():
+    # Arrange
+    conv = ConversationFactory(cgu_accepted_by_b=timezone.now())
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="CGU"):
+        conversation_accept_cgu(conversation=conv, user=conv.participant_b)
+
+
+@pytest.mark.django_db
+def test_conversation_archive_sets_is_archived():
+    # Arrange
+    conv = ConversationFactory(is_archived=False)
+
+    # Act
+    updated = conversation_archive(conversation=conv, user=conv.participant_a)
+
+    # Assert
+    assert updated.is_archived is True
+    conv.refresh_from_db()
+    assert conv.is_archived is True
+
+
+@pytest.mark.django_db
+def test_conversation_delete_soft_deletes_messages_and_schedules_purge():
+    # Arrange
+    conv = ConversationFactory(
+        cgu_accepted_by_a=timezone.now(),
+        cgu_accepted_by_b=timezone.now(),
+    )
+    MessageFactory(conversation=conv, sender=conv.participant_a)
+    MessageFactory(conversation=conv, sender=conv.participant_b)
+
+    # Act — suppress on_commit side-effects
+    with patch(_ON_COMMIT, lambda fn: None):
+        updated = conversation_delete(conversation=conv, user=conv.participant_a)
+
+    # Assert — all messages soft-deleted
+    messages = Message.objects.filter(conversation=conv)
+    assert messages.filter(deleted_at__isnull=False).count() == 2
+    # Purge scheduled
+    conv.refresh_from_db()
+    assert conv.scheduled_purge_at is not None
+
+
+# ---------------------------------------------------------------------------
+# Message services
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_message_send_success():
+    # Arrange
+    conv = ConversationFactory(
+        cgu_accepted_by_a=timezone.now(),
+        cgu_accepted_by_b=timezone.now(),
+    )
+    sender = conv.participant_a
+    mock_cache = MagicMock()
+    mock_cache.get_or_set.return_value = 0
+
+    # Act
+    with patch(_CACHE, mock_cache):
+        with patch(_ON_COMMIT, lambda fn: fn()):
+            with patch(_FANOUT_WS):
+                message = message_send(
+                    conversation=conv,
+                    sender=sender,
+                    content="Hello world",
+                )
+
+    # Assert
+    assert message.id is not None
+    assert message.content == "Hello world"
+    assert message.sender == sender
+    assert message.conversation == conv
+
+
+@pytest.mark.django_db
+def test_message_send_raises_when_blocked():
+    # Arrange
+    conv = ConversationFactory(
+        cgu_accepted_by_a=timezone.now(),
+        cgu_accepted_by_b=timezone.now(),
+    )
+    sender = conv.participant_a
+    receiver = conv.participant_b
+    MessageBlockFactory(blocker=sender, blocked=receiver)
+    mock_cache = MagicMock()
+    mock_cache.get_or_set.return_value = 0
+
+    # Act & Assert
+    with patch(_CACHE, mock_cache):
+        with pytest.raises(ApplicationError, match="bloqu"):
+            message_send(conversation=conv, sender=sender, content="Hi")
+
+
+@pytest.mark.django_db
+def test_message_send_raises_when_cgu_not_accepted_by_sender():
+    # Arrange
+    conv = ConversationFactory(cgu_accepted_by_a=None, cgu_accepted_by_b=None)
+    sender = conv.participant_a
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="CGU"):
+        message_send(conversation=conv, sender=sender, content="Hi")
+
+
+@pytest.mark.django_db
+def test_message_send_raises_when_rate_limit_exceeded():
+    # Arrange
+    conv = ConversationFactory(
+        cgu_accepted_by_a=timezone.now(),
+        cgu_accepted_by_b=timezone.now(),
+    )
+    sender = conv.participant_a
+    mock_cache = MagicMock()
+    mock_cache.get_or_set.return_value = 9999  # well above any configured limit
+
+    with patch(_CACHE, mock_cache):
+        with pytest.raises(ApplicationError, match="Limite"):
+            message_send(conversation=conv, sender=sender, content="Hi")
+
+
+@pytest.mark.django_db
+def test_message_send_idempotent_with_same_client_message_id():
+    # Arrange
+    conv = ConversationFactory(
+        cgu_accepted_by_a=timezone.now(),
+        cgu_accepted_by_b=timezone.now(),
+    )
+    sender = conv.participant_a
+    mock_cache = MagicMock()
+    mock_cache.get_or_set.return_value = 0
+    client_id = str(uuid.uuid4())
+
+    with patch(_CACHE, mock_cache):
+        with patch(_ON_COMMIT, lambda fn: fn()):
+            with patch(_FANOUT_WS):
+                first = message_send(
+                    conversation=conv,
+                    sender=sender,
+                    content="Hello",
+                    client_message_id=client_id,
+                )
+                second = message_send(
+                    conversation=conv,
+                    sender=sender,
+                    content="Hello",
+                    client_message_id=client_id,
+                )
+
+    # Assert — same DB row returned on duplicate submission
+    assert first.id == second.id
+    assert Message.objects.filter(client_message_id=client_id).count() == 1
+
+
+@pytest.mark.django_db
+def test_message_mark_read_marks_counterpart_messages():
+    # Arrange
+    conv = ConversationFactory(
+        cgu_accepted_by_a=timezone.now(),
+        cgu_accepted_by_b=timezone.now(),
+    )
+    sender = conv.participant_a
+    reader = conv.participant_b
+    MessageFactory(conversation=conv, sender=sender, read_at=None)
+    MessageFactory(conversation=conv, sender=sender, read_at=None)
+
+    with patch(_ON_COMMIT, lambda fn: fn()):
+        with patch(_FANOUT_WS):
+            # Act
+            updated_count = message_mark_read(conversation=conv, reader=reader)
+
+    # Assert
+    assert updated_count == 2
+    assert Message.objects.filter(conversation=conv, read_at__isnull=False).count() == 2
+
+
+@pytest.mark.django_db
+def test_message_mark_read_skips_own_messages():
+    # Arrange
+    conv = ConversationFactory(
+        cgu_accepted_by_a=timezone.now(),
+        cgu_accepted_by_b=timezone.now(),
+    )
+    sender = conv.participant_a
+    MessageFactory(conversation=conv, sender=sender, read_at=None)
+
+    # Act — sender reads own messages
+    updated_count = message_mark_read(conversation=conv, reader=sender)
+
+    # Assert — own messages must not be marked
+    assert updated_count == 0
+
+
+@pytest.mark.django_db
+def test_message_delete_success():
+    # Arrange
+    msg = MessageFactory()
+    sender = msg.sender
+
+    # Act
+    deleted = message_delete(message=msg, user=sender)
+
+    # Assert
+    assert deleted.is_deleted is True
+    assert deleted.content == ""
+    msg.refresh_from_db()
+    assert msg.deleted_at is not None
+
+
+@pytest.mark.django_db
+def test_message_delete_raises_when_not_sender():
+    # Arrange
+    msg = MessageFactory()
+    other_user = BaseUserFactory()
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="propres messages"):
+        message_delete(message=msg, user=other_user)
+
+
+@pytest.mark.django_db
+def test_message_delete_raises_when_already_deleted():
+    # Arrange
+    msg = MessageFactory(deleted_at=timezone.now(), content="")
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="déjà supprimé"):
+        message_delete(message=msg, user=msg.sender)
+
+
+@pytest.mark.django_db
+def test_message_react_creates_reaction():
+    # Arrange
+    msg = MessageFactory()
+    user = BaseUserFactory()
+
+    # Act
+    reaction = message_react(message=msg, user=user, emoji="like")
+
+    # Assert
+    assert reaction.id is not None
+    assert reaction.emoji == "like"
+    assert MessageReaction.objects.filter(message=msg, user=user, emoji="like").exists()
+
+
+@pytest.mark.django_db
+def test_message_react_is_idempotent():
+    # Arrange
+    msg = MessageFactory()
+    user = BaseUserFactory()
+
+    # Act
+    r1 = message_react(message=msg, user=user, emoji="like")
+    r2 = message_react(message=msg, user=user, emoji="like")
+
+    # Assert — get_or_create returns the same object
+    assert r1.id == r2.id
+    assert MessageReaction.objects.filter(message=msg, user=user, emoji="like").count() == 1
+
+
+@pytest.mark.django_db
+def test_message_unreact_removes_reaction():
+    # Arrange
+    reaction = MessageReactionFactory(emoji="like")
+    msg = reaction.message
+    user = reaction.user
+
+    # Act
+    message_unreact(message=msg, user=user, emoji="like")
+
+    # Assert
+    assert not MessageReaction.objects.filter(message=msg, user=user, emoji="like").exists()
+
+
+@pytest.mark.django_db
+def test_message_unreact_silent_when_no_reaction_exists():
+    # Arrange — no reaction created
+    msg = MessageFactory()
+    user = BaseUserFactory()
+
+    # Act — must not raise
+    message_unreact(message=msg, user=user, emoji="love")
+
+    # Assert
+    assert not MessageReaction.objects.filter(message=msg, user=user, emoji="love").exists()
+
+
+# ---------------------------------------------------------------------------
+# Block services
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_block_user_success():
+    # Arrange
+    blocker = BaseUserFactory()
+    blocked = BaseUserFactory()
+
+    # Act
+    block = block_user(blocker=blocker, blocked=blocked)
+
+    # Assert
+    assert block.id is not None
+    assert MessageBlock.objects.filter(blocker=blocker, blocked=blocked).exists()
+
+
+@pytest.mark.django_db
+def test_block_user_raises_when_blocking_self():
+    # Arrange
+    user = BaseUserFactory()
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="soi-même"):
+        block_user(blocker=user, blocked=user)
+
+
+@pytest.mark.django_db
+def test_block_user_raises_when_already_blocked():
+    # Arrange
+    block = MessageBlockFactory()
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="déjà bloqué"):
+        block_user(blocker=block.blocker, blocked=block.blocked)
+
+
+@pytest.mark.django_db
+def test_unblock_user_success():
+    # Arrange
+    block = MessageBlockFactory()
+    blocker = block.blocker
+    blocked = block.blocked
+
+    # Act
+    unblock_user(blocker=blocker, blocked=blocked)
+
+    # Assert
+    assert not MessageBlock.objects.filter(blocker=blocker, blocked=blocked).exists()
+
+
+@pytest.mark.django_db
+def test_unblock_user_raises_when_no_block_exists():
+    # Arrange
+    blocker = BaseUserFactory()
+    blocked = BaseUserFactory()
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="Aucun blocage"):
+        unblock_user(blocker=blocker, blocked=blocked)
+
+
+# ---------------------------------------------------------------------------
+# Export service
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_conversation_export_request_creates_export_record():
+    # Arrange
+    conv = ConversationFactory()
+    user = conv.participant_a
+
+    # Act — suppress on_commit so the Celery task is never dispatched
+    with patch(_ON_COMMIT, lambda fn: None):
+        export = conversation_export_request(conversation=conv, user=user)
+
+    # Assert
+    assert export.id is not None
+    assert export.conversation == conv
+    assert export.requested_by == user
+    assert export.completed_at is None
+
+
+# ---------------------------------------------------------------------------
+# Notification services
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_notification_send_creates_notification_record():
+    # Arrange
+    user = BaseUserFactory()
+
+    # Act
+    with patch(_ON_COMMIT, lambda fn: fn()):
+        with patch(_FANOUT_NOTIF):
+            notif = notification_send(
+                user=user,
+                event_type="message.received",
+                payload={"text": "hello"},
+            )
+
+    # Assert
+    assert notif.id is not None
+    assert notif.event_type == "message.received"
+    assert notif.payload == {"text": "hello"}
+    assert Notification.objects.filter(user=user).exists()
+
+
+@pytest.mark.django_db
+def test_notification_mark_read_success():
+    # Arrange
+    notif = NotificationFactory(is_read=False)
+    user = notif.user
+
+    # Act
+    updated = notification_mark_read(notification=notif, user=user)
+
+    # Assert
+    assert updated.is_read is True
+    assert updated.read_at is not None
+
+
+@pytest.mark.django_db
+def test_notification_mark_read_idempotent_when_already_read():
+    # Arrange
+    read_at = timezone.now()
+    notif = NotificationFactory(is_read=True, read_at=read_at)
+    user = notif.user
+
+    # Act
+    result = notification_mark_read(notification=notif, user=user)
+
+    # Assert — returned as-is without error or timestamp change
+    assert result.is_read is True
+    assert result.read_at == read_at
+
+
+@pytest.mark.django_db
+def test_notification_mark_read_raises_when_wrong_user():
+    # Arrange
+    notif = NotificationFactory(is_read=False)
+    other_user = BaseUserFactory()
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="refus"):
+        notification_mark_read(notification=notif, user=other_user)

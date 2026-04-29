@@ -23,24 +23,6 @@ class Category(BaseModel):
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
 
-    @classmethod
-    def ensure_default_categories(cls) -> int:
-        defaults = [
-            ("Messes", "messes", 1),
-            ("Enseignement", "enseignement", 2),
-            ("Documentaires", "documentaires", 3),
-            ("Reportages", "reportages", 4),
-        ]
-        created_count = 0
-        with transaction.atomic():
-            for name, slug, order in defaults:
-                _, created = cls.objects.get_or_create(
-                    slug=slug,
-                    defaults={"name": name, "order": order},
-                )
-                if created:
-                    created_count += 1
-        return created_count
 
 
 class Video(BaseModel):

@@ -42,8 +42,9 @@ services:
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
       - "--log.level=INFO"
     ports:
-      - "80:80"
-      - "443:443"
+      #- "8080:80"
+      - "8085:80"
+      - "8443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik_letsencrypt:/letsencrypt
@@ -99,7 +100,7 @@ services:
     image: redis:7-alpine
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -123,13 +124,25 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000" # API
-      - "9001:9001" # Console Web
+      - "9002:9000" # API
+      - "9091:9001" # Console Web
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - app_network
+
+  # ===========================================
+  # Serveur SMTP de dev (MailHog)
+  # ===========================================
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI → http://localhost:8025
     networks:
       - app_network
 
@@ -141,9 +154,9 @@ services:
     container_name: django_web
     entrypoint: ["/docker-entrypoint.sh"]
     #command: python manage.py runserver 0.0.0.0:8000
-    command: gunicorn config.wsgi:application -b 0.0.0.0:8000 --workers 4 --threads 2
-    expose:
-      - "8000"
+    command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+    ports:
+      - "8001:8000"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.django.rule=Host(`jangubi.thenexcom.com`)"

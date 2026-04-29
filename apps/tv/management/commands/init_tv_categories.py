@@ -1,13 +1,11 @@
 from django.core.management.base import BaseCommand
-from django.db import transaction
 
-from apps.tv.models import Category
+from apps.tv.services import category_ensure_defaults
 
 
 class Command(BaseCommand):
     help = "Initialize default TV categories."
 
-    @transaction.atomic
     def handle(self, *args, **options):
-        created_count = Category.ensure_default_categories()
+        created_count = category_ensure_defaults()
         self.stdout.write(self.style.SUCCESS(f"TV categories initialized. Newly created: {created_count}"))

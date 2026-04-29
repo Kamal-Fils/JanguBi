@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.db.models.query import QuerySet
+from django.template.loader import render_to_string
 from django.utils import timezone
 
 from apps.common.services import model_update
@@ -33,7 +34,7 @@ def email_send(email: Email) -> Email:
             raise ApplicationError("Email sending failure triggered.")
 
     subject = email.subject
-    from_email = "styleguide-example@hacksoft.io"
+    from_email = settings.EMAIL_FROM_ADDRESS
     to = email.to
 
     html = email.html
@@ -64,3 +65,27 @@ def email_send_all(emails: QuerySet[Email]):
 
         # Create a closure, to capture the proper value of each id
         transaction.on_commit((lambda email_id: lambda: email_send_task.delay(email_id))(email.id))
+
+
+@transaction.atomic
+def send_multi_format_email(
+    *,
+    template_prefix: str,
+    template_ctxt: dict,
+    target_email: str,
+    path_prefix: str = "auth",
+) -> None:
+    """Render HTML + plain-text templates, persist an Email record, and send it synchronously."""
+    subject = render_to_string(f"{path_prefix}/{template_prefix}_subject.txt", template_ctxt).strip()
+    html = render_to_string(f"{path_prefix}/{template_prefix}.html", template_ctxt)
+    plain_text = render_to_string(f"{path_prefix}/{template_prefix}.txt", template_ctxt)
+
+    email = Email.objects.create(
+        to=target_email,
+        subject=subject,
+        html=html,
+        plain_text=plain_text,
+        status=Email.Status.SENDING,
+    )
+
+    email_send(email)

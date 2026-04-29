@@ -6,4 +6,11 @@ from apps.users.models import BaseUser
 class BaseUserFilter(django_filters.FilterSet):
     class Meta:
         model = BaseUser
-        fields = ("id", "email", "is_admin")
+        fields = {
+            "id": ["exact"],
+            "email": ["exact", "icontains"],
+            "role": ["exact"],
+            "is_active": ["exact"],
+            "is_verified": ["exact"],
+            "is_admin": ["exact"],
+        }

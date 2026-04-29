@@ -21,13 +21,7 @@ class ContextBuilder:
             final_context.append("=== ROSAIRE ===")
             final_context.append(rosary_ctx)
             final_context.append("")
-        
-        availability_ctx = contexts.get("availability")
-        if availability_ctx:
-            final_context.append("=== DISPONIBILITÉS (Prêtres et Sœurs) ===")
-            final_context.append(availability_ctx)
-            final_context.append("")
-        
+
         if not final_context:
             return "Aucun contexte pertinent trouvé dans la base de données."
 

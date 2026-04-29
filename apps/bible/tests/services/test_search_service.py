@@ -35,17 +35,17 @@ class SearchServiceTests(TransactionTestCase):
 
     def test_lexical_search_basic(self):
         # Search "lumière"
-        results = self.service.search("lumière")
-        
+        results = self.service.search("lumière", source_file=None)
+
         # We expect 2 matches grouped in 2 books (Genèse and Jean)
         self.assertEqual(len(results), 2, "Should find matches in both Genèse and Jean")
-        
+
         # First result should be Genèse due to order
         self.assertEqual(results[0]["book"]["name"], "Genèse")
         self.assertEqual(len(results[0]["matches"]), 1)
         self.assertEqual(results[0]["matches"][0]["verse"]["number"], 3)
         self.assertIn("lumière", results[0]["matches"][0]["verse"]["text"])
-        
+
         # Second result should be Jean
         self.assertEqual(results[1]["book"]["name"], "Jean")
         self.assertEqual(len(results[1]["matches"]), 1)
@@ -53,33 +53,33 @@ class SearchServiceTests(TransactionTestCase):
 
     def test_lexical_search_with_testament_filter(self):
         # Search "commencement", which is in both Genesis 1:1 and Jean 1:1
-        all_results = self.service.search("commencement")
+        all_results = self.service.search("commencement", source_file=None)
         self.assertEqual(len(all_results), 2)
-        
+
         # Filter AT
-        at_results = self.service.search("commencement", testament_slug="ancien")
+        at_results = self.service.search("commencement", testament_slug="ancien", source_file=None)
         self.assertEqual(len(at_results), 1)
         self.assertEqual(at_results[0]["book"]["name"], "Genèse")
-        
+
         # Filter NT
-        nt_results = self.service.search("commencement", testament_slug="nouveau")
+        nt_results = self.service.search("commencement", testament_slug="nouveau", source_file=None)
         self.assertEqual(len(nt_results), 1)
         self.assertEqual(nt_results[0]["book"]["name"], "Jean")
 
     def test_lexical_search_no_results(self):
-        results = self.service.search("xyznonexistent")
+        results = self.service.search("xyznonexistent", source_file=None)
         self.assertEqual(results, [])
-        
+
     def test_lexical_search_respects_limit(self):
         # Search "Dieu", present in Gen 1:1, Gen 1:3, Jean 1:1. Total 3 matches.
-        results = self.service.search("Dieu", limit=1)
+        results = self.service.search("Dieu", limit=1, source_file=None)
         # Grouped structure, so we need to count total matches inside
         total_matches = sum(len(group["matches"]) for group in results)
         self.assertEqual(total_matches, 1)
 
     def test_search_group_by_book(self):
         # Check structure
-        results = self.service.search("Dieu")
+        results = self.service.search("Dieu", source_file=None)
         # Ensure it's grouped properly
         for group in results:
             self.assertIn("book", group)
@@ -96,7 +96,7 @@ class SearchServiceTests(TransactionTestCase):
         # _lexical_search for a specific result.
         
         # First let's check normal. "Terre"
-        results = self.service.search("terre")
+        results = self.service.search("terre", source_file=None)
         self.assertTrue(len(results) > 0)
         
         # Let's mock the internal lexical_search to force a low score
