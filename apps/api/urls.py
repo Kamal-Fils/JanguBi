@@ -14,6 +14,7 @@ urlpatterns = [
         path("liturgy/", include(("apps.liturgy.urls", "liturgy"))),
         path("messaging/", include(("apps.messaging.urls", "messaging"))),
         path("documents/", include(("apps.documents.urls", "documents"))),
+        path("news/", include(("apps.news.urls", "news"))),
     ])),
 
     path('schema/', SpectacularAPIView.as_view(), name='schema'),

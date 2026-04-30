@@ -78,6 +78,7 @@ LOCAL_APPS = [
     "apps.tv.apps.TvConfig",
     "apps.messaging.apps.MessagingConfig",
     "apps.documents.apps.DocumentsConfig",
+    "apps.news.apps.NewsConfig",
     #"apps.blog_examples.apps.BlogExamplesConfig",
 ]
 
