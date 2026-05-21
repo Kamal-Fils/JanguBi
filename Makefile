@@ -91,7 +91,7 @@ import-bible-aelf:
 
 reinit-bible:
 	docker compose exec django python manage.py shell -c "from apps.bible.models import Verse, Chapter, Book, DailyText; Verse.objects.all().delete(); Chapter.objects.all().delete(); Book.objects.all().delete(); DailyText.objects.all().delete(); print('Bible data cleared.')"
-	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr-aelf.json --source AELF
+	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr.json --source bible_fr
 	docker compose exec django python manage.py import_aelf --start "$$(date +%Y-%m-%d)" --end "$$(python3 -c 'from datetime import datetime, timedelta; print((datetime.now() + timedelta(days=(6 - datetime.now().weekday()))).date())')"
 	docker compose exec django python manage.py shell -c "from django.core.cache import cache; cache.clear(); print('Cache cleared.')"
 
@@ -125,15 +125,17 @@ init-data:
 	@echo "==========================================================="
 	@echo "1. Application des migrations Django..."
 	docker compose exec django python manage.py migrate
-	@echo "2. Importation du format A (bible-fr-aelf.json)..."
-	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr-aelf.json --source AELF
-	@echo "3. Execution du script conditionnel pgvector..."
+	@echo "2. Importation du format A (bible-fr.json)..."
+	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr.json --source bible_fr
+	@echo "3. Importation du format B (FreSynodale1921.json) [desactivee par defaut pour eviter le melange de sources]..."
+	# docker compose exec django python manage.py import_bible init/bibles/format/json/FreSynodale1921.json --source FreSynodale1921
+	@echo "4. Execution du script conditionnel pgvector..."
 	docker compose exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < init/postgresql/pgvector_conditional.sql
-	@echo "4. Creation et configuration du bucket MinIO..."
+	@echo "5. Creation et configuration du bucket MinIO..."
 	docker compose exec minio sh -c "mc alias set local $(AWS_S3_ENDPOINT_URL) $(MINIO_ROOT_USER) $(MINIO_ROOT_PASSWORD) && mc mb local/rosary-audio || true && mc anonymous set public local/rosary-audio"
-	@echo "5. Importation des donnees du Rosaire..."
+	@echo "6. Importation des donnees du Rosaire..."
 	docker compose exec django python manage.py seed_rosary
-	@echo "6. Importation de la liturgie du jour (AELF)..."
+	@echo "7. Importation de la liturgie du jour (AELF)..."
 	docker compose exec django python manage.py import_aelf --start "$$(date +%Y-%m-%d)" --end "$$(python3 -c 'from datetime import datetime, timedelta; print((datetime.now() + timedelta(days=(6 - datetime.now().weekday()))).date())')"
 	@echo "==========================================================="
 	@echo "   Importation et Indexation terminees !"
