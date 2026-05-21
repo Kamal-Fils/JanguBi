@@ -20,6 +20,13 @@ down:
 down-v:
 	docker compose down -v
 
+reset: ## Full reset: supprime volumes + réinitialise (DESTRUCTIF — efface toutes les données)
+	docker compose down -v
+	docker compose up -d
+	@echo "Attente démarrage PostgreSQL..."
+	sleep 8
+	$(MAKE) init-all
+
 rebuild:
 	docker compose down
 	docker compose build

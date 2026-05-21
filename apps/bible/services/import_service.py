@@ -284,23 +284,21 @@ class ImportService:
             logger.error(f"Failed to import book {book.name}: {str(e)}")
             raise
 
-        # Enqueue async tasks for this book (TSV and Embedding)
+        # Enqueue async tasks for this book
         populate_tsv_task.delay(book.id)
-        
-        # We defer embedding since it can be heavy. Pass primary keys.
-        # Using a list of IDs for a whole book might be large for Celery (~1000 IDs),
-        # but typically safe. If too large, we would query them inside the task.
-        # For better Celery hygiene, let's just trigger the task to process the whole book.
-        compute_embeddings_task.delay(book.id)
+        if getattr(settings, "PGVECTOR_ENABLED", False):
+            compute_embeddings_task.delay(book.id)
 
     def _update_counters(self, book: Book):
         """Updates verse_count on Chapter and Book models."""
-        total_verses = 0
-        for chapter in book.chapters.all():
-            count = chapter.verses.count()
-            chapter.verse_count = count
-            chapter.save(update_fields=["verse_count"])
-            total_verses += count
-            
-        book.verse_count = total_verses
+        from django.db.models import Count
+
+        chapters = list(book.chapters.annotate(vc=Count("verses")).order_by("number"))
+        for chapter in chapters:
+            chapter.verse_count = chapter.vc
+
+        if chapters:
+            Chapter.objects.bulk_update(chapters, ["verse_count"])
+
+        book.verse_count = sum(c.verse_count for c in chapters)
         book.save(update_fields=["verse_count"])
