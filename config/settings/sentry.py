@@ -74,4 +74,7 @@ if SENTRY_DSN:
         # If you wish to associate users to errors (assuming you are using
         # django.contrib.auth) you may enable sending PII data.
         send_default_pii=False,
+        profile_lifecycle="trace",
+        profile_session_sample_rate=1.0,
+
     )

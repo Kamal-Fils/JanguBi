@@ -2,10 +2,10 @@ import mimetypes
 from typing import Any, Dict, Tuple
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.core.exceptions import ApplicationError
 from apps.files.enums import FileUploadStorage
 from apps.files.models import File
 from apps.files.utils import (
@@ -22,7 +22,7 @@ def _validate_file_size(file_obj):
     max_size = settings.FILE_MAX_SIZE
 
     if file_obj.size > max_size:
-        raise ValidationError(f"File is too large. It should not exceed {bytes_to_mib(max_size)} MiB")
+        raise ApplicationError(f"Fichier trop volumineux. Taille maximum : {bytes_to_mib(max_size)} MiB.")
 
 
 class FileStandardUploadService:

@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,6 +13,11 @@ from apps.files.services import (
 
 
 class FileStandardUploadApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={201: {"type": "object", "properties": {"id": {"type": "integer"}}}},
+        tags=["files"],
+        summary="Upload standard (multipart/form-data)",
+    )
     def post(self, request):
         service = FileStandardUploadService(user=request.user, file_obj=request.FILES["file"])
         file = service.create()
@@ -24,6 +30,12 @@ class FileDirectUploadStartApi(ApiAuthMixin, APIView):
         file_name = serializers.CharField()
         file_type = serializers.CharField()
 
+    @extend_schema(
+        request=InputSerializer,
+        responses={200: {"type": "object", "properties": {"id": {"type": "integer"}, "url": {"type": "string"}}}},
+        tags=["files"],
+        summary="Démarrer un upload direct (presigned URL)",
+    )
     def post(self, request, *args, **kwargs):
         serializer = self.InputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -35,6 +47,11 @@ class FileDirectUploadStartApi(ApiAuthMixin, APIView):
 
 
 class FileDirectUploadLocalApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: {"type": "object", "properties": {"id": {"type": "integer"}}}},
+        tags=["files"],
+        summary="Upload local pour le mode direct (dev uniquement)",
+    )
     def post(self, request, file_id):
         file = get_object_or_404(File, id=file_id)
 
@@ -50,6 +67,12 @@ class FileDirectUploadFinishApi(ApiAuthMixin, APIView):
     class InputSerializer(serializers.Serializer):
         file_id = serializers.CharField()
 
+    @extend_schema(
+        request=InputSerializer,
+        responses={200: {"type": "object", "properties": {"id": {"type": "integer"}}}},
+        tags=["files"],
+        summary="Finaliser un upload direct",
+    )
     def post(self, request):
         serializer = self.InputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

@@ -113,7 +113,7 @@ class RAGService:
             # Fallback out of scope
             if intent_data.get("intent") == "UNKNOWN" and not intent_data.get("domains"):
                 return RAGResponse(
-                    answer="Désolé, je suis uniquement formé pour répondre aux questions concernant la Bible, le Rosaire et les disponibilités des prêtres/sœurs. Pouvez-vous reformuler votre question ?",
+                    answer="Désolé, je suis uniquement formé pour répondre aux questions concernant la Bible et le Rosaire. Pouvez-vous reformuler votre question ?",
                     context="",
                     intent=intent_data
                 )

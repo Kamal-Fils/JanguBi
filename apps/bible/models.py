@@ -123,3 +123,113 @@ class DailyText(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.date} — {self.category}: {self.title[:50]}"
+
+
+class HomilieNote(BaseModel):
+    """Homily note linked to a Bible passage. Restricted to DIACRE and above."""
+
+    author = models.ForeignKey(
+        "users.BaseUser",
+        on_delete=models.CASCADE,
+        related_name="homilinotes",
+    )
+    passage_start = models.ForeignKey(
+        Verse,
+        on_delete=models.CASCADE,
+        related_name="homilinote_starts",
+    )
+    passage_end = models.ForeignKey(
+        Verse,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="homilinote_ends",
+    )
+    content = models.TextField()
+    shared_with = models.ManyToManyField(
+        "users.BaseUser",
+        related_name="shared_homilinotes",
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Note d'homélie"
+        verbose_name_plural = "Notes d'homélie"
+
+    def __str__(self) -> str:
+        return f"HomilieNote({self.author_id}, v{self.passage_start_id})"
+
+
+class LectioDivinaSession(BaseModel):
+    """Personal Lectio Divina session linked to a Bible verse."""
+
+    user = models.ForeignKey(
+        "users.BaseUser",
+        on_delete=models.CASCADE,
+        related_name="lectio_sessions",
+    )
+    passage = models.ForeignKey(
+        Verse,
+        on_delete=models.CASCADE,
+        related_name="lectio_sessions",
+    )
+    lectio = models.TextField(blank=True)
+    meditatio = models.TextField(blank=True)
+    oratio = models.TextField(blank=True)
+    contemplatio = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Session Lectio Divina"
+        verbose_name_plural = "Sessions Lectio Divina"
+        unique_together = [["user", "passage"]]
+
+    def __str__(self) -> str:
+        return f"LectioDivina({self.user_id}, v{self.passage_id})"
+
+
+class ReadingPlan(BaseModel):
+    """Curated Bible reading plan created by clergy."""
+
+    author = models.ForeignKey(
+        "users.BaseUser",
+        on_delete=models.CASCADE,
+        related_name="reading_plans",
+    )
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    is_published = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Plan de lecture"
+        verbose_name_plural = "Plans de lecture"
+
+    def __str__(self) -> str:
+        return f"ReadingPlan({self.title})"
+
+
+class ReadingPlanPassage(BaseModel):
+    """Ordered passage within a reading plan."""
+
+    plan = models.ForeignKey(
+        ReadingPlan,
+        on_delete=models.CASCADE,
+        related_name="plan_passages",
+    )
+    verse = models.ForeignKey(
+        Verse,
+        on_delete=models.CASCADE,
+        related_name="plan_passages",
+    )
+    day_number = models.PositiveSmallIntegerField()
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["day_number", "order"]
+        verbose_name = "Passage du plan"
+        verbose_name_plural = "Passages du plan"
+
+    def __str__(self) -> str:
+        return f"PlanPassage(plan={self.plan_id}, day={self.day_number})"

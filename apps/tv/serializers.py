@@ -1,14 +1,13 @@
 from rest_framework import serializers
 
 from apps.tv.models import Category, Video
-from apps.tv.services import TvService
 from apps.tv.utils.youtube import extract_youtube_video_id
 
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ["id", "name", "slug", "order", "created_at", "updated_at"]
+        fields = ["id", "name", "slug", "order", "is_clergy_only", "created_at", "updated_at"]
         read_only_fields = ["slug", "created_at", "updated_at"]
 
 
@@ -49,9 +48,3 @@ class VideoCreateUpdateSerializer(serializers.ModelSerializer):
         if not extract_youtube_video_id(value):
             raise serializers.ValidationError("Invalid YouTube URL. Unable to extract a valid video ID.")
         return value
-
-    def create(self, validated_data):
-        return TvService.create_video(validated_data)
-
-    def update(self, instance, validated_data):
-        return TvService.update_video(instance, validated_data)

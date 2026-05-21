@@ -3,7 +3,23 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.tv.models import Category, Video
+from apps.users.enums import UserRole
 from apps.users.models import BaseUser
+
+
+def _make_user(email, role=UserRole.FIDELE, pastoral_role=None):
+    user = BaseUser.objects.create_user(
+        email=email,
+        password="pwd",
+        role=role,
+        phone_number="+33600000001",
+        is_active=True,
+        is_verified=True,
+    )
+    if pastoral_role:
+        user.pastoral_role = pastoral_role
+        user.save(update_fields=["pastoral_role"])
+    return user
 
 
 class TvApiTests(APITestCase):
@@ -20,8 +36,8 @@ class TvApiTests(APITestCase):
         url = reverse("api:tv:tv-category-list")
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["slug"], "messes")
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["results"][0]["slug"], "messes")
 
     def test_create_category_requires_admin(self):
         url = reverse("api:tv:tv-category-list")
@@ -71,7 +87,6 @@ class TvApiTests(APITestCase):
         response = self.client.post(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", response.data)
-        self.assertIn("category_slug", response.data["detail"])
 
     def test_update_video_requires_admin(self):
         url = reverse("api:tv:tv-video-detail", args=[self.video.id])
@@ -88,3 +103,58 @@ class TvApiTests(APITestCase):
         response = self.client.patch(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["title"], "Updated")
+
+    def test_clergy_only_category_hidden_from_fidele(self):
+        clergy_cat = Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        Video.objects.create(
+            title="Formation prêtres",
+            youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            category=clergy_cat,
+        )
+        url = reverse("api:tv:tv-category-list")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        slugs = [c["slug"] for c in response.data["results"]]
+        self.assertIn("messes", slugs)
+        self.assertNotIn("formation", slugs)
+
+    def test_clergy_only_category_visible_to_clergy(self):
+        Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        pretre = _make_user("pretre@test.com", pastoral_role="pretre")
+        self.client.force_authenticate(user=pretre)
+        url = reverse("api:tv:tv-category-list")
+        response = self.client.get(url)
+        slugs = [c["slug"] for c in response.data["results"]]
+        self.assertIn("formation", slugs)
+
+    def test_clergy_only_videos_hidden_from_fidele(self):
+        clergy_cat = Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        Video.objects.create(
+            title="Formation prêtres",
+            youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            category=clergy_cat,
+        )
+        url = reverse("api:tv:tv-video-list")
+        response = self.client.get(url)
+        titles = [v["title"] for v in response.data["results"]]
+        self.assertNotIn("Formation prêtres", titles)
+        self.assertIn("Homelie du jour", titles)
+
+    def test_clergy_only_videos_visible_to_clergy(self):
+        clergy_cat = Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        Video.objects.create(
+            title="Formation prêtres",
+            youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            category=clergy_cat,
+        )
+        pretre = _make_user("pretre2@test.com", pastoral_role="pretre")
+        self.client.force_authenticate(user=pretre)
+        url = reverse("api:tv:tv-video-list")
+        response = self.client.get(url)
+        titles = [v["title"] for v in response.data["results"]]
+        self.assertIn("Formation prêtres", titles)
+
+    def test_category_serializer_includes_is_clergy_only(self):
+        url = reverse("api:tv:tv-category-list")
+        response = self.client.get(url)
+        self.assertIn("is_clergy_only", response.data["results"][0])

@@ -23,7 +23,7 @@ class ExampleListApi(APIView):
             fields = ("id", "email")
 
     def get(self, request):
-        queryset = BaseUser.objects.order_by("id")
+        queryset = BaseUser.objects.order_by("email")
 
         response = get_paginated_response(
             pagination_class=self.Pagination,
@@ -57,7 +57,7 @@ class GetPaginatedResponseTests(TestCase):
                 "results": [
                     OrderedDict(
                         {
-                            "id": self.user1.id,
+                            "id": str(self.user1.id),
                             "email": self.user1.email,
                         }
                     )
@@ -80,7 +80,7 @@ class GetPaginatedResponseTests(TestCase):
                 "results": [
                     OrderedDict(
                         {
-                            "id": self.user2.id,
+                            "id": str(self.user2.id),
                             "email": self.user2.email,
                         }
                     )

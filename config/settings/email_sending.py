@@ -10,6 +10,13 @@ EMAIL_SENDING_FAILURE_RATE = env.float("EMAIL_SENDING_FAILURE_RATE", default=0.2
 if EMAIL_SENDING_STRATEGY == EmailSendingStrategy.LOCAL:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
+if EMAIL_SENDING_STRATEGY == EmailSendingStrategy.MAILHOG:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = env("MAILHOG_HOST", default="mailhog")
+    EMAIL_PORT = env.int("MAILHOG_PORT", default=1025)
+    EMAIL_USE_TLS = False
+    EMAIL_USE_SSL = False
+
 if EMAIL_SENDING_STRATEGY == EmailSendingStrategy.MAILTRAP:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
     EMAIL_HOST = env("MAILTRAP_EMAIL_HOST")

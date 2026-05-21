@@ -53,37 +53,37 @@ Ruth:
 
 1 Samuel:
   canonical_name: "1 Samuel"
-  aliases: ["I Samuel", "1Sam", "1 S"]
+  aliases: ["I Samuel", "1Sam", "1 S", "1S"]
   testament: "ancien"
   order: 9
 
 2 Samuel:
   canonical_name: "2 Samuel"
-  aliases: ["II Samuel", "2Sam", "2 S"]
+  aliases: ["II Samuel", "2Sam", "2 S", "2S"]
   testament: "ancien"
   order: 10
 
 1 Rois:
   canonical_name: "1 Rois"
-  aliases: ["I Kings", "1Kings", "1 R"]
+  aliases: ["I Kings", "1Kings", "1 R", "1R"]
   testament: "ancien"
   order: 11
 
 2 Rois:
   canonical_name: "2 Rois"
-  aliases: ["II Kings", "2Kings", "2 R"]
+  aliases: ["II Kings", "2Kings", "2 R", "2R"]
   testament: "ancien"
   order: 12
 
 1 Chroniques:
   canonical_name: "1 Chroniques"
-  aliases: ["I Chronicles", "1Chr", "1 Ch"]
+  aliases: ["I Chronicles", "1Chr", "1 Ch", "1Ch"]
   testament: "ancien"
   order: 13
 
 2 Chroniques:
   canonical_name: "2 Chroniques"
-  aliases: ["II Chronicles", "2Chr", "2 Ch"]
+  aliases: ["II Chronicles", "2Chr", "2 Ch", "2Ch"]
   testament: "ancien"
   order: 14
 
@@ -119,13 +119,13 @@ Esther:
 
 1 Maccabées:
   canonical_name: "1 Maccabées"
-  aliases: ["1 Maccabees", "1Mac", "1 M"]
+  aliases: ["1 Maccabees", "1Mac", "1 M", "1M"]
   testament: "ancien"
   order: 20
 
 2 Maccabées:
   canonical_name: "2 Maccabées"
-  aliases: ["2 Maccabees", "2Mac", "2 M"]
+  aliases: ["2 Maccabees", "2Mac", "2 M", "2M"]
   testament: "ancien"
   order: 21
 
@@ -138,7 +138,7 @@ Job:
 Psaumes:
   canonical_name: "Psaumes"
   aliases: ["Psalms", "Psalm", "Psaume", "Ps"]
-  testament: "ancien"
+  testament: "psaume"
   order: 23
 
 Proverbes:
@@ -319,13 +319,13 @@ Romains:
 
 1 Corinthiens:
   canonical_name: "1 Corinthiens"
-  aliases: ["I Corinthians", "1Cor", "1 Co"]
+  aliases: ["I Corinthians", "1Cor", "1 Co", "1Co"]
   testament: "nouveau"
   order: 53
 
 2 Corinthiens:
   canonical_name: "2 Corinthiens"
-  aliases: ["II Corinthians", "2Cor", "2 Co"]
+  aliases: ["II Corinthians", "2Cor", "2 Co", "2Co"]
   testament: "nouveau"
   order: 54
 
@@ -355,25 +355,25 @@ Colossiens:
 
 1 Thessaloniciens:
   canonical_name: "1 Thessaloniciens"
-  aliases: ["I Thessalonians", "1Thess", "1 Th"]
+  aliases: ["I Thessalonians", "1Thess", "1 Th", "1Th"]
   testament: "nouveau"
   order: 59
 
 2 Thessaloniciens:
   canonical_name: "2 Thessaloniciens"
-  aliases: ["II Thessalonians", "2Thess", "2 Th"]
+  aliases: ["II Thessalonians", "2Thess", "2 Th", "2Th"]
   testament: "nouveau"
   order: 60
 
 1 Timothée:
   canonical_name: "1 Timothée"
-  aliases: ["I Timothy", "1Tim", "1 Tm"]
+  aliases: ["I Timothy", "1Tim", "1 Tm", "1Tm"]
   testament: "nouveau"
   order: 61
 
 2 Timothée:
   canonical_name: "2 Timothée"
-  aliases: ["II Timothy", "2Tim", "2 Tm"]
+  aliases: ["II Timothy", "2Tim", "2 Tm", "2Tm"]
   testament: "nouveau"
   order: 62
 
@@ -403,31 +403,31 @@ Jacques:
 
 1 Pierre:
   canonical_name: "1 Pierre"
-  aliases: ["I Peter", "1Pet", "1 P"]
+  aliases: ["I Peter", "1Pet", "1 P", "1P"]
   testament: "nouveau"
   order: 67
 
 2 Pierre:
   canonical_name: "2 Pierre"
-  aliases: ["II Peter", "2Pet", "2 P"]
+  aliases: ["II Peter", "2Pet", "2 P", "2P"]
   testament: "nouveau"
   order: 68
 
 1 Jean:
   canonical_name: "1 Jean"
-  aliases: ["I John", "1John", "1 Jn"]
+  aliases: ["I John", "1John", "1 Jn", "1Jn"]
   testament: "nouveau"
   order: 69
 
 2 Jean:
   canonical_name: "2 Jean"
-  aliases: ["II John", "2John", "2 Jn"]
+  aliases: ["II John", "2John", "2 Jn", "2Jn"]
   testament: "nouveau"
   order: 70
 
 3 Jean:
   canonical_name: "3 Jean"
-  aliases: ["III John", "3John", "3 Jn"]
+  aliases: ["III John", "3John", "3 Jn", "3Jn"]
   testament: "nouveau"
   order: 71
 

@@ -11,7 +11,38 @@ logger = logging.getLogger(__name__)
 class Command(BaseCommand):
     help = "Seed Rosary data from init JSON file"
 
+    def _ensure_rosary_bucket(self) -> None:
+        endpoint_url = getattr(settings, 'AWS_S3_ENDPOINT_URL', None)
+        if not endpoint_url:
+            return  # local storage, nothing to create
+
+        import boto3
+        from botocore.exceptions import ClientError
+
+        s3 = boto3.client(
+            's3',
+            endpoint_url=endpoint_url,
+            aws_access_key_id=getattr(settings, 'AWS_S3_ACCESS_KEY_ID', None),
+            aws_secret_access_key=getattr(settings, 'AWS_S3_SECRET_ACCESS_KEY', None),
+            region_name=getattr(settings, 'AWS_S3_REGION_NAME', 'us-east-1'),
+        )
+        bucket = 'rosary-audio'
+        try:
+            s3.head_bucket(Bucket=bucket)
+        except ClientError as exc:
+            code = exc.response['Error']['Code']
+            if code in ('404', 'NoSuchBucket', '403'):
+                s3.create_bucket(Bucket=bucket)
+                try:
+                    s3.put_bucket_acl(Bucket=bucket, ACL='public-read')
+                except ClientError:
+                    pass  # ACL not supported by all MinIO versions
+                self.stdout.write(self.style.SUCCESS(f"Created bucket: {bucket}"))
+            else:
+                raise
+
     def handle(self, *args, **options):
+        self._ensure_rosary_bucket()
         # We look for the file in the expected path
         json_path = Path(settings.BASE_DIR) / "init" / "rosary" / "format" / "json" / "rosary_french.json"
         

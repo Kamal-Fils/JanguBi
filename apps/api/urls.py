@@ -3,15 +3,23 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 
 urlpatterns = [
     path("v1/", include([
+        path("auth/", include(("apps.authentication.urls", "authentication"))),
         path("users/", include(("apps.users.urls", "users"))),
         path("errors/", include(("apps.errors.urls", "errors"))),
         path("files/", include(("apps.files.urls", "files"))),
         path("bible/", include(("apps.bible.urls", "bible"))),
-        path("availability/", include(("apps.availability.urls", "availability"))),
         path("rosary/", include(("apps.rosary.urls", "rosary"))),
         path("tv/", include(("apps.tv.urls", "tv"))),
-        #path("rag/", include(("apps.rag.urls", "rag"))),
+        path("rag/", include(("apps.rag.urls", "rag"))),
         path("liturgy/", include(("apps.liturgy.urls", "liturgy"))),
+        path("messaging/", include(("apps.messaging.urls", "messaging"))),
+        path("documents/", include(("apps.documents.urls", "documents"))),
+        path("news/", include(("apps.news.urls", "news"))),
+        path("org/", include(("apps.org.urls", "org"))),
+        path("clergy-accounts/", include(("apps.clergy_accounts.urls", "clergy-accounts"))),
+        path("agenda/", include(("apps.agenda.urls", "agenda"))),
+        path("mass-intentions/", include(("apps.mass_intentions.urls", "mass-intentions"))),
+        path("donations/", include(("apps.donations.urls", "donations"))),
     ])),
 
     path('schema/', SpectacularAPIView.as_view(), name='schema'),

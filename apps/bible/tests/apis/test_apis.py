@@ -121,23 +121,28 @@ class BibleApiTests(APITestCase):
         self.assertEqual(len(response.data[0]["matches"]), 1)
 
     @patch("apps.bible.views.import_file_task.delay")
-    def test_import_api_requires_admin(self, mock_delay):
+    @patch("apps.bible.views.Path.exists", return_value=True)
+    def test_import_api_requires_admin(self, mock_exists, mock_delay):
         url = reverse("api:bible:import-file")
-        response = self.client.post(url, {"file_path": "a", "source": "b"})
-        # Not authenticated 
+        response = self.client.post(url, {"filename": "bible.json", "source": "b"})
+        # Not authenticated
         self.assertIn(response.status_code, [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN])
-        
+
         # Norm user
-        user = BaseUser.objects.create_user(email="test@test.com", password="pwd")
+        user = BaseUser.objects.create_user(
+            email="test@test.com", password="pwd",
+            role="fidele", phone_number="+221771000001",
+            is_active=True, is_verified=True,
+        )
         self.client.force_authenticate(user=user)
-        response = self.client.post(url, {"file_path": "a", "source": "b"})
+        response = self.client.post(url, {"filename": "bible.json", "source": "b"})
         # Not admin
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        
+
         # Admin
         admin = BaseUser.objects.create_superuser(email="admin@test.com", password="pwd")
         self.client.force_authenticate(user=admin)
-        response = self.client.post(url, {"file_path": "a", "source": "b"})
+        response = self.client.post(url, {"filename": "bible.json", "source": "b"})
         # Accepted
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
 
@@ -145,5 +150,5 @@ class BibleApiTests(APITestCase):
         admin = BaseUser.objects.create_superuser(email="admin2@test.com", password="pwd")
         self.client.force_authenticate(user=admin)
         url = reverse("api:bible:import-file")
-        response = self.client.post(url, {"file_path": "a"}) # missing source
+        response = self.client.post(url, {"filename": "bible.json"})  # missing source
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

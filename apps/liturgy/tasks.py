@@ -4,30 +4,23 @@ from datetime import date, timedelta
 from celery import shared_task
 from django.utils import timezone
 
-from apps.liturgy.services import AelfService
-
 logger = logging.getLogger(__name__)
 
 
 @shared_task(name="apps.liturgy.tasks.daily_sync")
 def daily_sync_task(date_str: str = None, zones: list = None):
-    """
-    Celery task to fetch daily AELF data.
-    Defaults to today's date and 'romain' zone.
-    Since Celery runs synchronous workers, we use asyncio.run to execute the async inner logic.
-    """
+    from apps.liturgy.services import AelfService  # local import — évite les imports circulaires
+
     if not date_str:
-        # Default to today
         date_str = timezone.now().date().isoformat()
-        
+
     if not zones:
         zones = ["romain"]
-        
+
     logger.info(f"Starting scheduled daily AELF sync for dates: {date_str} in zones: {zones}")
-    
+
     for zone in zones:
         try:
-            # We call the async service from our sync Celery task context
             asyncio.run(AelfService.sync_daily_data(date_str, zone))
         except Exception as e:
             logger.error(f"Failed to sync daily data for {date_str} ({zone}): {str(e)}")

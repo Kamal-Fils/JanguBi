@@ -1,0 +1,131 @@
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+    <title>Bienvenue sur Jaaykoo</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style type="text/css">
+        #outlook a { padding: 0; }
+        .ReadMsgBody { width: 100%; }
+        .ExternalClass { width: 100%; }
+        .ExternalClass * { line-height: 100%; }
+        body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+        p { display: block; margin: 13px 0; }
+        @media only screen and (max-width:480px) {
+            @-ms-viewport { width: 320px; }
+            @viewport { width: 320px; }
+        }
+        @media only screen and (min-width:480px) {
+            .mj-column-per-100 { width: 100% !important; }
+        }
+    </style>
+</head>
+<body style="background-color:#f9f9f9;">
+    <div style="background-color:#f9f9f9;">
+        <div style="background:#f9f9f9;background-color:#f9f9f9;Margin:0px auto;max-width:600px;">
+            <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9f9f9;background-color:#f9f9f9;width:100%;">
+                <tbody>
+                    <tr>
+                        <td style="border-bottom:#ff9800 solid 5px;direction:ltr;font-size:0px;padding:20px 0;text-align:center;vertical-align:top;"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div style="background:#fff;background-color:#fff;Margin:0px auto;max-width:600px;">
+            <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;background-color:#fff;width:100%;">
+                <tbody>
+                    <tr>
+                        <td style="border:#dddddd solid 1px;border-top:0px;direction:ltr;font-size:0px;padding:20px 0;text-align:center;vertical-align:top;">
+                            <div class="mj-column-per-100 outlook-group-fix" style="font-size:13px;text-align:left;direction:ltr;display:inline-block;vertical-align:bottom;width:100%;">
+                                <table border="0" cellpadding="0" cellspacing="0" role="presentation" style="vertical-align:bottom;" width="100%">
+                                    <tr>
+                                        <td align="center" style="font-size:0px;padding:10px 25px;word-break:break-word;">
+                                            <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:collapse;border-spacing:0px;">
+                                                <tbody>
+                                                    <tr>
+                                                        <td style="width:120px;">
+                                                            <img height="auto" src="cid:logo" style="border:0;display:block;outline:none;text-decoration:none;width:100%;border-radius:8px;" width="120" />
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="center" style="font-size:0px;padding:10px 25px;padding-bottom:40px;word-break:break-word;">
+                                            <div style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:28px;font-weight:bold;line-height:1;text-align:center;color:#555;">
+                                                Bienvenue sur <span style="color:#ff9800;">Jaaykoo</span> !
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left" style="font-size:0px;padding:10px 25px;word-break:break-word;">
+                                            <div style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:16px;line-height:22px;text-align:left;color:#555;">
+                                                Bonjour <strong>{{ first_name }} {{ last_name }}</strong>,<br><br>
+                                                Votre compte a été créé avec succès sur <span style="color:#ff9800;font-weight:bold;">Jaaykoo</span> !<br><br>
+                                                <div style="background-color:#fff3e0;padding:20px;border-radius:6px;border:1px solid #ff9800;margin:20px 0;">
+                                                    <strong style="color:#ff9800;font-size:18px;">Vos informations de connexion :</strong><br><br>
+                                                    <strong>Email :</strong> {{ email }}<br>
+                                                    <strong>Téléphone :</strong> {{ phone_number }}<br>
+                                                    {% if password %}
+                                                    <strong>Mot de passe temporaire :</strong> <span style="color:#ff9800;">{{ password }}</span><br>
+                                                    <span style="color:#e65100;font-size:13px;margin-top:10px;display:block;">⚠️ Veuillez modifier votre mot de passe après votre première connexion.</span>
+                                                    {% endif %}
+                                                </div>
+                                                {% comment %} <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="border-collapse:separate;line-height:100%;margin-top:30px;margin-bottom:30px;">
+                                                    <tr>
+                                                        <td align="center" bgcolor="#ff9800" role="presentation" style="border:none;border-radius:3px;color:#ffffff;cursor:pointer;padding:15px 25px;" valign="middle">
+                                                            <a href="{{ client_login_url }}" style="background:#ff9800;color:#ffffff;font-family:'Helvetica Neue',Arial,sans-serif;font-size:15px;font-weight:bold;line-height:120%;margin:0;text-decoration:none;text-transform:none;display:inline-block;">
+                                                                Se connecter à Jaaykoo
+                                                            </a>
+                                                        </td>
+                                                    </tr>
+                                                </table> {% endcomment %}
+                                                Nous sommes ravis de vous accueillir parmi nous ! Si vous avez des questions, n'hésitez pas à nous contacter.<br><br>
+                                                <strong>L'équipe <span style="color:#ff9800;">Jaaykoo</span></strong><br>
+                                                <span style="color:#888;font-size:13px;">Ce message est généré automatiquement, merci de ne pas y répondre.</span><br>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div style="Margin:0px auto;max-width:600px;">
+            <table align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="width:100%;">
+                <tbody>
+                    <tr>
+                        <td style="direction:ltr;font-size:0px;padding:20px 0;text-align:center;vertical-align:top;">
+                            <div class="mj-column-per-100 outlook-group-fix" style="font-size:13px;text-align:left;direction:ltr;display:inline-block;vertical-align:bottom;width:100%;">
+                                <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+                                    <tbody>
+                                        <tr>
+                                            <td style="vertical-align:bottom;padding:0;">
+                                                <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%">
+                                                    <tr>
+                                                        <td align="center" style="font-size:0px;padding:0;word-break:break-word;">
+                                                            <div style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:12px;font-weight:300;line-height:1;text-align:center;color:#575757;">
+                                                                &copy; Jaaykoo. Tous droits réservés.
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </table>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

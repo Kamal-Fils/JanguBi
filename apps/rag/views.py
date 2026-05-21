@@ -1,24 +1,22 @@
-import asyncio
 from asgiref.sync import async_to_sync
-from django.utils.decorators import classonlymethod, method_decorator
-from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from django.utils.decorators import method_decorator
 from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
+from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
+
+from apps.api.mixins import ApiAuthMixin
 from apps.rag.serializers import RagQuerySerializer, RagResponseSerializer
 from apps.rag.service import RAGService
 
+
 @method_decorator(transaction.non_atomic_requests, name="dispatch")
-@method_decorator(csrf_exempt, name="dispatch")
-class RagChatApi(APIView):
-    # Asynchronous RAG Chat endpoint.
-    permission_classes = [AllowAny]
-    authentication_classes = []
-    
-    # Needs a persistent instance so we don't recreate the client per-request although minimal overhead.
+class RagChatApi(ApiAuthMixin, APIView):
+    throttle_classes = [UserRateThrottle]
+
+    # Shared service instance — avoid recreating on every request.
     rag_service = RAGService()
 
     @extend_schema(

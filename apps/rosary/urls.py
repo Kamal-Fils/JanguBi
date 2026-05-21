@@ -1,31 +1,41 @@
 from django.urls import path
-from apps.rosary.views import (
-    GroupListApi,
-    GroupDetailApi,
-    TodayRosaryApi,
-    RosaryWeekdayApi,
-    PrayerListApi,
-    MysteryDetailApi,
-    RosarySearchApi,
-    RosaryVectorSearchApi
-)
 
-app_name = "rosary"
+from apps.rosary.community_apis import (
+    CommunityRosaryEndApi,
+    CommunityRosaryIntentionApi,
+    CommunityRosaryJoinApi,
+    CommunityRosaryListCreateApi,
+)
+from apps.rosary.views import (
+    GroupDetailApi,
+    GroupListApi,
+    MysteryDetailApi,
+    PrayerListApi,
+    RosarySearchApi,
+    RosaryVectorSearchApi,
+    RosaryWeekdayApi,
+    TodayRosaryApi,
+)
 
 urlpatterns = [
     # Groups
     path("groups/", GroupListApi.as_view(), name="group-list"),
     path("groups/<slug:slug>/", GroupDetailApi.as_view(), name="group-detail"),
-    
+
     # Days
     path("today/", TodayRosaryApi.as_view(), name="today-rosary"),
     path("day/<int:day>/", RosaryWeekdayApi.as_view(), name="day-rosary"),
-    
+
     # Core Components
     path("prayers/", PrayerListApi.as_view(), name="prayer-list"),
     path("mysteries/<int:pk>/", MysteryDetailApi.as_view(), name="mystery-detail"),
-    
+
     # Search
     path("search/", RosarySearchApi.as_view(), name="search"),
-    #path("vector_search/", RosaryVectorSearchApi.as_view(), name="vector-search"),
+
+    # Community Rosary (M8)
+    path("community/", CommunityRosaryListCreateApi.as_view(), name="community-list-create"),
+    path("community/<int:rosary_id>/join/", CommunityRosaryJoinApi.as_view(), name="community-join"),
+    path("community/<int:rosary_id>/intentions/", CommunityRosaryIntentionApi.as_view(), name="community-intentions"),
+    path("community/<int:rosary_id>/end/", CommunityRosaryEndApi.as_view(), name="community-end"),
 ]

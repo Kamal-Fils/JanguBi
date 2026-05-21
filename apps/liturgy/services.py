@@ -53,17 +53,18 @@ class AelfService:
     @staticmethod
     @sync_to_async
     def _save_resources(ld: LiturgicalDate, info_data: Dict[str, Any]) -> None:
-        """Parses mp3/youtube links from informations."""
+        """Parses mp3/youtube links from informations response."""
         info = info_data.get("informations", {})
-        # Note: AELF does not always send URLs, we check carefully
-        audio = None
-        yt = None
-        
-        defaults = {}
-        if audio or yt:
+        audio_url = info.get("audio") or info.get("mp3") or None
+        yt_url = info.get("youtube") or info.get("video") or None
+
+        if audio_url or yt_url:
             AelfResource.objects.update_or_create(
                 liturgical_date=ld,
-                defaults=defaults
+                defaults={
+                    "audio_url": audio_url,
+                    "youtube_url": yt_url,
+                },
             )
 
     @staticmethod

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Jàngu Bi{% endblock %}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #333333;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #f5f5f5;
+      padding: 40px 0;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .header {
+      background-color: #1a1a2e;
+      padding: 28px 40px;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      color: #e8c07d;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    .header .tagline {
+      margin: 4px 0 0;
+      color: #a0aec0;
+      font-size: 13px;
+    }
+    .content {
+      padding: 40px 40px 32px;
+      font-size: 15px;
+      line-height: 1.7;
+      color: #444444;
+    }
+    .content h1 {
+      font-size: 22px;
+      color: #1a1a2e;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .content p {
+      margin: 0 0 16px;
+    }
+    .button {
+      display: inline-block;
+      background-color: #e8c07d;
+      color: #1a1a2e !important;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 14px 32px;
+      border-radius: 6px;
+      margin: 8px 0 24px;
+    }
+    .footer {
+      background-color: #f9f9f9;
+      border-top: 1px solid #e8e8e8;
+      padding: 20px 40px;
+      text-align: center;
+      font-size: 12px;
+      color: #999999;
+    }
+    .footer a {
+      color: #e8c07d;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <h1>Jàngu Bi</h1>
+        <p class="tagline">Plateforme catholique du Sénégal</p>
+      </div>
+      <div class="content">
+        {% block content %}{% endblock %}
+      </div>
+      <div class="footer">
+        <p>
+          &copy; {% now "Y" %} Jàngu Bi — Tous droits réservés.<br>
+          Ce message est envoyé automatiquement, merci de ne pas y répondre.
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
