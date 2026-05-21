@@ -1,6 +1,6 @@
 Bonjour {{ first_name }} {{ last_name }},
 
-Votre compte a été créé avec succès sur Jaaykoo !
+Votre compte a été créé avec succès sur Jàngu Bi !
 
 Informations de votre compte :
 - Email : {{ email }}
@@ -13,5 +13,5 @@ Veuillez modifier votre mot de passe après votre première connexion.
 {% comment %} Pour vous connecter, cliquez sur le lien suivant :
 {{ client_login_url }} {% endcomment %}
 
-Nous sommes ravis de vous accueillir sur Jaaykoo !
+Nous sommes ravis de vous accueillir sur Jàngu Bi !
 Ce message est automatique, merci de ne pas y répondre.

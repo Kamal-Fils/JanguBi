@@ -1,10 +1,10 @@
 {% extends "emails/_base_email.html" %}
-{% block title %}Votre compte Jaaykoo a été créé{% endblock %}
+{% block title %}Votre compte Jàngu Bi a été créé{% endblock %}
 {% block content %}
 <h1>Votre compte a été créé</h1>
 <p>Bonjour <strong>{{ user.profile.first_name|default:user.email }}</strong>,</p>
 <p>
-  Un compte <strong style="color:#ff9800;">Jaaykoo</strong> a été créé pour vous.<br>
+  Un compte <strong style="color:#ff9800;">Jàngu Bi</strong> a été créé pour vous.<br>
   Vos identifiants de connexion provisoires :
 </p>
 <div class="address-block">
@@ -17,7 +17,7 @@
 </div>
 <p style="margin-top:24px;font-size:13px;color:#888;">
   Nous vous recommandons de changer votre mot de passe dès votre première connexion.<br><br>
-  <strong>L'équipe <span style="color:#ff9800;">Jaaykoo</span></strong><br>
+  <strong>L'équipe <span style="color:#ff9800;">Jàngu Bi</span></strong><br>
   <span style="font-size:12px;">Ce message est généré automatiquement, merci de ne pas y répondre.</span>
 </p>
 {% endblock %}

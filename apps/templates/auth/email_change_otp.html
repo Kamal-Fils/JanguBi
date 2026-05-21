@@ -1,11 +1,11 @@
 {% extends "emails/_base_email.html" %}
-{% block title %}Confirmez votre nouvelle adresse e-mail - Jaaykoo{% endblock %}
+{% block title %}Confirmez votre nouvelle adresse e-mail - Jàngu Bi{% endblock %}
 {% block content %}
 <h1>Confirmez votre e-mail</h1>
 <p>Bonjour <strong>{{ user.profile.first_name|default:user.email }}</strong>,</p>
 <p>
   Utilisez le code ci-dessous pour confirmer votre nouvelle adresse e-mail sur
-  <strong style="color:#ff9800;">Jaaykoo</strong> :
+  <strong style="color:#ff9800;">Jàngu Bi</strong> :
 </p>
 <div style="text-align:center;margin:30px 0;">
   <div style="font-size:36px;font-weight:bold;color:#ff9800;background-color:#fff3e0;padding:20px 32px;border-radius:6px;display:inline-block;border:2px solid #ff9800;letter-spacing:8px;">
@@ -17,7 +17,7 @@
   Si vous n'êtes pas à l'origine de cette demande, ignorez ce message et contactez notre support immédiatement.
 </p>
 <p style="margin-top:30px;font-size:13px;color:#888;">
-  <strong>L'équipe <span style="color:#ff9800;">Jaaykoo</span></strong><br>
+  <strong>L'équipe <span style="color:#ff9800;">Jàngu Bi</span></strong><br>
   <span style="font-size:12px;">Ce message est généré automatiquement, merci de ne pas y répondre.</span>
 </p>
 {% endblock %}
