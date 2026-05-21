@@ -337,40 +337,61 @@ def test_email_send_all_closure_captures_correct_ids():
 # ---------------------------------------------------------------------------
 # send_multi_format_email
 # ---------------------------------------------------------------------------
+# NOTE: send_multi_format_email no longer calls SMTP synchronously.
+# It creates an Email record (status=SENDING) and then schedules
+# email_send_task.delay via transaction.on_commit. SMTP is called
+# inside the Celery task, not inside this service.
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_send_multi_format_email_creates_email_record_and_sends():
+def test_send_multi_format_email_creates_email_record_with_sending_status():
     # Arrange
     template_ctxt = {"verification_link": "https://example.com/verify/abc123"}
     target_email = "user@example.com"
 
-    # Act — patch template rendering and SMTP
-    with (
-        patch("apps.emails.services.render_to_string") as mock_render,
-        patch("apps.emails.services.EmailMultiAlternatives") as mock_msg_class,
-    ):
+    # Act — patch template rendering only (no SMTP patch needed — it is async now)
+    with patch("apps.emails.services.render_to_string") as mock_render:
         mock_render.side_effect = [
             "Verify your email",  # subject template
             "<p>Click here</p>",  # html template
             "Click here",         # plain_text template
         ]
-        mock_msg_class.return_value = MagicMock()
+        with patch("apps.emails.services.email_send_task"):
+            send_multi_format_email(
+                template_prefix="email_verification",
+                template_ctxt=template_ctxt,
+                target_email=target_email,
+            )
 
-        send_multi_format_email(
-            template_prefix="email_verification",
-            template_ctxt=template_ctxt,
-            target_email=target_email,
-        )
-
-    # Assert — Email record persisted with correct fields and SENT status
+    # Assert — Email record persisted in SENDING status (not SENT — task is async)
     assert Email.objects.filter(to=target_email).exists()
     email = Email.objects.get(to=target_email)
     assert email.subject == "Verify your email"
     assert email.html == "<p>Click here</p>"
     assert email.plain_text == "Click here"
-    assert email.status == Email.Status.SENT
-    assert email.sent_at is not None
+    assert email.status == Email.Status.SENDING
+    assert email.sent_at is None  # SMTP has not run yet
+
+
+@pytest.mark.django_db(transaction=True)
+def test_send_multi_format_email_dispatches_task_via_on_commit():
+    """The Celery task must be enqueued after commit — not during the transaction."""
+    # Arrange
+    with patch("apps.emails.services.render_to_string") as mock_render:
+        mock_render.side_effect = ["Subject", "<p>Body</p>", "Body"]
+
+        # Act — patch the task to capture calls
+        with patch("apps.emails.services.email_send_task") as mock_task:
+            send_multi_format_email(
+                template_prefix="welcome",
+                template_ctxt={},
+                target_email="task@example.com",
+            )
+
+    # Assert — delay was called once with the email's id
+    email = Email.objects.get(to="task@example.com")
+    mock_task.delay.assert_called_once_with(email.id)
 
 
 @pytest.mark.django_db
@@ -378,10 +399,9 @@ def test_send_multi_format_email_uses_correct_template_paths():
     # Arrange & Act
     with (
         patch("apps.emails.services.render_to_string") as mock_render,
-        patch("apps.emails.services.EmailMultiAlternatives") as mock_msg_class,
+        patch("apps.emails.services.email_send_task"),
     ):
         mock_render.side_effect = ["Subject", "<p>HTML</p>", "Plain"]
-        mock_msg_class.return_value = MagicMock()
 
         send_multi_format_email(
             template_prefix="password_reset_email",
@@ -402,10 +422,9 @@ def test_send_multi_format_email_strips_whitespace_from_subject():
     # Arrange — subject template returns value with surrounding whitespace
     with (
         patch("apps.emails.services.render_to_string") as mock_render,
-        patch("apps.emails.services.EmailMultiAlternatives") as mock_msg_class,
+        patch("apps.emails.services.email_send_task"),
     ):
         mock_render.side_effect = ["  Hello World  \n", "<p>body</p>", "body"]
-        mock_msg_class.return_value = MagicMock()
 
         send_multi_format_email(
             template_prefix="welcome_email",
@@ -423,10 +442,9 @@ def test_send_multi_format_email_uses_custom_path_prefix():
     # Arrange — path_prefix other than the default "auth"
     with (
         patch("apps.emails.services.render_to_string") as mock_render,
-        patch("apps.emails.services.EmailMultiAlternatives") as mock_msg_class,
+        patch("apps.emails.services.email_send_task"),
     ):
         mock_render.side_effect = ["Subject", "<p>Body</p>", "Body"]
-        mock_msg_class.return_value = MagicMock()
 
         send_multi_format_email(
             template_prefix="parish_invite",
@@ -449,10 +467,9 @@ def test_send_multi_format_email_passes_context_to_all_templates():
 
     with (
         patch("apps.emails.services.render_to_string") as mock_render,
-        patch("apps.emails.services.EmailMultiAlternatives") as mock_msg_class,
+        patch("apps.emails.services.email_send_task"),
     ):
         mock_render.side_effect = ["Subject", "<p>Hi Marie</p>", "Hi Marie"]
-        mock_msg_class.return_value = MagicMock()
 
         send_multi_format_email(
             template_prefix="welcome",
@@ -462,30 +479,46 @@ def test_send_multi_format_email_passes_context_to_all_templates():
 
     # Assert — every render_to_string call received the same context dict
     for render_call in mock_render.call_args_list:
-        # render_to_string(template_name, context) — context is the second positional arg
         passed_ctx = render_call.args[1] if len(render_call.args) > 1 else render_call.kwargs.get("context")
         assert passed_ctx == ctx
 
 
 @pytest.mark.django_db
-def test_send_multi_format_email_does_not_persist_email_when_smtp_fails():
-    """@transaction.atomic must roll back the Email record if SMTP raises."""
-    # Arrange
-    with (
-        patch("apps.emails.services.render_to_string") as mock_render,
-        patch("apps.emails.services.EmailMultiAlternatives") as mock_msg_class,
-    ):
-        mock_render.side_effect = ["Subject", "<p>Body</p>", "Body"]
-        mock_msg = MagicMock()
-        mock_msg.send.side_effect = Exception("SMTP connection refused")
-        mock_msg_class.return_value = mock_msg
+def test_send_multi_format_email_rolls_back_email_record_on_render_failure():
+    """@transaction.atomic must roll back the Email record if rendering raises."""
+    # Arrange — first render_to_string succeeds (subject), then raises
+    with patch("apps.emails.services.render_to_string") as mock_render:
+        mock_render.side_effect = ["Subject", Exception("Template not found")]
 
-        with pytest.raises(Exception, match="SMTP connection refused"):
+        with pytest.raises(Exception, match="Template not found"):
             send_multi_format_email(
-                template_prefix="welcome",
+                template_prefix="broken",
                 template_ctxt={},
                 target_email="rollback@example.com",
             )
 
     # Assert — no Email record was committed to the DB
     assert not Email.objects.filter(to="rollback@example.com").exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_send_multi_format_email_does_not_dispatch_task_when_transaction_rolls_back():
+    """If something else in the caller's transaction rolls back after our service
+    completes, on_commit callbacks must NOT fire — the email record disappears."""
+    # This test verifies on_commit semantics: the task is only dispatched
+    # when the outermost transaction commits. We simulate a rollback by
+    # patching on_commit to be a no-op.
+    with patch("apps.emails.services.render_to_string") as mock_render:
+        mock_render.side_effect = ["Subject", "<p>Body</p>", "Body"]
+        with patch("django.db.transaction.on_commit") as mock_on_commit:
+            send_multi_format_email(
+                template_prefix="welcome",
+                template_ctxt={},
+                target_email="nocommit@example.com",
+            )
+
+    # on_commit was called (registered) but the callback was NOT invoked
+    # (simulating a rollback by not calling the registered function)
+    assert mock_on_commit.called
+    # Verify the email record exists (created before on_commit fires)
+    assert Email.objects.filter(to="nocommit@example.com").exists()

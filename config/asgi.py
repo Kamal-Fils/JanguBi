@@ -12,12 +12,13 @@ from channels.security.websocket import AllowedHostsOriginValidator  # noqa: E40
 
 from apps.messaging.middleware import JwtAuthMiddlewareStack  # noqa: E402
 from apps.messaging.routing import websocket_urlpatterns  # noqa: E402
+from apps.rosary.routing import rosary_websocket_urlpatterns  # noqa: E402
 
 application = ProtocolTypeRouter(
     {
         "http": django_asgi_app,
         "websocket": AllowedHostsOriginValidator(
-            JwtAuthMiddlewareStack(URLRouter(websocket_urlpatterns))
+            JwtAuthMiddlewareStack(URLRouter(websocket_urlpatterns + rosary_websocket_urlpatterns))
         ),
     }
 )

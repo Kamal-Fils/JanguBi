@@ -11,6 +11,7 @@ class Category(BaseModel):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True)
     order = models.PositiveSmallIntegerField(default=0)
+    is_clergy_only = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["order", "name"]

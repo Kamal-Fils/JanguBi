@@ -150,8 +150,10 @@ class ArticleMyParishListApi(ApiAuthMixin, APIView):
         summary="Articles de ma paroisse (paroisse principale du profil)",
     )
     def get(self, request):
-        profile = getattr(request.user, "profile", None)
-        parish_id = getattr(profile, "primary_parish", None) if profile else None
+        from apps.users.selectors import profile_get
+
+        profile = profile_get(user=request.user)
+        parish_id = profile.primary_parish if profile else None
 
         if not parish_id:
             return Response({"results": [], "count": 0, "next": None, "previous": None})

@@ -1,7 +1,8 @@
 from uuid import UUID
 
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.openapi import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -56,7 +57,19 @@ class DocumentRequestListCreateApi(ApiAuthMixin, APIView):
     class Pagination(LimitOffsetPagination):
         default_limit = 20
 
-    @extend_schema(responses={200: DocumentRequestListOutputSerializer(many=True)})
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats (défaut 20)"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
+            OpenApiParameter("status", OpenApiTypes.STR, enum=["submitted", "under_verification", "validated", "info_requested", "rejected", "document_deposited"], description="Filtrer par statut"),
+            OpenApiParameter("document_type", OpenApiTypes.STR, description="Filtrer par type de document"),
+            OpenApiParameter("parish_name", OpenApiTypes.STR, description="Filtrer par nom de paroisse"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Recherche textuelle"),
+        ],
+        responses={200: DocumentRequestListOutputSerializer(many=True)},
+        tags=["documents"],
+        summary="Lister mes demandes de document",
+    )
     def get(self, request):
         filters = {
             k: v
@@ -75,6 +88,8 @@ class DocumentRequestListCreateApi(ApiAuthMixin, APIView):
     @extend_schema(
         request=DocumentRequestCreateInputSerializer,
         responses={201: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Créer une demande de document",
     )
     def post(self, request):
         serializer = DocumentRequestCreateInputSerializer(data=request.data)
@@ -95,7 +110,11 @@ class DocumentRequestDetailApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsDocumentRequesterOrAdmin()]
 
-    @extend_schema(responses={200: DocumentRequestDetailOutputSerializer})
+    @extend_schema(
+        responses={200: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Détail d'une demande de document",
+    )
     def get(self, request, request_id: UUID):
         try:
             req = document_request_get(request_id=request_id, user=request.user)
@@ -112,6 +131,8 @@ class DocumentRequestSupplementApi(ApiAuthMixin, APIView):
     @extend_schema(
         request=DocumentRequestSupplementInputSerializer,
         responses={200: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Soumettre un complément d'information",
     )
     def post(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
@@ -145,7 +166,20 @@ class AdminDocumentRequestListApi(ApiAuthMixin, APIView):
     class Pagination(LimitOffsetPagination):
         default_limit = 20
 
-    @extend_schema(responses={200: DocumentRequestListOutputSerializer(many=True)})
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats (défaut 20)"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
+            OpenApiParameter("status", OpenApiTypes.STR, enum=["submitted", "under_verification", "validated", "info_requested", "rejected", "document_deposited"], description="Filtrer par statut"),
+            OpenApiParameter("document_type", OpenApiTypes.STR, description="Filtrer par type de document"),
+            OpenApiParameter("parish_name", OpenApiTypes.STR, description="Filtrer par nom de paroisse"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Recherche textuelle"),
+            OpenApiParameter("assigned_to_id", OpenApiTypes.INT, description="Filtrer par agent assigné"),
+        ],
+        responses={200: DocumentRequestListOutputSerializer(many=True)},
+        tags=["documents"],
+        summary="Lister toutes les demandes (admin)",
+    )
     def get(self, request):
         filters = {
             k: v
@@ -165,7 +199,11 @@ class AdminDocumentRequestListApi(ApiAuthMixin, APIView):
 class AdminDocumentRequestDetailApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
-    @extend_schema(responses={200: DocumentRequestDetailOutputSerializer})
+    @extend_schema(
+        responses={200: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Détail d'une demande (admin)",
+    )
     def get(self, request, request_id: UUID):
         req = document_request_get(request_id=request_id, user=request.user)
         return Response(DocumentRequestDetailOutputSerializer(req).data)
@@ -174,7 +212,11 @@ class AdminDocumentRequestDetailApi(ApiAuthMixin, APIView):
 class AdminStartVerificationApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
-    @extend_schema(responses={200: DocumentRequestDetailOutputSerializer})
+    @extend_schema(
+        responses={200: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Démarrer la vérification (admin)",
+    )
     def post(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
         try:
@@ -190,6 +232,8 @@ class AdminRequestInfoApi(ApiAuthMixin, APIView):
     @extend_schema(
         request=StatusActionWithCommentInputSerializer,
         responses={200: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Demander un complément d'information (admin)",
     )
     def post(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
@@ -209,7 +253,11 @@ class AdminRequestInfoApi(ApiAuthMixin, APIView):
 class AdminValidateApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
-    @extend_schema(responses={200: DocumentRequestDetailOutputSerializer})
+    @extend_schema(
+        responses={200: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Valider une demande (admin)",
+    )
     def post(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
         try:
@@ -225,6 +273,8 @@ class AdminRejectApi(ApiAuthMixin, APIView):
     @extend_schema(
         request=RejectInputSerializer,
         responses={200: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Rejeter une demande (admin)",
     )
     def post(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
@@ -247,6 +297,8 @@ class AdminDepositApi(ApiAuthMixin, APIView):
     @extend_schema(
         request=DepositDocumentInputSerializer,
         responses={200: DocumentRequestDetailOutputSerializer},
+        tags=["documents"],
+        summary="Déposer le document final (admin)",
     )
     def post(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
@@ -267,7 +319,11 @@ class AdminDepositApi(ApiAuthMixin, APIView):
 class AdminNotesApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
-    @extend_schema(responses={200: InternalNoteOutputSerializer(many=True)})
+    @extend_schema(
+        responses={200: InternalNoteOutputSerializer(many=True)},
+        tags=["documents"],
+        summary="Lister les notes internes (admin)",
+    )
     def get(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
         notes = document_request_internal_note_list(request_obj=req)
@@ -276,6 +332,8 @@ class AdminNotesApi(ApiAuthMixin, APIView):
     @extend_schema(
         request=InternalNoteCreateInputSerializer,
         responses={201: InternalNoteOutputSerializer},
+        tags=["documents"],
+        summary="Ajouter une note interne (admin)",
     )
     def post(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
@@ -292,7 +350,11 @@ class AdminNotesApi(ApiAuthMixin, APIView):
 class AdminLogsApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
-    @extend_schema(responses={200: StatusLogOutputSerializer(many=True)})
+    @extend_schema(
+        responses={200: StatusLogOutputSerializer(many=True)},
+        tags=["documents"],
+        summary="Historique des statuts (admin)",
+    )
     def get(self, request, request_id: UUID):
         req = get_object_or_404(DocumentRequest, pk=request_id)
         logs = document_request_status_log_list(request_obj=req)

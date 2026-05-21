@@ -65,6 +65,7 @@ class IsOwnerOrAdmin(BasePermission):
         return obj == request.user
 
 
-# Aliases pour compatibilité avec les imports existants dans apis.py
+# Alias de compatibilité : IsAdminUser = super admin uniquement (pas tous les admins).
+# Préférer IsAnyAdmin pour les endpoints accessibles à tous les rôles admin.
 IsAdminUser = IsSuperAdmin
 IsStaffOrAdminUser = IsAnyAdmin

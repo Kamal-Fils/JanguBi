@@ -2,6 +2,21 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 
+class PastoralRole(models.TextChoices):
+    FIDELE     = ("fidele",     _("Fidèle"))
+    RELIGIEUX  = ("religieux",  _("Religieux/Religieuse"))
+    DIACRE     = ("diacre",     _("Diacre"))
+    PRETRE     = ("pretre",     _("Prêtre"))
+    EVEQUE     = ("eveque",     _("Évêque"))
+    ARCHEVEQUE = ("archeveque", _("Archevêque"))
+
+
+class UserOnboardingState(models.TextChoices):
+    PENDING_EMAIL_VERIFICATION = ("pending_email",  _("Email à vérifier"))
+    PENDING_PARISH_SELECTION   = ("pending_parish", _("Paroisse à sélectionner"))
+    COMPLETED                  = ("completed",      _("Complété"))
+
+
 class UserRole(models.TextChoices):
     SUPER_ADMIN    = ("super_admin",    _("Super Admin"))
     PROVINCE_ADMIN = ("province_admin", _("Admin Province"))

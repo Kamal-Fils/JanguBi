@@ -94,7 +94,10 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
     # Channel layer event handlers (invoked by group_send from services)
 
     async def conv_message(self, event: dict):
-        await self.send_json({"type": "message.received", **event})
+        await self.send_json({
+            "type": "message.received",
+            "message": event.get("message"),
+        })
 
     async def conv_typing(self, event: dict):
         await self.send_json({"type": "typing", **event})

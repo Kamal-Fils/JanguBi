@@ -63,8 +63,10 @@ ALLOWED_HOSTS = ["*"]
 LOCAL_APPS = [
     "apps.core.apps.CoreConfig",
     "apps.common.apps.CommonConfig",
+    "apps.org.apps.OrgConfig",
     "apps.tasks.apps.TasksConfig",
     "apps.api.apps.ApiConfig",
+    "apps.authentication.apps.AuthenticationConfig",
     "apps.users.apps.UsersConfig",
     "apps.errors.apps.ErrorsConfig",
     #"apps.testing_examples.apps.TestingExamplesConfig",
@@ -79,6 +81,10 @@ LOCAL_APPS = [
     "apps.messaging.apps.MessagingConfig",
     "apps.documents.apps.DocumentsConfig",
     "apps.news.apps.NewsConfig",
+    "apps.clergy_accounts.apps.ClergyAccountsConfig",
+    "apps.agenda.apps.AgendaConfig",
+    "apps.mass_intentions.apps.MassIntentionsConfig",
+    "apps.donations.apps.DonationsConfig",
     #"apps.blog_examples.apps.BlogExamplesConfig",
 ]
 

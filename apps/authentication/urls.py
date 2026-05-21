@@ -4,6 +4,7 @@ from .apis import (
     UserJwtLoginApi,
     UserJwtLogoutAllApi,
     UserJwtLogoutApi,
+    UserJwtRefreshApi,
     UserMeApi,
     UserSessionLoginApi,
     UserSessionLogoutApi,
@@ -12,6 +13,7 @@ from .apis import (
 urlpatterns = [
     # --- JWT (principal — SPA headless) ---
     path("jwt/login/", UserJwtLoginApi.as_view(), name="jwt-login"),
+    path("jwt/refresh/", UserJwtRefreshApi.as_view(), name="jwt-refresh"),
     path("jwt/logout/", UserJwtLogoutApi.as_view(), name="jwt-logout"),
     path("jwt/logout-all/", UserJwtLogoutAllApi.as_view(), name="jwt-logout-all"),
 

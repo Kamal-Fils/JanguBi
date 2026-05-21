@@ -10,6 +10,7 @@ from apps.news.models import Article
 from apps.news.services import (
     article_create,
     article_delete,
+    article_increment_views,
     article_publish,
     article_unpublish,
     article_update,
@@ -358,3 +359,50 @@ def test_article_delete_raises_if_fidele():
     # Act & Assert
     with pytest.raises(ApplicationError, match="administrateurs"):
         article_delete(article=article, editor=fidele)
+
+
+# ---------------------------------------------------------------------------
+# article_increment_views
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_article_increment_views_increases_count():
+    # Arrange
+    article = PublishedArticleFactory(views_count=0)
+
+    # Act
+    article_increment_views(article=article)
+
+    # Assert
+    article.refresh_from_db()
+    assert article.views_count == 1
+
+
+@pytest.mark.django_db
+def test_article_increment_views_is_cumulative():
+    # Arrange
+    article = PublishedArticleFactory(views_count=5)
+
+    # Act
+    article_increment_views(article=article)
+    article_increment_views(article=article)
+
+    # Assert
+    article.refresh_from_db()
+    assert article.views_count == 7
+
+
+@pytest.mark.django_db
+def test_article_increment_views_uses_database_update():
+    # Arrange — verify the F() expression works correctly
+    article = PublishedArticleFactory(views_count=100)
+
+    # Act
+    article_increment_views(article=article)
+
+    # Assert — database value is authoritative
+    from apps.news.models import Article as ArticleModel
+
+    db_value = ArticleModel.objects.values_list("views_count", flat=True).get(pk=article.pk)
+    assert db_value == 101

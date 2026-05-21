@@ -43,12 +43,15 @@ class ImportService:
                 self.alias_to_canonical[normalized_alias] = canonical
 
     def _ensure_testaments(self):
-        """Ensures both Testaments exist in DB."""
+        """Ensures all three Testaments exist in DB."""
         self.ancien_testament, _ = Testament.objects.get_or_create(
             slug="ancien", defaults={"name": "Ancien Testament", "order": 1}
         )
         self.nouveau_testament, _ = Testament.objects.get_or_create(
             slug="nouveau", defaults={"name": "Nouveau Testament", "order": 2}
+        )
+        self.psaumes_testament, _ = Testament.objects.get_or_create(
+            slug="psaume", defaults={"name": "Psaumes", "order": 3}
         )
 
     def resolve_book_info(self, name_hint: str) -> Tuple[str, Testament, int, list]:
@@ -64,7 +67,12 @@ class ImportService:
         if canonical and canonical in self.mapping:
             data = self.mapping[canonical]
             testament_slug = data["testament"]
-            testament = self.nouveau_testament if testament_slug == "nouveau" else self.ancien_testament
+            if testament_slug == "nouveau":
+                testament = self.nouveau_testament
+            elif testament_slug == "psaume":
+                testament = self.psaumes_testament
+            else:
+                testament = self.ancien_testament
             return canonical, testament, data["order"], data.get("aliases", [])
         
         # Fallback: create an unknown book at the end of Ancien Testament

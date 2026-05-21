@@ -28,8 +28,10 @@ from apps.messaging.services import (
     conversation_accept_cgu,
     conversation_archive,
     conversation_delete,
+    conversation_export_generate,
     conversation_export_request,
     conversation_get_or_create,
+    conversation_purge_messages,
     message_delete,
     message_mark_read,
     message_react,
@@ -662,3 +664,109 @@ def test_notification_mark_read_raises_when_wrong_user():
     # Act & Assert
     with pytest.raises(ApplicationError, match="refus"):
         notification_mark_read(notification=notif, user=other_user)
+
+
+# ---------------------------------------------------------------------------
+# conversation_purge_messages
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_conversation_purge_messages_wipes_content():
+    # Arrange
+    conv = ConversationFactory()
+    MessageFactory(conversation=conv, sender=conv.participant_a, content="Secret message")
+    MessageFactory(conversation=conv, sender=conv.participant_b, content="Another secret")
+
+    # Act
+    conversation_purge_messages(conversation=conv)
+
+    # Assert — content wiped to empty string and deleted_at set
+    from apps.messaging.models import Message
+
+    messages = Message.objects.filter(conversation=conv)
+    for msg in messages:
+        assert msg.content == ""
+        assert msg.deleted_at is not None
+
+
+@pytest.mark.django_db
+def test_conversation_purge_messages_clears_scheduled_purge_at():
+    # Arrange
+    from django.utils import timezone as tz
+
+    conv = ConversationFactory(scheduled_purge_at=tz.now())
+
+    # Act
+    conversation_purge_messages(conversation=conv)
+
+    # Assert
+    conv.refresh_from_db()
+    assert conv.scheduled_purge_at is None
+
+
+@pytest.mark.django_db
+def test_conversation_purge_messages_does_not_affect_other_conversations():
+    # Arrange
+    conv_target = ConversationFactory()
+    conv_other = ConversationFactory()
+    MessageFactory(conversation=conv_target, sender=conv_target.participant_a, content="To be wiped")
+    msg_other = MessageFactory(conversation=conv_other, sender=conv_other.participant_a, content="Keep this")
+
+    # Act
+    conversation_purge_messages(conversation=conv_target)
+
+    # Assert — other conversation's messages untouched
+    msg_other.refresh_from_db()
+    assert msg_other.content == "Keep this"
+    assert msg_other.deleted_at is None
+
+
+# ---------------------------------------------------------------------------
+# conversation_export_generate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_conversation_export_generate_sets_completed_at():
+    # Arrange
+    from unittest.mock import MagicMock, patch
+
+    from apps.messaging.models import ConversationExport
+
+    conv = ConversationFactory()
+    export = ConversationExport.objects.create(conversation=conv)
+
+    mock_file = MagicMock()
+    mock_file.save = MagicMock()
+
+    # Act — patch PDF generation and storage so tests need no real filesystem
+    with patch("apps.messaging.services._generate_export_pdf", return_value=b"%PDF-stub"):
+        with patch("apps.messaging.services.File") as MockFile:
+            mock_file_instance = MagicMock()
+            mock_file_instance.file = MagicMock()
+            MockFile.objects.create.return_value = mock_file_instance
+            result = conversation_export_generate(export_id=str(export.id))
+
+    # Assert — export record marks completion
+    assert result.completed_at is not None
+
+
+@pytest.mark.django_db
+def test_conversation_export_generate_without_export_id_creates_new_export():
+    # Arrange
+    from apps.messaging.models import ConversationExport
+
+    conv = ConversationFactory()
+
+    # Act — patch file operations to avoid real storage
+    with patch("apps.messaging.services._generate_export_pdf", return_value=b"%PDF-stub"):
+        with patch("apps.messaging.services.File") as MockFile:
+            mock_file_instance = MagicMock()
+            mock_file_instance.file = MagicMock()
+            MockFile.objects.create.return_value = mock_file_instance
+            result = conversation_export_generate(conversation_id=str(conv.id))
+
+    # Assert — a new export record was created and completed
+    assert ConversationExport.objects.filter(conversation=conv).count() >= 1
+    assert result.completed_at is not None

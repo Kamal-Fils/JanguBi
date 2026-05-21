@@ -1,22 +1,20 @@
-from asgiref.sync import sync_to_async
 from django.urls import path
-from apps.liturgy.views import (
-    LiturgyInformationsApi,
-    LiturgyMessesApi,
-    LiturgyLaudesApi,
-    LiturgyTierceApi,
-    LiturgySexteApi,
-    LiturgyNoneApi,
-    LiturgyVepresApi,
-    LiturgyCompliesApi,
-    LiturgyLecturesApi,
-    ReadingDetailApi,
-    OfficeDetailApi,
-    LiturgyTodayApi,
-    LiturgyDateApi
-)
 
-app_name = "liturgy"
+from apps.liturgy.apis import (
+    LiturgyCompliesApi,
+    LiturgyDateApi,
+    LiturgyInformationsApi,
+    LiturgyLaudesApi,
+    LiturgyLecturesApi,
+    LiturgyMessesApi,
+    LiturgyNoneApi,
+    LiturgyTierceApi,
+    LiturgyTodayApi,
+    LiturgyVepresApi,
+    LiturgySexteApi,
+    OfficeDetailApi,
+    ReadingDetailApi,
+)
 
 urlpatterns = [
     # V1 Flexible Endpoints (Query params based)

@@ -1,5 +1,12 @@
 from django.urls import path
 
+from apps.bible.apis import (
+    HomilieNoteDetailApi,
+    HomilieNoteListCreateApi,
+    LectioDivinaSessionApi,
+    ReadingPlanDetailApi,
+    ReadingPlanListCreateApi,
+)
 from apps.bible.views import (
     BookDetailApi,
     BookListApi,
@@ -31,4 +38,12 @@ urlpatterns = [
 
     # Internal Tools
     path("import/", ImportApi.as_view(), name="import-file"),
+
+    # Bible Avancé (M7)
+    path("homilenotes/", HomilieNoteListCreateApi.as_view(), name="homilenote-list-create"),
+    path("homilenotes/<int:note_id>/", HomilieNoteDetailApi.as_view(), name="homilenote-detail"),
+    path("lectio/", LectioDivinaSessionApi.as_view(), name="lectio-divina"),
+    path("reading-plans/", ReadingPlanListCreateApi.as_view(), name="reading-plan-list-create"),
+    path("reading-plans/<int:plan_id>/", ReadingPlanDetailApi.as_view(), name="reading-plan-detail"),
+    path("reading-plans/<int:plan_id>/publish/", ReadingPlanDetailApi.as_view(), name="reading-plan-publish"),
 ]

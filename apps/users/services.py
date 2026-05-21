@@ -61,7 +61,7 @@ _ADMIN_ROLES = {
 def user_create(
     *,
     email: str,
-    password: str | None = "password",
+    password: str | None = None,
     role: str = UserRole.FIDELE,
     phone_number: str | None = None,
     is_active: bool = True,
@@ -451,6 +451,7 @@ def password_change(
 # 8. Réinitialisation de mot de passe (oublié) — Magic Link
 # ---------------------------------------------------------------------------
 
+@transaction.atomic
 def password_reset_request(*, email: str, ip: str | None = None) -> None:
     """
     Envoie un lien de réinitialisation si l'email est enregistré.
@@ -515,6 +516,7 @@ def password_reset_confirm(
 # 9. Changement d'email — OTP double vérification
 # ---------------------------------------------------------------------------
 
+@transaction.atomic
 def email_change_request(
     *,
     user: BaseUser,
@@ -636,3 +638,20 @@ def email_change_revert(*, token: str, ip: str | None = None) -> BaseUser:
     })
 
     return user
+
+
+@transaction.atomic
+def purge_expired_unactivated_admin_accounts(*, expiry_days: int) -> int:
+    """Delete admin accounts that were created but never activated within the expiry window."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    cutoff = timezone.now() - timedelta(days=expiry_days)
+    qs = BaseUser.objects.filter(
+        role__in=list(_ADMIN_ROLES),
+        last_login__isnull=True,
+        created_at__lt=cutoff,
+    )
+    count, _ = qs.delete()
+    return count

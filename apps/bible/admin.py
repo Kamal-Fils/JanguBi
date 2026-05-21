@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.bible.models import Book, Chapter, DailyText, Testament, Verse
+from apps.bible.models import Book, Chapter, DailyText, HomilieNote, LectioDivinaSession, ReadingPlan, ReadingPlanPassage, Testament, Verse
 
 
 @admin.register(Testament)
@@ -38,3 +38,29 @@ class DailyTextAdmin(admin.ModelAdmin):
     list_display = ("date", "category", "title", "created_at")
     list_filter = ("category", "date")
     search_fields = ("title", "content")
+
+
+@admin.register(HomilieNote)
+class HomilieNoteAdmin(admin.ModelAdmin):
+    list_display = ("author", "passage_start", "created_at")
+    raw_id_fields = ("author", "passage_start", "passage_end")
+
+
+@admin.register(LectioDivinaSession)
+class LectioDivinaSessionAdmin(admin.ModelAdmin):
+    list_display = ("user", "passage", "updated_at")
+    raw_id_fields = ("user", "passage")
+
+
+@admin.register(ReadingPlan)
+class ReadingPlanAdmin(admin.ModelAdmin):
+    list_display = ("title", "author", "is_published", "created_at")
+    list_filter = ("is_published",)
+    search_fields = ("title",)
+    raw_id_fields = ("author",)
+
+
+@admin.register(ReadingPlanPassage)
+class ReadingPlanPassageAdmin(admin.ModelAdmin):
+    list_display = ("plan", "verse", "day_number", "order")
+    raw_id_fields = ("plan", "verse")

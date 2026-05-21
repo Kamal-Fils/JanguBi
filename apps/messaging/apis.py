@@ -1,7 +1,8 @@
 from uuid import UUID
 
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.openapi import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -19,6 +20,7 @@ from apps.messaging.permissions import (
 )
 from apps.messaging.selectors import (
     block_list,
+    conversation_get,
     conversation_list,
     export_list,
     message_list,
@@ -28,6 +30,8 @@ from apps.messaging.selectors import (
 from apps.messaging.serializers import (
     BlockCreateInputSerializer,
     BlockOutputSerializer,
+    ClergicalMessageOutputSerializer,
+    ClergicalMessageSendInputSerializer,
     ConversationCreateInputSerializer,
     ConversationOutputSerializer,
     ExportOutputSerializer,
@@ -74,7 +78,7 @@ def _error(exc: ApplicationError) -> Response:
 class PriestProfileCreateApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
-    @extend_schema(request=PriestProfileCreateInputSerializer, responses={201: PriestProfileOutputSerializer})
+    @extend_schema(request=PriestProfileCreateInputSerializer, responses={201: PriestProfileOutputSerializer}, tags=["messaging"], summary="Créer un profil prêtre")
     def post(self, request):
         serializer = PriestProfileCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -89,7 +93,7 @@ class PriestProfileCreateApi(ApiAuthMixin, APIView):
 class PriestProfileCguApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsPriestProfileOwner]
 
-    @extend_schema(responses={200: PriestProfileOutputSerializer})
+    @extend_schema(responses={200: PriestProfileOutputSerializer}, tags=["messaging"], summary="Accepter les CGU prêtre")
     def post(self, request):
         try:
             profile = priest_profile_accept_cgu(priest_profile=request.user.priest_profile)
@@ -101,7 +105,7 @@ class PriestProfileCguApi(ApiAuthMixin, APIView):
 class PriestProfileUpdateApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsPriestProfileOwner]
 
-    @extend_schema(request=PriestProfileUpdateInputSerializer, responses={200: PriestProfileOutputSerializer})
+    @extend_schema(request=PriestProfileUpdateInputSerializer, responses={200: PriestProfileOutputSerializer}, tags=["messaging"], summary="Mettre à jour le profil prêtre")
     def patch(self, request):
         serializer = PriestProfileUpdateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -112,7 +116,7 @@ class PriestProfileUpdateApi(ApiAuthMixin, APIView):
 
 
 class PriestListApi(ApiAuthMixin, APIView):
-    @extend_schema(responses={200: PriestProfileOutputSerializer(many=True)})
+    @extend_schema(responses={200: PriestProfileOutputSerializer(many=True)}, tags=["messaging"], summary="Lister les prêtres disponibles")
     def get(self, request):
         priests = priest_list_available()
         return Response(PriestProfileOutputSerializer(priests, many=True).data)
@@ -124,14 +128,14 @@ class PriestListApi(ApiAuthMixin, APIView):
 
 
 class ConversationListApi(ApiAuthMixin, APIView):
-    @extend_schema(responses={200: ConversationOutputSerializer(many=True)})
+    @extend_schema(responses={200: ConversationOutputSerializer(many=True)}, tags=["messaging"], summary="Lister mes conversations")
     def get(self, request):
         conversations = conversation_list(user=request.user)
         return Response(ConversationOutputSerializer(conversations, many=True).data)
 
 
 class ConversationCreateApi(ApiAuthMixin, APIView):
-    @extend_schema(request=ConversationCreateInputSerializer, responses={201: ConversationOutputSerializer})
+    @extend_schema(request=ConversationCreateInputSerializer, responses={201: ConversationOutputSerializer}, tags=["messaging"], summary="Démarrer une conversation avec un prêtre")
     def post(self, request):
         serializer = ConversationCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -144,7 +148,7 @@ class ConversationCguApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={200: ConversationOutputSerializer})
+    @extend_schema(responses={200: ConversationOutputSerializer}, tags=["messaging"], summary="Accepter les CGU de messagerie")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -159,7 +163,7 @@ class ConversationArchiveApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={200: ConversationOutputSerializer})
+    @extend_schema(responses={200: ConversationOutputSerializer}, tags=["messaging"], summary="Archiver une conversation")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -167,11 +171,18 @@ class ConversationArchiveApi(ApiAuthMixin, APIView):
         return Response(ConversationOutputSerializer(conversation).data)
 
 
-class ConversationDeleteApi(ApiAuthMixin, APIView):
+class ConversationDetailApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={204: None})
+    @extend_schema(responses={200: ConversationOutputSerializer}, tags=["messaging"], summary="Récupérer le détail d'une conversation")
+    def get(self, request, conversation_id: UUID):
+        conversation = conversation_get(conversation_id=conversation_id, user=request.user)
+        if conversation is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(ConversationOutputSerializer(conversation).data)
+
+    @extend_schema(responses={204: None}, tags=["messaging"], summary="Supprimer une conversation")
     def delete(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -183,14 +194,14 @@ class ConversationExportApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={201: ExportOutputSerializer})
+    @extend_schema(responses={201: ExportOutputSerializer}, tags=["messaging"], summary="Demander l'export d'une conversation")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
         export = conversation_export_request(conversation=conversation, user=request.user)
         return Response(ExportOutputSerializer(export).data, status=status.HTTP_201_CREATED)
 
-    @extend_schema(responses={200: ExportOutputSerializer(many=True)})
+    @extend_schema(responses={200: ExportOutputSerializer(many=True)}, tags=["messaging"], summary="Lister les exports d'une conversation")
     def get(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -207,7 +218,15 @@ class MessageListApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant(), HasAcceptedMessagingCgu()]
 
-    @extend_schema(parameters=[MessageListInputSerializer], responses={200: MessageOutputSerializer(many=True)})
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("before_id", OpenApiTypes.UUID, description="Charger les messages avant cet identifiant (pagination curseur)"),
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de messages à retourner (max 100, défaut 30)"),
+        ],
+        responses={200: MessageOutputSerializer(many=True)},
+        tags=["messaging"],
+        summary="Lister les messages d'une conversation",
+    )
     def get(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -221,7 +240,7 @@ class MessageSendApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant(), HasAcceptedMessagingCgu()]
 
-    @extend_schema(request=MessageSendInputSerializer, responses={201: MessageOutputSerializer})
+    @extend_schema(request=MessageSendInputSerializer, responses={201: MessageOutputSerializer}, tags=["messaging"], summary="Envoyer un message")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -250,7 +269,7 @@ class MessageReadApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={200: None})
+    @extend_schema(responses={200: None}, tags=["messaging"], summary="Marquer les messages comme lus")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -262,7 +281,7 @@ class MessageDeleteApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsMessageSender()]
 
-    @extend_schema(responses={204: None})
+    @extend_schema(responses={204: None}, tags=["messaging"], summary="Supprimer un message")
     def delete(self, request, message_id: UUID):
         message = get_object_or_404(Message, id=message_id)
         self.check_object_permissions(request, message)
@@ -274,17 +293,22 @@ class MessageDeleteApi(ApiAuthMixin, APIView):
 
 
 class MessageReactApi(ApiAuthMixin, APIView):
-    @extend_schema(request=ReactInputSerializer, responses={201: None})
+    def get_permissions(self):
+        return [IsAuthenticated(), IsParticipant()]
+
+    @extend_schema(request=ReactInputSerializer, responses={201: None}, tags=["messaging"], summary="Réagir à un message")
     def post(self, request, message_id: UUID):
         message = get_object_or_404(Message, id=message_id)
+        self.check_object_permissions(request, message.conversation)
         serializer = ReactInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         message_react(message=message, user=request.user, emoji=serializer.validated_data["emoji"])
         return Response(status=status.HTTP_201_CREATED)
 
-    @extend_schema(request=ReactInputSerializer, responses={204: None})
+    @extend_schema(request=ReactInputSerializer, responses={204: None}, tags=["messaging"], summary="Supprimer une réaction")
     def delete(self, request, message_id: UUID):
         message = get_object_or_404(Message, id=message_id)
+        self.check_object_permissions(request, message.conversation)
         serializer = ReactInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         message_unreact(message=message, user=request.user, emoji=serializer.validated_data["emoji"])
@@ -297,12 +321,12 @@ class MessageReactApi(ApiAuthMixin, APIView):
 
 
 class BlockListCreateApi(ApiAuthMixin, APIView):
-    @extend_schema(responses={200: BlockOutputSerializer(many=True)})
+    @extend_schema(responses={200: BlockOutputSerializer(many=True)}, tags=["messaging"], summary="Lister mes blocages")
     def get(self, request):
         blocks = block_list(user=request.user)
         return Response(BlockOutputSerializer(blocks, many=True).data)
 
-    @extend_schema(request=BlockCreateInputSerializer, responses={201: BlockOutputSerializer})
+    @extend_schema(request=BlockCreateInputSerializer, responses={201: BlockOutputSerializer}, tags=["messaging"], summary="Bloquer un utilisateur")
     def post(self, request):
         serializer = BlockCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -318,7 +342,7 @@ class BlockDeleteApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsBlockOwner()]
 
-    @extend_schema(responses={204: None})
+    @extend_schema(responses={204: None}, tags=["messaging"], summary="Débloquer un utilisateur")
     def delete(self, request, block_id: UUID):
         block = get_object_or_404(MessageBlock, id=block_id)
         self.check_object_permissions(request, block)
@@ -335,7 +359,12 @@ class BlockDeleteApi(ApiAuthMixin, APIView):
 
 
 class NotificationListApi(ApiAuthMixin, APIView):
-    @extend_schema(responses={200: NotificationOutputSerializer(many=True)})
+    @extend_schema(
+        parameters=[OpenApiParameter("unread_only", OpenApiTypes.BOOL, description="Si true, retourne uniquement les notifications non lues")],
+        responses={200: NotificationOutputSerializer(many=True)},
+        tags=["messaging"],
+        summary="Lister mes notifications",
+    )
     def get(self, request):
         unread_only = request.query_params.get("unread_only", "false").lower() == "true"
         notifications = notification_list(user=request.user, unread_only=unread_only)
@@ -343,7 +372,7 @@ class NotificationListApi(ApiAuthMixin, APIView):
 
 
 class NotificationReadApi(ApiAuthMixin, APIView):
-    @extend_schema(responses={200: NotificationOutputSerializer})
+    @extend_schema(responses={200: NotificationOutputSerializer}, tags=["messaging"], summary="Marquer une notification comme lue")
     def post(self, request, notification_id: UUID):
         from apps.messaging.models import Notification
 
@@ -353,3 +382,90 @@ class NotificationReadApi(ApiAuthMixin, APIView):
         except ApplicationError as exc:
             return _error(exc)
         return Response(NotificationOutputSerializer(notification).data)
+
+
+# ---------------------------------------------------------------------------
+# ClergicalMessage endpoints
+# ---------------------------------------------------------------------------
+
+
+class ClergicalMessageSendApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        request=ClergicalMessageSendInputSerializer,
+        responses={201: ClergicalMessageOutputSerializer},
+        tags=["messaging"],
+        summary="Envoyer un message inter-clergé",
+    )
+    def post(self, request):
+        serializer = ClergicalMessageSendInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            from apps.messaging.services import clerical_message_send
+            msg = clerical_message_send(sender=request.user, **serializer.validated_data)
+        except ApplicationError as exc:
+            return _error(exc)
+        return Response(ClergicalMessageOutputSerializer(msg).data, status=status.HTTP_201_CREATED)
+
+
+class ClergicalMessageInboxApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
+        ],
+        responses={200: ClergicalMessageOutputSerializer(many=True)},
+        tags=["messaging"],
+        summary="Messages inter-clergé reçus",
+    )
+    def get(self, request):
+        from apps.messaging.selectors import clerical_message_inbox
+        msgs = clerical_message_inbox(user=request.user)
+        return get_paginated_response(
+            pagination_class=LimitOffsetPagination,
+            serializer_class=ClergicalMessageOutputSerializer,
+            queryset=msgs,
+            request=request,
+            view=self,
+        )
+
+
+class ClergicalMessageSentApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
+        ],
+        responses={200: ClergicalMessageOutputSerializer(many=True)},
+        tags=["messaging"],
+        summary="Messages inter-clergé envoyés",
+    )
+    def get(self, request):
+        from apps.messaging.selectors import clerical_message_sent
+        msgs = clerical_message_sent(user=request.user)
+        return get_paginated_response(
+            pagination_class=LimitOffsetPagination,
+            serializer_class=ClergicalMessageOutputSerializer,
+            queryset=msgs,
+            request=request,
+            view=self,
+        )
+
+
+class ClergicalMessageReadApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: ClergicalMessageOutputSerializer},
+        tags=["messaging"],
+        summary="Marquer un message inter-clergé comme lu",
+    )
+    def post(self, request, message_id: int):
+        from apps.messaging.models import ClergicalMessage
+        from apps.messaging.services import clerical_message_mark_read
+        try:
+            msg = ClergicalMessage.objects.get(pk=message_id, individual_recipient=request.user)
+        except ClergicalMessage.DoesNotExist:
+            return Response({"detail": "Message introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            msg = clerical_message_mark_read(message=msg, reader=request.user)
+        except ApplicationError as exc:
+            return _error(exc)
+        return Response(ClergicalMessageOutputSerializer(msg).data)

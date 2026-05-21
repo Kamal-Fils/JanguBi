@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.tv.views import CategoryDetailApi, CategoryListApi, VideoDetailApi, VideoListApi
+from apps.tv.apis import CategoryDetailApi, CategoryListApi, VideoDetailApi, VideoListApi
 
 urlpatterns = [
     path("categories/", CategoryListApi.as_view(), name="tv-category-list"),

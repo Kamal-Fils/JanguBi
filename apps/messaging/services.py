@@ -222,10 +222,33 @@ def message_send(
             conversation,
             "conv_message",
             {
-                "message_id": str(message.id),
+                "message": {
+                    "id": str(message.id),
+                    "sender_id": str(sender.id),
+                    "sender_name": None,
+                    "content": content,
+                    "content_type": "text",
+                    "client_message_id": str(client_message_id) if client_message_id else None,
+                    "reply_to_id": str(reply_to.id) if reply_to else None,
+                    "read_at": None,
+                    "deleted_at": None,
+                    "is_deleted": False,
+                    "reactions": [],
+                    "attachments": [],
+                    "created_at": now.isoformat(),
+                }
+            },
+        )
+    )
+
+    # Persist a Notification row so the recipient sees it even when offline
+    transaction.on_commit(
+        lambda: notification_send(
+            user=receiver,
+            event_type="new_message",
+            payload={
+                "conversation_id": str(conversation.id),
                 "sender_id": str(sender.id),
-                "content": content,
-                "created_at": now.isoformat(),
             },
         )
     )
@@ -359,3 +382,160 @@ def notification_mark_read(*, notification: Notification, user: BaseUser) -> Not
     notification.read_at = timezone.now()
     notification.save(update_fields=["is_read", "read_at", "updated_at"])
     return notification
+
+
+# ---------------------------------------------------------------------------
+# Conversation purge & export (called from tasks)
+# ---------------------------------------------------------------------------
+
+
+@transaction.atomic
+def conversation_purge_messages(*, conversation: Conversation) -> None:
+    from django.utils import timezone as tz
+
+    now = tz.now()
+    Message.objects.filter(conversation=conversation).update(
+        content="",
+        deleted_at=now,
+    )
+    conversation.scheduled_purge_at = None
+    conversation.save(update_fields=["scheduled_purge_at", "updated_at"])
+
+
+@transaction.atomic
+def conversation_export_generate(*, export_id=None, conversation_id=None) -> ConversationExport:
+    import io
+    import json
+    import uuid
+
+    from django.utils import timezone as tz
+
+    from apps.files.models import File
+    from apps.messaging.serializers import MessageOutputSerializer
+
+    if export_id:
+        export = ConversationExport.objects.select_related("conversation").get(id=export_id)
+        conversation = export.conversation
+    else:
+        conversation = Conversation.objects.get(id=conversation_id)
+        export = ConversationExport.objects.create(conversation=conversation)
+
+    messages = Message.objects.filter(conversation=conversation).order_by("created_at")
+    export_data = {
+        "conversation_id": str(conversation.id),
+        "exported_at": tz.now().isoformat(),
+        "messages": MessageOutputSerializer(messages, many=True).data,
+    }
+
+    json_bytes = json.dumps(export_data, ensure_ascii=False, default=str).encode("utf-8")
+    pdf_bytes = _generate_export_pdf(export_data)
+
+    for content, filename, content_type, attr in [
+        (json_bytes, f"export_{conversation.id}.json", "application/json", "json_file"),
+        (pdf_bytes, f"export_{conversation.id}.pdf", "application/pdf", "pdf_file"),
+    ]:
+        from django.core.files.base import ContentFile
+
+        cf = ContentFile(content, name=filename)
+        file_obj = File.objects.create(
+            original_file_name=filename,
+            file_name=f"{uuid.uuid4()}_{filename}",
+            file_type=content_type,
+        )
+        file_obj.file.save(file_obj.file_name, cf, save=True)
+        file_obj.upload_finished_at = tz.now()
+        file_obj.save(update_fields=["upload_finished_at"])
+        setattr(export, attr, file_obj)
+
+    export.completed_at = tz.now()
+    export.save(update_fields=["json_file", "pdf_file", "completed_at", "updated_at"])
+    return export
+
+
+def _generate_export_pdf(data: dict) -> bytes:
+    import io
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, height - 50, f"Export — {data['conversation_id']}")
+    c.setFont("Helvetica", 10)
+    c.drawString(50, height - 70, f"Exporté le : {data['exported_at']}")
+
+    y = height - 110
+    c.setFont("Helvetica", 9)
+    for msg in data.get("messages", []):
+        if y < 60:
+            c.showPage()
+            y = height - 50
+        sender = msg.get("sender_name", "?")
+        content = msg.get("content") or "[message supprimé]"
+        created = str(msg.get("created_at", ""))[:19]
+        c.drawString(50, y, f"[{created}] {sender}: {content}"[:120])
+        y -= 15
+
+    c.save()
+    buffer.seek(0)
+    return buffer.read()
+
+
+# ---------------------------------------------------------------------------
+# ClergicalMessage services
+# ---------------------------------------------------------------------------
+
+@transaction.atomic
+def clerical_message_send(
+    *,
+    sender: "BaseUser",
+    subject: str,
+    body: str,
+    recipient_scope: str,
+    scope_id: int | None = None,
+    individual_recipient_id: int | None = None,
+) -> "ClergicalMessage":
+    from apps.core.exceptions import ApplicationError
+    from apps.users.enums import PastoralRole
+    from apps.messaging.models import ClergicalMessage
+
+    clergy_roles = {
+        PastoralRole.PRETRE,
+        PastoralRole.DIACRE,
+        PastoralRole.EVEQUE,
+        PastoralRole.ARCHEVEQUE,
+        PastoralRole.RELIGIEUX,
+    }
+    if sender.pastoral_role not in clergy_roles:
+        raise ApplicationError("Seul le clergé peut envoyer des messages inter-clergé.")
+
+    if recipient_scope == ClergicalMessage.RecipientScope.PROVINCE_BISHOPS:
+        if sender.pastoral_role not in (PastoralRole.EVEQUE, PastoralRole.ARCHEVEQUE):
+            raise ApplicationError("Seuls les évêques et archevêques peuvent diffuser aux évêques de province.")
+
+    msg = ClergicalMessage.objects.create(
+        sender=sender,
+        subject=subject,
+        body=body,
+        recipient_scope=recipient_scope,
+        scope_id=scope_id,
+        individual_recipient_id=individual_recipient_id,
+    )
+    return msg
+
+
+@transaction.atomic
+def clerical_message_mark_read(*, message: "ClergicalMessage", reader: "BaseUser") -> "ClergicalMessage":
+    from django.utils import timezone
+
+    if message.individual_recipient != reader:
+        from apps.core.exceptions import ApplicationError
+        raise ApplicationError("Vous ne pouvez marquer que vos propres messages comme lus.")
+
+    if not message.read_at:
+        message.read_at = timezone.now()
+        message.save(update_fields=["read_at", "updated_at"])
+    return message

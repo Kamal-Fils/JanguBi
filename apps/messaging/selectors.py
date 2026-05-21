@@ -1,7 +1,9 @@
 from typing import Optional
 from uuid import UUID
 
+from django.db import models
 from django.db.models import Count, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce
 
 from apps.messaging.models import (
     Conversation,
@@ -29,9 +31,20 @@ def conversation_list(*, user: BaseUser) -> QuerySet[Conversation]:
 
     return (
         Conversation.objects.filter(Q(participant_a=user) | Q(participant_b=user))
-        .annotate(unread_count=Subquery(unread_subquery))
-        .select_related("participant_a", "participant_b")
-        .order_by("-last_message_at")
+        .annotate(
+            unread_count=Coalesce(
+                Subquery(unread_subquery),
+                0,
+                output_field=models.IntegerField(),
+            )
+        )
+        .select_related(
+            "participant_a",
+            "participant_a__profile",
+            "participant_b",
+            "participant_b__profile",
+        )
+        .order_by(models.F("last_message_at").desc(nulls_last=True))
     )
 
 
@@ -41,7 +54,12 @@ def conversation_get(
     return (
         Conversation.objects.filter(pk=conversation_id)
         .filter(Q(participant_a=user) | Q(participant_b=user))
-        .select_related("participant_a", "participant_b")
+        .select_related(
+            "participant_a",
+            "participant_a__profile",
+            "participant_b",
+            "participant_b__profile",
+        )
         .first()
     )
 
@@ -54,12 +72,16 @@ def message_list(
 ) -> QuerySet[Message]:
     qs = (
         Message.objects.filter(conversation=conversation)
-        .select_related("sender", "reply_to")
+        .select_related("sender", "sender__profile", "reply_to")
         .prefetch_related("attachments__file", "reactions")
         .order_by("-created_at")
     )
     if before_id is not None:
-        qs = qs.filter(id__lt=before_id)
+        try:
+            pivot = Message.objects.get(id=before_id)
+            qs = qs.filter(created_at__lt=pivot.created_at)
+        except Message.DoesNotExist:
+            pass
     return qs[:limit]
 
 
@@ -100,3 +122,19 @@ def notification_list(
     if unread_only:
         qs = qs.filter(is_read=False)
     return qs
+
+
+# ---------------------------------------------------------------------------
+# ClergicalMessage selectors
+# ---------------------------------------------------------------------------
+
+def clerical_message_inbox(*, user: "BaseUser") -> "QuerySet":
+    from apps.messaging.models import ClergicalMessage
+
+    return ClergicalMessage.objects.filter(individual_recipient=user).select_related("sender").order_by("-created_at")
+
+
+def clerical_message_sent(*, user: "BaseUser") -> "QuerySet":
+    from apps.messaging.models import ClergicalMessage
+
+    return ClergicalMessage.objects.filter(sender=user).select_related("individual_recipient").order_by("-created_at")

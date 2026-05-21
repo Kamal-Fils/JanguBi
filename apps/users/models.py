@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
 
 from apps.common.models import BaseModel
-from apps.users.enums import AuditEvent, Title, UserRole
+from apps.users.enums import AuditEvent, PastoralRole, Title, UserOnboardingState, UserRole
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +124,57 @@ class BaseUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         help_text=_("Rotation invalide tous les tokens JWT actifs."),
     )
 
+    # Dimension pastorale (clergé/fidèle — orthogonale au rôle admin)
+    pastoral_role = models.CharField(
+        _("rôle pastoral"),
+        max_length=20,
+        choices=PastoralRole.choices,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+
+    # Onboarding — état du parcours d'inscription
+    onboarding_state = models.CharField(
+        _("état onboarding"),
+        max_length=30,
+        choices=UserOnboardingState.choices,
+        default=UserOnboardingState.PENDING_EMAIL_VERIFICATION,
+        db_index=True,
+    )
+
+    # Hiérarchie territoriale (auto-remplie par signal depuis Profile.primary_parish)
+    diocese = models.ForeignKey(
+        "org.Diocese",
+        verbose_name=_("diocèse"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="members",
+    )
+    province = models.ForeignKey(
+        "org.Province",
+        verbose_name=_("province"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="members",
+    )
+    religious_community = models.ForeignKey(
+        "org.ReligiousCommunity",
+        verbose_name=_("communauté religieuse"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="members",
+    )
+    followed_parishes = models.ManyToManyField(
+        "org.Parish",
+        verbose_name=_("paroisses suivies"),
+        blank=True,
+        related_name="followers",
+    )
+
     groups = models.ManyToManyField(
         Group,
         verbose_name=_("groupes"),
@@ -154,6 +205,20 @@ class BaseUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         self.jwt_key = uuid.uuid4()
         self.save(update_fields=["jwt_key", "updated_at"])
 
+    def get_scope_ids(self) -> dict:
+        """Retourne les IDs territoriaux pour le scoping du contenu."""
+        parish_ids = list(self.followed_parishes.values_list("id", flat=True))
+        try:
+            if self.profile.primary_parish_id:
+                parish_ids.append(self.profile.primary_parish_id)
+        except Profile.DoesNotExist:
+            pass
+        return {
+            "parish_ids": parish_ids,
+            "diocese_id": self.diocese_id,
+            "province_id": self.province_id,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Profil utilisateur
@@ -178,11 +243,13 @@ class Profile(BaseModel):
     phone = PhoneNumberField(_("téléphone"), blank=True, null=True)
     avatar = models.ImageField(_("avatar"), upload_to="avatars/", blank=True, null=True)
 
-    # Placeholder — sera une FK réelle vers Parish quand le module ORG sera livré
-    primary_parish = models.IntegerField(
-        _("paroisse principale"),
+    primary_parish = models.ForeignKey(
+        "org.Parish",
+        verbose_name=_("paroisse principale"),
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
+        related_name="primary_members",
     )
 
     class Meta:

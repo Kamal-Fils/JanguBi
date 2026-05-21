@@ -16,6 +16,8 @@ _EDITOR_ROLES = {
     UserRole.CHURCH_ADMIN,
 }
 
+_BISHOP_ROLES = {"eveque", "archeveque"}
+
 
 # ---------------------------------------------------------------------------
 # Helpers internes
@@ -23,8 +25,17 @@ _EDITOR_ROLES = {
 
 
 def _check_editor(user: BaseUser) -> None:
-    if user.role not in _EDITOR_ROLES:
-        raise ApplicationError("Seuls les administrateurs peuvent gérer les articles.")
+    can_manage = user.role in _EDITOR_ROLES or user.role in _BISHOP_ROLES
+    if not can_manage:
+        raise ApplicationError("Seuls les administrateurs et le clergé peuvent gérer les articles.")
+
+
+def article_can_publish(*, user: BaseUser, article: Article) -> bool:
+    if article.content_type == Article.ContentType.PASTORAL_LETTER:
+        return user.role in _BISHOP_ROLES
+    if article.content_type == Article.ContentType.ANNOUNCEMENT:
+        return user.role in _EDITOR_ROLES
+    return user.role in _EDITOR_ROLES or user.role in _BISHOP_ROLES
 
 
 def _check_scope_consistency(
@@ -65,6 +76,7 @@ def article_create(
     content: str,
     category_id: int,
     scope_type: str = Article.ScopeType.GLOBAL,
+    content_type: str = Article.ContentType.ARTICLE,
     excerpt: str = "",
     cover_image_id: int | None = None,
     scope_parish_id: int | None = None,
@@ -97,6 +109,7 @@ def article_create(
         slug=slug,
         excerpt=excerpt,
         content=content,
+        content_type=content_type,
         category=category,
         author=author,
         cover_image=cover_image,
@@ -161,6 +174,10 @@ def article_update(
 @transaction.atomic
 def article_publish(*, article: Article, editor: BaseUser) -> Article:
     _check_editor(editor)
+    if not article_can_publish(user=editor, article=article):
+        raise ApplicationError(
+            "Vous n'avez pas les droits nécessaires pour publier ce type de contenu."
+        )
 
     if article.status == Article.Status.PUBLISHED:
         raise ApplicationError("L'article est déjà publié.")
@@ -201,5 +218,6 @@ def article_delete(*, article: Article, editor: BaseUser) -> None:
     article.delete()
 
 
+@transaction.atomic
 def article_increment_views(*, article: Article) -> None:
     Article.objects.filter(pk=article.pk).update(views_count=models.F("views_count") + 1)

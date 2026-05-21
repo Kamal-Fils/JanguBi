@@ -83,3 +83,12 @@ def document_request_attachment_list(
         .select_related("file", "uploaded_by")
         .order_by("created_at")
     )
+
+
+def document_request_agent_recipients(*, request_obj: DocumentRequest) -> list[BaseUser]:
+    """Return the agent(s) who should receive notifications for this request.
+    Returns the assigned agent if set, otherwise all active admin users (capped at 20).
+    """
+    if request_obj.assigned_to_id:
+        return [request_obj.assigned_to]
+    return list(BaseUser.objects.filter(role__in=list(_ADMIN_ROLES), is_active=True)[:20])

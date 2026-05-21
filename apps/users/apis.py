@@ -93,7 +93,7 @@ def _handle_otp_error(exc: Exception) -> Response:
 
 
 class UserListItemSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
+    id = serializers.UUIDField()
     email = serializers.EmailField()
     phone_number = serializers.CharField()
     role = serializers.CharField()
@@ -530,7 +530,7 @@ class UserListApi(ApiAuthMixin, APIView):
         default_limit = 20
 
     class FilterSerializer(serializers.Serializer):
-        id = serializers.IntegerField(required=False)
+        id = serializers.UUIDField(required=False)
         email = serializers.EmailField(required=False)
         role = serializers.CharField(required=False)
         is_active = serializers.BooleanField(required=False, allow_null=True, default=None)
@@ -559,7 +559,7 @@ class UserDetailApi(ApiAuthMixin, APIView):
     permission_classes = [IsStaffOrAdminUser]
 
     class OutputSerializer(serializers.Serializer):
-        id = serializers.IntegerField()
+        id = serializers.UUIDField()
         email = serializers.EmailField()
         phone_number = serializers.CharField()
         role = serializers.CharField()
@@ -591,7 +591,7 @@ class UserDetailApi(ApiAuthMixin, APIView):
         def get_address(self, obj):
             return None
 
-    def get(self, request, user_id: int):
+    def get(self, request, user_id):
         user = user_get_with_profile(user_id)
         if user is None:
             raise Http404
@@ -619,7 +619,7 @@ class UserAdminCreateApi(ApiAuthMixin, APIView):
         title = serializers.CharField(max_length=10, required=False, default="")
 
     class OutputSerializer(serializers.Serializer):
-        id = serializers.IntegerField()
+        id = serializers.UUIDField()
         email = serializers.EmailField()
         role = serializers.CharField()
 
@@ -648,7 +648,7 @@ class UserToggleActiveApi(ApiAuthMixin, APIView):
     class InputSerializer(serializers.Serializer):
         is_active = serializers.BooleanField()
 
-    def patch(self, request, user_id: int):
+    def patch(self, request, user_id):
         user = user_get(user_id)
         if user is None:
             raise Http404
@@ -677,7 +677,7 @@ class UserToggleActiveApi(ApiAuthMixin, APIView):
 class UserSoftDeleteApi(ApiAuthMixin, APIView):
     permission_classes = [IsStaffOrAdminUser]
 
-    def delete(self, request, user_id: int):
+    def delete(self, request, user_id):
         user = user_get(user_id)
         if user is None:
             raise Http404
@@ -698,7 +698,7 @@ class UserSoftDeleteApi(ApiAuthMixin, APIView):
 class UserHardDeleteApi(ApiAuthMixin, APIView):
     permission_classes = [IsAdminUser]
 
-    def delete(self, request, user_id: int):
+    def delete(self, request, user_id):
         user = user_get(user_id)
         if user is None:
             raise Http404
@@ -724,7 +724,7 @@ class UserAuditLogApi(ApiAuthMixin, APIView):
         metadata = serializers.DictField()
         created_at = serializers.DateTimeField()
 
-    def get(self, request, user_id: int):
+    def get(self, request, user_id):
         user = user_get(user_id)
         if user is None:
             raise Http404

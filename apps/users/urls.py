@@ -54,9 +54,9 @@ urlpatterns = [
     # -------------------------------------------------------------------------
     path("", UserListApi.as_view(), name="list"),
     path("admin/create/", UserAdminCreateApi.as_view(), name="admin-create"),
-    path("<int:user_id>/", UserDetailApi.as_view(), name="detail"),
-    path("<int:user_id>/toggle-active/", UserToggleActiveApi.as_view(), name="toggle-active"),
-    path("<int:user_id>/delete/", UserSoftDeleteApi.as_view(), name="soft-delete"),
-    path("<int:user_id>/hard-delete/", UserHardDeleteApi.as_view(), name="hard-delete"),
-    path("<int:user_id>/audit-logs/", UserAuditLogApi.as_view(), name="audit-logs"),
+    path("<uuid:user_id>/", UserDetailApi.as_view(), name="detail"),
+    path("<uuid:user_id>/toggle-active/", UserToggleActiveApi.as_view(), name="toggle-active"),
+    path("<uuid:user_id>/delete/", UserSoftDeleteApi.as_view(), name="soft-delete"),
+    path("<uuid:user_id>/hard-delete/", UserHardDeleteApi.as_view(), name="hard-delete"),
+    path("<uuid:user_id>/audit-logs/", UserAuditLogApi.as_view(), name="audit-logs"),
 ]

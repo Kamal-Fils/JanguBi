@@ -35,3 +35,6 @@ if FILE_UPLOAD_STORAGE == FileUploadStorage.S3:
 
     if _AWS_S3_CUSTOM_DOMAIN:
         AWS_S3_CUSTOM_DOMAIN = _AWS_S3_CUSTOM_DOMAIN
+
+# Public URL for MinIO (replaces internal Docker hostname in generated audio URLs)
+MINIO_PUBLIC_URL = env("MINIO_PUBLIC_URL", default="http://localhost:9002")

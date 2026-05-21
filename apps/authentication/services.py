@@ -42,11 +42,11 @@ def auth_jwt_response_payload_handler(token: str, user: BaseUser = None, request
     }
 
 
-@transaction.atomic
 def auth_logout(user: BaseUser, ip: str | None = None) -> None:
     """
     Enregistre l'événement de déconnexion dans l'audit log.
     La révocation du refresh token est gérée dans l'API (blacklist simplejwt).
+    Pas de @transaction.atomic : l'audit log ne doit pas être couplé à la transaction du caller.
     """
     try:
         SecurityAuditLog.objects.create(

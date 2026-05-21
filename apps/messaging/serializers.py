@@ -199,3 +199,34 @@ class NotificationOutputSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = ["id", "event_type", "payload", "is_read", "read_at", "created_at"]
+
+
+class ClergicalMessageSendInputSerializer(serializers.Serializer):
+    subject = serializers.CharField(max_length=200)
+    body = serializers.CharField()
+    recipient_scope = serializers.ChoiceField(choices=[
+        ("individual", "Individuel"),
+        ("parish_clergy", "Clergé de la paroisse"),
+        ("diocese_clergy", "Clergé du diocèse"),
+        ("province_bishops", "Évêques de la province"),
+    ])
+    scope_id = serializers.IntegerField(required=False, allow_null=True)
+    individual_recipient_id = serializers.IntegerField(required=False, allow_null=True)
+
+
+class ClergicalMessageOutputSerializer(serializers.ModelSerializer):
+    sender_email = serializers.EmailField(source="sender.email", read_only=True)
+    recipient_email = serializers.SerializerMethodField()
+
+    class Meta:
+        from apps.messaging.models import ClergicalMessage
+        model = ClergicalMessage
+        fields = [
+            "id", "sender_email", "recipient_scope", "scope_id",
+            "recipient_email", "subject", "body", "read_at", "created_at",
+        ]
+
+    def get_recipient_email(self, obj) -> str | None:
+        if obj.individual_recipient:
+            return obj.individual_recipient.email
+        return None

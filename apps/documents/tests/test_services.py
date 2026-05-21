@@ -5,18 +5,22 @@ Les appels email sont supprimés en patchant transaction.on_commit.
 """
 
 import uuid
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from django.utils import timezone
 
 from apps.core.exceptions import ApplicationError
 from apps.documents.models import DocumentRequest, DocumentRequestStatusLog, InternalNote
 from apps.documents.services import (
+    _generate_reference,
     document_request_add_internal_note,
     document_request_create,
     document_request_deposit_document,
     document_request_reject,
     document_request_request_info,
+    document_request_run_escalation,
     document_request_start_verification,
     document_request_submit_supplement,
     document_request_validate,
@@ -592,3 +596,152 @@ def test_document_request_add_multiple_internal_notes():
 
     # Assert
     assert InternalNote.objects.filter(request=doc_request).count() == 2
+
+
+# ---------------------------------------------------------------------------
+# _generate_reference
+# ---------------------------------------------------------------------------
+
+
+def test_generate_reference_matches_expected_format():
+    # Act
+    ref = _generate_reference()
+
+    # Assert — format: DOC-YYYYMMDD-XXXXXX
+    parts = ref.split("-")
+    assert parts[0] == "DOC"
+    assert len(parts[1]) == 8  # YYYYMMDD
+    assert parts[1].isdigit()
+    assert len(parts[2]) == 6  # hex suffix (3 bytes = 6 hex chars)
+    assert parts[2] == parts[2].upper()
+
+
+def test_generate_reference_produces_unique_values():
+    # Act — generate 50 references in rapid succession
+    references = [_generate_reference() for _ in range(50)]
+
+    # Assert — no duplicates due to secrets.token_hex randomness
+    assert len(references) == len(set(references))
+
+
+# ---------------------------------------------------------------------------
+# document_request_run_escalation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_escalation_sends_email_for_stale_submitted_requests():
+    # Arrange — request submitted long ago (> escalate_days)
+    past = timezone.now() - timedelta(days=10)
+    req = DocumentRequestFactory(status=DocumentRequest.Status.SUBMITTED)
+    DocumentRequest.objects.filter(id=req.id).update(updated_at=past)
+
+    # Act
+    with patch("apps.documents.services._send_email") as mock_send:
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert — at least one email sent to the requester
+    assert mock_send.called
+    sent_tos = [call.kwargs["to"] for call in mock_send.call_args_list]
+    assert req.contact_email in sent_tos
+
+
+@pytest.mark.django_db
+def test_escalation_does_not_send_email_for_recent_submitted_requests():
+    # Arrange — request just submitted (< escalate_days)
+    DocumentRequestFactory(status=DocumentRequest.Status.SUBMITTED)
+
+    # Act
+    with patch("apps.documents.services._send_email") as mock_send:
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert — no emails sent
+    assert not mock_send.called
+
+
+@pytest.mark.django_db
+def test_escalation_sends_email_for_stale_under_verification_requests():
+    # Arrange — request under verification for too long; assigned so agent gets email
+    agent = StaffUserFactory()
+    past = timezone.now() - timedelta(days=10)
+    req = DocumentRequestFactory(status=DocumentRequest.Status.UNDER_VERIFICATION, assigned_to=agent)
+    DocumentRequest.objects.filter(id=req.id).update(updated_at=past)
+    req.refresh_from_db()
+
+    # Act
+    with patch("apps.documents.services._send_email") as mock_send:
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert — email triggered (may go to agents if any are assigned)
+    mock_send.assert_called()
+
+
+@pytest.mark.django_db
+def test_escalation_sends_deposit_reminder_for_stale_validated_requests():
+    # Arrange — request validated but not deposited; assigned so agent gets email
+    agent = StaffUserFactory()
+    past = timezone.now() - timedelta(days=5)
+    req = DocumentRequestFactory(status=DocumentRequest.Status.VALIDATED, assigned_to=agent)
+    DocumentRequest.objects.filter(id=req.id).update(updated_at=past)
+
+    # Act
+    with patch("apps.documents.services._send_email") as mock_send:
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert — deposit reminder triggered (goes to agents if any)
+    mock_send.assert_called()
+
+
+@pytest.mark.django_db
+def test_escalation_sends_supplement_reminder_for_stale_info_requested():
+    # Arrange — info was requested from requester long ago
+    past = timezone.now() - timedelta(days=7)
+    req = DocumentRequestFactory(status=DocumentRequest.Status.INFO_REQUESTED)
+    DocumentRequest.objects.filter(id=req.id).update(updated_at=past)
+
+    # Act
+    with patch("apps.documents.services._send_email") as mock_send:
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert — reminder sent to requester
+    assert mock_send.called
+    sent_tos = [call.kwargs["to"] for call in mock_send.call_args_list]
+    assert req.contact_email in sent_tos
+
+
+@pytest.mark.django_db
+def test_escalation_does_nothing_when_no_stale_requests():
+    # Arrange — all requests are recent
+    DocumentRequestFactory(status=DocumentRequest.Status.SUBMITTED)
+    DocumentRequestFactory(status=DocumentRequest.Status.VALIDATED)
+
+    # Act
+    with patch("apps.documents.services._send_email") as mock_send:
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert
+    assert not mock_send.called

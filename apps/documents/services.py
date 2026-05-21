@@ -9,16 +9,7 @@ from apps.documents.models import (
     DocumentRequestStatusLog,
     InternalNote,
 )
-from apps.users.enums import UserRole
 from apps.users.models import BaseUser
-
-_AGENT_ROLES = {
-    UserRole.PARISH_ADMIN,
-    UserRole.CHURCH_ADMIN,
-    UserRole.DIOCESE_ADMIN,
-    UserRole.PROVINCE_ADMIN,
-    UserRole.SUPER_ADMIN,
-}
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     DocumentRequest.Status.SUBMITTED: {DocumentRequest.Status.UNDER_VERIFICATION},
@@ -46,9 +37,11 @@ _REQUIRED_DETAILS: dict[str, list[str]] = {
 
 
 def _generate_reference() -> str:
+    import secrets
+
     date_str = date.today().strftime("%Y%m%d")
-    seq = DocumentRequest.objects.count() + 1
-    return f"DOC-{date_str}-{seq:06d}"
+    suffix = secrets.token_hex(3).upper()
+    return f"DOC-{date_str}-{suffix}"
 
 
 def _validate_document_details(document_type: str, details: dict) -> None:
@@ -84,12 +77,6 @@ def _log_status_change(
         changed_by=changed_by,
         comment=comment,
     )
-
-
-def _get_agent_recipients(request_obj: DocumentRequest) -> list[BaseUser]:
-    if request_obj.assigned_to_id:
-        return [request_obj.assigned_to]
-    return list(BaseUser.objects.filter(role__in=list(_AGENT_ROLES), is_active=True)[:20])
 
 
 def _send_email(*, to: str, subject: str, body_html: str) -> None:
@@ -169,7 +156,9 @@ def _notify_agents(*, request_obj: DocumentRequest, event: str) -> None:
     }
     if event not in subjects:
         return
-    for agent in _get_agent_recipients(request_obj):
+    from apps.documents.selectors import document_request_agent_recipients
+
+    for agent in document_request_agent_recipients(request_obj=request_obj):
         _send_email(to=agent.email, subject=subjects[event], body_html=bodies[event])
 
 
@@ -429,3 +418,85 @@ def document_request_add_internal_note(
         author=author,
         content=content,
     )
+
+
+@transaction.atomic
+def document_request_run_escalation(
+    *,
+    escalate_days: int,
+    deposit_reminder_days: int,
+    requester_reminder_days: int,
+) -> None:
+    """Send reminder emails for stale document requests. Called from the Celery Beat task."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.documents.selectors import document_request_agent_recipients
+
+    now = timezone.now()
+
+    for req in DocumentRequest.objects.filter(
+        status=DocumentRequest.Status.SUBMITTED,
+        updated_at__lt=now - timedelta(days=escalate_days),
+    ).select_related("assigned_to", "requester"):
+        _send_email(
+            to=req.contact_email,
+            subject=f"[Jàngu Bi] Votre demande {req.reference} est en attente",
+            body_html=(
+                f"<p>Bonjour {req.requester_first_names},</p>"
+                f"<p>Votre demande <strong>{req.reference}</strong> est en attente de traitement "
+                f"depuis plus de {escalate_days} jours.</p>"
+            ),
+        )
+        for agent in document_request_agent_recipients(request_obj=req):
+            _send_email(
+                to=agent.email,
+                subject=f"[Jàngu Bi] Demande en attente — {req.reference}",
+                body_html=(
+                    f"<p>La demande <strong>{req.reference}</strong> est soumise depuis plus de "
+                    f"{escalate_days} jours sans prise en charge.</p>"
+                ),
+            )
+
+    for req in DocumentRequest.objects.filter(
+        status=DocumentRequest.Status.UNDER_VERIFICATION,
+        updated_at__lt=now - timedelta(days=escalate_days),
+    ).select_related("assigned_to"):
+        for agent in document_request_agent_recipients(request_obj=req):
+            _send_email(
+                to=agent.email,
+                subject=f"[Jàngu Bi] Vérification en attente — {req.reference}",
+                body_html=(
+                    f"<p>La demande <strong>{req.reference}</strong> est en vérification depuis "
+                    f"plus de {escalate_days} jours.</p>"
+                ),
+            )
+
+    for req in DocumentRequest.objects.filter(
+        status=DocumentRequest.Status.VALIDATED,
+        updated_at__lt=now - timedelta(days=deposit_reminder_days),
+    ).select_related("assigned_to"):
+        for agent in document_request_agent_recipients(request_obj=req):
+            _send_email(
+                to=agent.email,
+                subject=f"[Jàngu Bi] Rappel dépôt — {req.reference}",
+                body_html=(
+                    f"<p>La demande <strong>{req.reference}</strong> est validée depuis plus de "
+                    f"{deposit_reminder_days} jours. Merci de déposer le document final.</p>"
+                ),
+            )
+
+    for req in DocumentRequest.objects.filter(
+        status=DocumentRequest.Status.INFO_REQUESTED,
+        updated_at__lt=now - timedelta(days=requester_reminder_days),
+    ).select_related("requester"):
+        _send_email(
+            to=req.contact_email,
+            subject=f"[Jàngu Bi] Rappel complément — {req.reference}",
+            body_html=(
+                f"<p>Bonjour {req.requester_first_names},</p>"
+                f"<p>Nous attendons toujours votre complément pour la demande "
+                f"<strong>{req.reference}</strong>. Merci de répondre dans les meilleurs délais.</p>"
+            ),
+        )

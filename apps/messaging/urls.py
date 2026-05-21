@@ -3,10 +3,14 @@ from django.urls import path
 from apps.messaging.apis import (
     BlockDeleteApi,
     BlockListCreateApi,
+    ClergicalMessageInboxApi,
+    ClergicalMessageReadApi,
+    ClergicalMessageSendApi,
+    ClergicalMessageSentApi,
     ConversationArchiveApi,
     ConversationCreateApi,
     ConversationCguApi,
-    ConversationDeleteApi,
+    ConversationDetailApi,
     ConversationExportApi,
     ConversationListApi,
     MessageDeleteApi,
@@ -33,7 +37,7 @@ urlpatterns = [
     path("conversations/create/", ConversationCreateApi.as_view(), name="conversation-create"),
     path("conversations/<uuid:conversation_id>/cgu/", ConversationCguApi.as_view(), name="conversation-cgu"),
     path("conversations/<uuid:conversation_id>/archive/", ConversationArchiveApi.as_view(), name="conversation-archive"),
-    path("conversations/<uuid:conversation_id>/", ConversationDeleteApi.as_view(), name="conversation-delete"),
+    path("conversations/<uuid:conversation_id>/", ConversationDetailApi.as_view(), name="conversation-detail"),
     path("conversations/<uuid:conversation_id>/export/", ConversationExportApi.as_view(), name="conversation-export"),
     # Messages
     path("conversations/<uuid:conversation_id>/messages/", MessageListApi.as_view(), name="message-list"),
@@ -47,4 +51,9 @@ urlpatterns = [
     # Notifications
     path("notifications/", NotificationListApi.as_view(), name="notification-list"),
     path("notifications/<uuid:notification_id>/read/", NotificationReadApi.as_view(), name="notification-read"),
+    # ClergicalMessage (inter-clergé)
+    path("clerical/", ClergicalMessageSendApi.as_view(), name="clerical-send"),
+    path("clerical/inbox/", ClergicalMessageInboxApi.as_view(), name="clerical-inbox"),
+    path("clerical/sent/", ClergicalMessageSentApi.as_view(), name="clerical-sent"),
+    path("clerical/<int:message_id>/read/", ClergicalMessageReadApi.as_view(), name="clerical-read"),
 ]

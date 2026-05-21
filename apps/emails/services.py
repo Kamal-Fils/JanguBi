@@ -75,7 +75,7 @@ def send_multi_format_email(
     target_email: str,
     path_prefix: str = "auth",
 ) -> None:
-    """Render HTML + plain-text templates, persist an Email record, and send it synchronously."""
+    """Render HTML + plain-text templates, persist an Email record, and dispatch via Celery."""
     subject = render_to_string(f"{path_prefix}/{template_prefix}_subject.txt", template_ctxt).strip()
     html = render_to_string(f"{path_prefix}/{template_prefix}.html", template_ctxt)
     plain_text = render_to_string(f"{path_prefix}/{template_prefix}.txt", template_ctxt)
@@ -88,4 +88,4 @@ def send_multi_format_email(
         status=Email.Status.SENDING,
     )
 
-    email_send(email)
+    transaction.on_commit(lambda: email_send_task.delay(email.id))

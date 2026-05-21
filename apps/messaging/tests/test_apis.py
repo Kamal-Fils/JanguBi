@@ -834,8 +834,9 @@ def test_message_delete_returns_400_when_already_deleted():
 
 @pytest.mark.django_db
 def test_message_react_post_returns_201(auth_client):
-    # Arrange
-    msg = MessageFactory()
+    # Arrange — auth_client._user must be a participant in the conversation
+    conv = ConversationFactory(participant_a=auth_client._user)
+    msg = MessageFactory(conversation=conv, sender=conv.participant_a)
     url = reverse("api:messaging:message-react", kwargs={"message_id": msg.id})
 
     # Act
@@ -843,6 +844,19 @@ def test_message_react_post_returns_201(auth_client):
 
     # Assert
     assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_message_react_post_returns_403_for_non_participant(auth_client):
+    # Arrange — message belongs to a conversation auth_client._user is NOT in
+    msg = MessageFactory()
+    url = reverse("api:messaging:message-react", kwargs={"message_id": msg.id})
+
+    # Act
+    response = auth_client.post(url, {"emoji": "like"}, format="json")
+
+    # Assert
+    assert response.status_code == 403
 
 
 @pytest.mark.django_db
@@ -855,16 +869,24 @@ def test_message_react_post_requires_authentication(anon_client):
 
 @pytest.mark.django_db
 def test_message_react_post_returns_400_on_missing_emoji(auth_client):
-    msg = MessageFactory()
+    # Arrange — auth_client._user must be a participant so we reach input validation
+    conv = ConversationFactory(participant_a=auth_client._user)
+    msg = MessageFactory(conversation=conv, sender=conv.participant_a)
     url = reverse("api:messaging:message-react", kwargs={"message_id": msg.id})
+
+    # Act
     response = auth_client.post(url, {}, format="json")
+
+    # Assert
     assert response.status_code == 400
 
 
 @pytest.mark.django_db
 def test_message_react_delete_returns_204(auth_client):
-    # Arrange
-    reaction = MessageReactionFactory(user=auth_client._user, emoji="love")
+    # Arrange — auth_client._user must be a participant in the reaction's conversation
+    conv = ConversationFactory(participant_a=auth_client._user)
+    msg = MessageFactory(conversation=conv, sender=conv.participant_a)
+    reaction = MessageReactionFactory(message=msg, user=auth_client._user, emoji="love")
     url = reverse(
         "api:messaging:message-react", kwargs={"message_id": reaction.message.id}
     )
@@ -874,6 +896,21 @@ def test_message_react_delete_returns_204(auth_client):
 
     # Assert
     assert response.status_code == 204
+
+
+@pytest.mark.django_db
+def test_message_react_delete_returns_403_for_non_participant(auth_client):
+    # Arrange — message belongs to a conversation auth_client._user is NOT in
+    reaction = MessageReactionFactory(emoji="love")
+    url = reverse(
+        "api:messaging:message-react", kwargs={"message_id": reaction.message.id}
+    )
+
+    # Act
+    response = auth_client.delete(url, {"emoji": "love"}, format="json")
+
+    # Assert
+    assert response.status_code == 403
 
 
 @pytest.mark.django_db

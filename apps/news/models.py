@@ -35,6 +35,11 @@ class Article(BaseModel):
     en attendant que le module Organisation (Parish, Diocese) soit implémenté (V2).
     """
 
+    class ContentType(models.TextChoices):
+        ANNOUNCEMENT = "announcement", _("Annonce")
+        ARTICLE = "article", _("Article")
+        PASTORAL_LETTER = "pastoral_letter", _("Lettre Pastorale")
+
     class ScopeType(models.TextChoices):
         GLOBAL = "global", _("Global (toute l'Église du Sénégal)")
         DIOCESE = "diocese", _("Diocèse")
@@ -46,6 +51,14 @@ class Article(BaseModel):
         UNPUBLISHED = "unpublished", _("Dépublié")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    content_type = models.CharField(
+        max_length=20,
+        choices=ContentType.choices,
+        default=ContentType.ARTICLE,
+        db_index=True,
+        verbose_name=_("Type de contenu"),
+    )
 
     title = models.CharField(max_length=200, verbose_name=_("Titre"))
     slug = models.SlugField(max_length=220, verbose_name=_("Slug"))

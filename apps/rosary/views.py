@@ -96,12 +96,18 @@ class TodayRosaryApi(APIView):
     )
     @method_decorator(cache_page(60 * 60 * 1))  # Cache for 1 hour because day changes
     def get(self, request):
-        day_rosary = RosaryService.get_today_rosary()
+        from apps.rosary.models import RosaryDay
+        try:
+            day_rosary = RosaryService.get_today_rosary()
+        except RosaryDay.DoesNotExist:
+            return Response(
+                {"error": "Les données du chapelet pour aujourd'hui ne sont pas encore configurées."},
+                status=404,
+            )
         serializer = RosaryDaySerializer(day_rosary)
-        # Extra: fetching standalone prayers for apps to build intro/outro
         standalone = RosaryService.get_all_standalone_prayers()
         standalone_data = PrayerSerializer(standalone, many=True).data
-        
+
         return Response({
             "day": serializer.data,
             "standalone_prayers": standalone_data

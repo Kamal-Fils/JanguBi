@@ -27,9 +27,10 @@ class RosaryAudioStorage(S3Boto3Storage):
         if custom_domain:
             kwargs['custom_domain'] = custom_domain
         else:
-            endpoint_url = getattr(settings, 'AWS_S3_ENDPOINT_URL', None)
-            if endpoint_url:
-                parsed = urlparse(endpoint_url)
+            # Prefer public-facing URL over internal Docker service name
+            public_url = getattr(settings, 'MINIO_PUBLIC_URL', None) or getattr(settings, 'AWS_S3_ENDPOINT_URL', None)
+            if public_url:
+                parsed = urlparse(public_url)
                 if parsed.netloc:
                     kwargs['custom_domain'] = f"{parsed.netloc}/{self.bucket_name}"
             

@@ -97,3 +97,91 @@ class RosaryDay(BaseModel):
 
     def __str__(self):
         return f"{self.get_weekday_display()} -> {self.group.name}"
+
+
+class CommunityRosary(BaseModel):
+    """A live community rosary session initiated by clergy."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Actif"
+        COMPLETED = "completed", "Terminé"
+        CANCELLED = "cancelled", "Annulé"
+
+    initiator = models.ForeignKey(
+        "users.BaseUser",
+        on_delete=models.CASCADE,
+        related_name="initiated_rosaries",
+    )
+    mystery_group = models.ForeignKey(
+        MysteryGroup,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="community_sessions",
+    )
+    intention = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+    current_decade = models.PositiveSmallIntegerField(default=0)
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        verbose_name = "Chapelet communautaire"
+        verbose_name_plural = "Chapelets communautaires"
+
+    def __str__(self) -> str:
+        return f"CommunityRosary({self.initiator_id}, {self.status})"
+
+
+class RosaryParticipant(BaseModel):
+    """Tracks who joined a community rosary session."""
+
+    rosary = models.ForeignKey(
+        CommunityRosary,
+        on_delete=models.CASCADE,
+        related_name="participants",
+    )
+    user = models.ForeignKey(
+        "users.BaseUser",
+        on_delete=models.CASCADE,
+        related_name="rosary_participations",
+    )
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["rosary", "user"]]
+        verbose_name = "Participant chapelet"
+        verbose_name_plural = "Participants chapelet"
+
+    def __str__(self) -> str:
+        return f"Participant({self.user_id} → rosary {self.rosary_id})"
+
+
+class RosaryIntention(BaseModel):
+    """An intention submitted during a community rosary."""
+
+    rosary = models.ForeignKey(
+        CommunityRosary,
+        on_delete=models.CASCADE,
+        related_name="intentions",
+    )
+    submitted_by = models.ForeignKey(
+        "users.BaseUser",
+        on_delete=models.CASCADE,
+        related_name="submitted_rosary_intentions",
+    )
+    text = models.TextField()
+
+    class Meta:
+        ordering = ["created_at"]
+        verbose_name = "Intention chapelet"
+        verbose_name_plural = "Intentions chapelet"
+
+    def __str__(self) -> str:
+        return f"Intention({self.rosary_id}, {self.submitted_by_id})"

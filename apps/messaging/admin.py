@@ -4,6 +4,7 @@ from apps.messaging.models import (
     Conversation,
     ConversationExport,
     Message,
+    MessageAttachment,
     MessageBlock,
     MessageReaction,
     Notification,
@@ -55,6 +56,12 @@ class MessageReactionAdmin(admin.ModelAdmin):
 class ConversationExportAdmin(admin.ModelAdmin):
     list_display = ["id", "conversation", "requested_by", "completed_at", "created_at"]
     raw_id_fields = ["conversation", "requested_by"]
+
+
+@admin.register(MessageAttachment)
+class MessageAttachmentAdmin(admin.ModelAdmin):
+    list_display = ["id", "message", "file", "created_at"]
+    raw_id_fields = ["message", "file"]
 
 
 @admin.register(Notification)

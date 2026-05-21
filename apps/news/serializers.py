@@ -21,6 +21,11 @@ class ArticleCreateInputSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=200)
     content = serializers.CharField()
     category_id = serializers.IntegerField()
+    content_type = serializers.ChoiceField(
+        choices=Article.ContentType.choices,
+        default=Article.ContentType.ARTICLE,
+        required=False,
+    )
     excerpt = serializers.CharField(max_length=400, required=False, allow_blank=True, default="")
     cover_image_id = serializers.IntegerField(required=False, allow_null=True)
     scope_type = serializers.ChoiceField(
@@ -60,6 +65,7 @@ class ArticleListOutputSerializer(serializers.ModelSerializer):
     cover_image_url = serializers.SerializerMethodField()
     scope_type_label = serializers.CharField(source="get_scope_type_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    content_type_label = serializers.CharField(source="get_content_type_display", read_only=True)
 
     class Meta:
         model = Article
@@ -71,6 +77,8 @@ class ArticleListOutputSerializer(serializers.ModelSerializer):
             "cover_image_url",
             "category",
             "author_name",
+            "content_type",
+            "content_type_label",
             "scope_type",
             "scope_type_label",
             "scope_parish_id",
@@ -97,6 +105,7 @@ class ArticleDetailOutputSerializer(serializers.ModelSerializer):
     cover_image_url = serializers.SerializerMethodField()
     scope_type_label = serializers.CharField(source="get_scope_type_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    content_type_label = serializers.CharField(source="get_content_type_display", read_only=True)
     unpublished_by_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -110,6 +119,8 @@ class ArticleDetailOutputSerializer(serializers.ModelSerializer):
             "cover_image_url",
             "category",
             "author_name",
+            "content_type",
+            "content_type_label",
             "scope_type",
             "scope_type_label",
             "scope_parish_id",

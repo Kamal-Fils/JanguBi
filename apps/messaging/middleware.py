@@ -1,21 +1,27 @@
+import logging
 from urllib.parse import parse_qs
 
 from channels.auth import AuthMiddlewareStack
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
-from rest_framework_jwt.settings import api_settings
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.tokens import UntypedToken
+
+logger = logging.getLogger(__name__)
 
 
 @database_sync_to_async
 def _get_user_from_token(token: str):
+    from apps.users.models import BaseUser
+
     try:
-        payload = api_settings.JWT_DECODE_HANDLER(token)
-        user_id = api_settings.JWT_PAYLOAD_GET_USER_ID_HANDLER(payload)
-
-        from apps.users.models import BaseUser
-
+        validated = UntypedToken(token)  # validates signature + expiry via simplejwt defaults
+        user_id = validated["user_id"]
         return BaseUser.objects.get(id=user_id, is_active=True)
+    except (InvalidToken, TokenError, KeyError, BaseUser.DoesNotExist):
+        return AnonymousUser()
     except Exception:
+        logger.exception("Unexpected error while authenticating WebSocket JWT")
         return AnonymousUser()
 
 
