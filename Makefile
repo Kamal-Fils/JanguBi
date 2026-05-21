@@ -145,5 +145,5 @@ create-admin:
 	@echo "==========================================================="
 	docker compose exec django python manage.py init_admin
 
-init-all: init-data create-admin
+init-all: init-data
 
