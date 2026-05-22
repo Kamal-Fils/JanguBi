@@ -124,7 +124,8 @@ def _send_email_safe(template_prefix: str, ctx: dict, to: str, path_prefix: str 
 def _build_url(path: str) -> str:
     """Construit une URL absolue depuis FRONTEND_URL. Protection contre Host Header Injection."""
     from django.conf import settings
-    base = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    FRONTEND_URL = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
+    base = f"{FRONTEND_URL}/auth".rstrip("/")
     return f"{base}/{path.lstrip('/')}"
 
 
