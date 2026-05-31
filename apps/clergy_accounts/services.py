@@ -4,30 +4,50 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ApplicationError
-from apps.users.enums import PastoralRole, UserRole
+from apps.users.enums import PastoralRole, RoleScope, UserRole
 from apps.users.models import BaseUser
+from apps.users.services_roles import role_assignment_create
 
 from .models import ClergicalInvitation
 
 _INVITATION_EXPIRY_HOURS = 48
 
-# Roles an eveque can invite
+# Rôles qu'un évêque/archevêque peut inviter.
 _EVEQUE_INVITABLE_ROLES = {PastoralRole.PRETRE, PastoralRole.DIACRE, PastoralRole.RELIGIEUX}
 
-# Roles only super_admin can invite
+# Rôles que seul un super_admin peut inviter.
 _SUPER_ADMIN_ONLY_ROLES = {PastoralRole.ARCHEVEQUE, PastoralRole.EVEQUE}
+
+# Évêque/archevêque = autorité pastorale habilitée à inviter du clergé.
+_BISHOP_PASTORAL_ROLES = {PastoralRole.EVEQUE, PastoralRole.ARCHEVEQUE}
 
 
 def _can_invite(*, inviter: BaseUser, pastoral_role: str) -> bool:
+    """Qui peut inviter quel rôle pastoral.
+
+    Règle unique (alignée avec ``_can_manage_invitations`` côté API) :
+    - super_admin → tout, y compris évêque/archevêque ;
+    - évêque/archevêque → prêtre / diacre / religieux uniquement.
+    """
     if inviter.role == UserRole.SUPER_ADMIN:
         return True
+    # Seul le super_admin invite un évêque/archevêque.
     if pastoral_role in _SUPER_ADMIN_ONLY_ROLES:
         return False
-    if inviter.pastoral_role == PastoralRole.ARCHEVEQUE and pastoral_role in _EVEQUE_INVITABLE_ROLES:
-        return True
-    if inviter.pastoral_role == PastoralRole.EVEQUE and pastoral_role in _EVEQUE_INVITABLE_ROLES:
-        return True
-    return False
+    return (
+        inviter.pastoral_role in _BISHOP_PASTORAL_ROLES
+        and pastoral_role in _EVEQUE_INVITABLE_ROLES
+    )
+
+
+def _validate_target_exists(*, parish_id: int | None, church_id: int | None) -> None:
+    """Valide l'existence des cibles territoriales fournies (FK)."""
+    from apps.org.models import Church, Parish
+
+    if parish_id is not None and not Parish.objects.filter(pk=parish_id).exists():
+        raise ApplicationError("Paroisse cible introuvable.")
+    if church_id is not None and not Church.objects.filter(pk=church_id).exists():
+        raise ApplicationError("Église cible introuvable.")
 
 
 @transaction.atomic
@@ -39,12 +59,16 @@ def invitation_create(
     last_name: str,
     pastoral_role: str,
     diocese_id: int | None = None,
+    parish_id: int | None = None,
+    church_id: int | None = None,
 ) -> ClergicalInvitation:
     if not _can_invite(inviter=inviter, pastoral_role=pastoral_role):
         raise ApplicationError("Vous n'avez pas les droits pour inviter ce type de compte clergé.")
 
     if ClergicalInvitation.objects.filter(email=email, status=ClergicalInvitation.Status.PENDING).exists():
         raise ApplicationError("Une invitation est déjà en attente pour cette adresse email.")
+
+    _validate_target_exists(parish_id=parish_id, church_id=church_id)
 
     expires_at = timezone.now() + timedelta(hours=_INVITATION_EXPIRY_HOURS)
 
@@ -54,6 +78,8 @@ def invitation_create(
         last_name=last_name,
         pastoral_role=pastoral_role,
         diocese_id=diocese_id,
+        parish_id=parish_id,
+        church_id=church_id,
         created_by=inviter,
         expires_at=expires_at,
         status=ClergicalInvitation.Status.PENDING,
@@ -105,6 +131,58 @@ def _send_invitation_email(*, invitation: ClergicalInvitation) -> None:
     email_send_task.delay(email.id)
 
 
+def _resolve_capacity(invitation: ClergicalInvitation) -> tuple[dict | None, int | None]:
+    """Dérive la capacité administrative (RoleAssignment) + le diocèse de
+    rattachement depuis ``pastoral_role`` et la cible territoriale.
+
+    Retourne ``(kwargs role_assignment_create | None, diocese_id | None)``.
+    Sans cible exploitable, la capacité est ``None`` : le compte est tout de
+    même activé (pastoral_role), mais aucune affectation scopée n'est créée.
+    """
+    role = invitation.pastoral_role
+
+    if role == PastoralRole.PRETRE and invitation.parish_id:
+        parish = invitation.parish
+        return (
+            {"role": UserRole.PARISH_ADMIN, "scope": RoleScope.PARISH,
+             "parish": parish, "is_principal": True},
+            parish.diocese_id,
+        )
+
+    if role == PastoralRole.DIACRE and invitation.church_id:
+        church = invitation.church
+        return (
+            {"role": UserRole.CHURCH_ADMIN, "scope": RoleScope.CHURCH,
+             "church": church, "is_principal": False},
+            church.parish.diocese_id,
+        )
+
+    if role == PastoralRole.DIACRE and invitation.parish_id:
+        parish = invitation.parish
+        return (
+            {"role": UserRole.PARISH_ADMIN, "scope": RoleScope.PARISH,
+             "parish": parish, "is_principal": False},
+            parish.diocese_id,
+        )
+
+    if role == PastoralRole.EVEQUE and invitation.diocese_id:
+        return (
+            {"role": UserRole.DIOCESE_ADMIN, "scope": RoleScope.DIOCESE,
+             "diocese": invitation.diocese, "is_principal": True},
+            invitation.diocese_id,
+        )
+
+    if role == PastoralRole.ARCHEVEQUE and invitation.diocese_id:
+        return (
+            {"role": UserRole.PROVINCE_ADMIN, "scope": RoleScope.PROVINCE,
+             "province": invitation.diocese.province, "is_principal": True},
+            invitation.diocese_id,
+        )
+
+    # Religieux ou rôle sans cible exploitable : pas de capacité scopée.
+    return (None, invitation.diocese_id)
+
+
 @transaction.atomic
 def invitation_accept(*, token: str, user: BaseUser) -> ClergicalInvitation:
     try:
@@ -126,10 +204,21 @@ def invitation_accept(*, token: str, user: BaseUser) -> ClergicalInvitation:
     invitation.accepted_by = user
     invitation.save(update_fields=["status", "accepted_by", "updated_at"])
 
+    ra_kwargs, diocese_id = _resolve_capacity(invitation)
+
+    # Accepter une invitation clergé vérifie et active le compte.
     user.pastoral_role = invitation.pastoral_role
-    if invitation.diocese_id:
-        user.diocese_id = invitation.diocese_id
-    user.save(update_fields=["pastoral_role", "diocese_id", "updated_at"])
+    user.is_verified = True
+    user.is_active = True
+    update_fields = ["pastoral_role", "is_verified", "is_active", "updated_at"]
+    if diocese_id:
+        user.diocese_id = diocese_id
+        update_fields.append("diocese_id")
+    user.save(update_fields=update_fields)
+
+    # Capacité administrative scopée (curé → parish_admin principal, etc.).
+    if ra_kwargs is not None:
+        role_assignment_create(user=user, granted_by=invitation.created_by, **ra_kwargs)
 
     return invitation
 
