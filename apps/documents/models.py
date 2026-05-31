@@ -76,6 +76,15 @@ class DocumentRequest(BaseModel):
     mother_last_name = models.CharField(max_length=100)
     parish_name = models.CharField(max_length=200)
     diocese = models.CharField(max_length=200)
+    # Rattachement territorial réel (routage + cloisonnement). Le texte ci-dessus
+    # reste en repli pour les saisies libres (stations rurales sans ligne Parish).
+    target_parish = models.ForeignKey(
+        "org.Parish",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="document_requests",
+    )
     sacrament_approximate_date = models.CharField(max_length=20)
     sacrament_location = models.CharField(max_length=200)
     additional_info = models.TextField(blank=True, default="")

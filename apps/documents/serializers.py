@@ -44,6 +44,8 @@ class DocumentRequestCreateInputSerializer(serializers.Serializer):
     mother_last_name = serializers.CharField(max_length=100)
     parish_name = serializers.CharField(max_length=200)
     diocese = serializers.CharField(max_length=200)
+    # Paroisse cible explicite (sélectionnée dans la liste org) — optionnelle.
+    parish_id = serializers.IntegerField(required=False, allow_null=True)
     sacrament_approximate_date = serializers.CharField(max_length=20)
     sacrament_location = serializers.CharField(max_length=200)
     additional_info = serializers.CharField(required=False, allow_blank=True, default="")
@@ -116,6 +118,7 @@ class DocumentRequestListOutputSerializer(serializers.ModelSerializer):
             "requester_email",
             "parish_name",
             "diocese",
+            "target_parish",
             "created_at",
             "updated_at",
         ]

@@ -7,7 +7,14 @@ from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
 
 from apps.common.models import BaseModel
-from apps.users.enums import AuditEvent, PastoralRole, Title, UserOnboardingState, UserRole
+from apps.users.enums import (
+    AuditEvent,
+    PastoralRole,
+    RoleScope,
+    Title,
+    UserOnboardingState,
+    UserRole,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -311,3 +318,125 @@ class SecurityAuditLog(BaseModel):
 
     def __str__(self) -> str:
         return f"[{self.event}] {self.user} — {self.created_at:%Y-%m-%d %H:%M}"
+
+
+# ---------------------------------------------------------------------------
+# Affectation de rôle scopée territorialement (RBAC)
+# ---------------------------------------------------------------------------
+
+class RoleAssignment(BaseModel):
+    """
+    Capacité administrative d'un utilisateur, scopée à un niveau territorial.
+
+    Dimension orthogonale à ``pastoral_role`` (identité dans l'Église). Un même
+    utilisateur peut cumuler plusieurs affectations. Exemples :
+    - curé de la paroisse A  → role=PARISH_ADMIN, scope=PARISH, parish=A, is_principal=True
+    - vicaire à l'église B   → role=CHURCH_ADMIN, scope=CHURCH, church=B
+    - évêque du diocèse D     → role=DIOCESE_ADMIN, scope=DIOCESE, diocese=D
+    - super admin             → role=SUPER_ADMIN, scope=GLOBAL
+
+    Les classes de permission consultent ces affectations pour le cloisonnement
+    territorial (un curé de A ne voit pas les données de B).
+    """
+
+    user = models.ForeignKey(
+        "users.BaseUser",
+        verbose_name=_("utilisateur"),
+        on_delete=models.CASCADE,
+        related_name="role_assignments",
+    )
+    role = models.CharField(
+        _("rôle / capacité"),
+        max_length=20,
+        choices=UserRole.choices,
+        db_index=True,
+    )
+    scope = models.CharField(
+        _("niveau de portée"),
+        max_length=20,
+        choices=RoleScope.choices,
+        db_index=True,
+    )
+    province = models.ForeignKey(
+        "org.Province",
+        verbose_name=_("province"),
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="role_assignments",
+    )
+    diocese = models.ForeignKey(
+        "org.Diocese",
+        verbose_name=_("diocèse"),
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="role_assignments",
+    )
+    parish = models.ForeignKey(
+        "org.Parish",
+        verbose_name=_("paroisse"),
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="role_assignments",
+    )
+    church = models.ForeignKey(
+        "org.Church",
+        verbose_name=_("église"),
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="role_assignments",
+    )
+    is_principal = models.BooleanField(
+        _("titulaire principal"),
+        default=False,
+        help_text=_("Curé principal de la paroisse / responsable principal de l'église."),
+    )
+    is_active = models.BooleanField(_("active"), default=True, db_index=True)
+    start_date = models.DateField(_("date de début"), null=True, blank=True)
+    end_date = models.DateField(_("date de fin"), null=True, blank=True)
+    note = models.CharField(_("note"), max_length=255, blank=True, default="")
+    granted_by = models.ForeignKey(
+        "users.BaseUser",
+        verbose_name=_("attribuée par"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="granted_role_assignments",
+    )
+
+    class Meta:
+        verbose_name = _("affectation de rôle")
+        verbose_name_plural = _("affectations de rôle")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "is_active"]),
+            models.Index(fields=["role", "scope"]),
+            models.Index(fields=["parish", "is_active"]),
+            models.Index(fields=["diocese", "is_active"]),
+            models.Index(fields=["church", "is_active"]),
+        ]
+        constraints = [
+            # Un seul curé principal actif par paroisse
+            models.UniqueConstraint(
+                fields=["parish"],
+                condition=models.Q(is_principal=True, is_active=True, scope="parish"),
+                name="unique_active_principal_per_parish",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        target = self.church_id or self.parish_id or self.diocese_id or self.province_id or "global"
+        return f"{self.user_id} · {self.role}@{self.scope}:{target}"
+
+    @property
+    def scope_target_id(self):
+        """ID de l'entité territoriale ciblée selon le scope (ou None pour global)."""
+        return {
+            RoleScope.PROVINCE: self.province_id,
+            RoleScope.DIOCESE: self.diocese_id,
+            RoleScope.PARISH: self.parish_id,
+            RoleScope.CHURCH: self.church_id,
+        }.get(self.scope)

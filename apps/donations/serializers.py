@@ -12,6 +12,8 @@ class CampaignCreateInputSerializer(serializers.Serializer):
     )
     scope_type = serializers.CharField(default="global")
     scope_id = serializers.IntegerField(required=False, allow_null=True)
+    parish_id = serializers.IntegerField(required=False, allow_null=True)
+    church_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class CampaignOutputSerializer(serializers.ModelSerializer):
@@ -34,6 +36,8 @@ class CampaignOutputSerializer(serializers.ModelSerializer):
             "currency",
             "scope_type",
             "scope_id",
+            "parish",
+            "church",
             "is_active",
             "starts_at",
             "ends_at",

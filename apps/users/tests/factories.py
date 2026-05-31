@@ -6,8 +6,8 @@ Alignées sur apps/users/enums.py (UserRole, Title) et models.py réels.
 import factory
 from factory.django import DjangoModelFactory
 
-from apps.users.enums import Title, UserRole
-from apps.users.models import BaseUser, Profile
+from apps.users.enums import RoleScope, Title, UserRole
+from apps.users.models import BaseUser, Profile, RoleAssignment
 
 
 class BaseUserFactory(DjangoModelFactory):
@@ -70,3 +70,16 @@ class ProfileFactory(DjangoModelFactory):
     first_name = factory.Sequence(lambda n: f"Prénom{n}")
     last_name = factory.Sequence(lambda n: f"Nom{n}")
     title = Title.MR
+
+
+class RoleAssignmentFactory(DjangoModelFactory):
+    """Affectation de rôle scopée — par défaut admin de paroisse."""
+
+    class Meta:
+        model = RoleAssignment
+
+    user = factory.SubFactory(BaseUserFactory)
+    role = UserRole.PARISH_ADMIN
+    scope = RoleScope.PARISH
+    is_active = True
+    is_principal = False

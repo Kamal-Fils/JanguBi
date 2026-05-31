@@ -201,6 +201,16 @@ def document_request_create(*, requester: BaseUser, data: dict) -> DocumentReque
 
     attachment_file_id = data.get("attachment_file_id")
 
+    # Rattachement territorial : paroisse cible explicite, sinon paroisse principale du demandeur.
+    target_parish = None
+    parish_id = data.get("parish_id")
+    if parish_id:
+        from apps.org.models import Parish
+
+        target_parish = Parish.objects.filter(id=parish_id).first()
+    if target_parish is None:
+        target_parish = getattr(getattr(requester, "profile", None), "primary_parish", None)
+
     request_obj = DocumentRequest.objects.create(
         reference=_generate_reference(),
         requester=requester,
@@ -219,6 +229,7 @@ def document_request_create(*, requester: BaseUser, data: dict) -> DocumentReque
         mother_last_name=data["mother_last_name"],
         parish_name=data["parish_name"],
         diocese=data["diocese"],
+        target_parish=target_parish,
         sacrament_approximate_date=data["sacrament_approximate_date"],
         sacrament_location=data["sacrament_location"],
         additional_info=data.get("additional_info", ""),

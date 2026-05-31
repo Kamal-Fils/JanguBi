@@ -67,10 +67,24 @@ def user_get_with_profile(user_id: int) -> Optional[BaseUser]:
 # Liste avec filtres
 # ---------------------------------------------------------------------------
 
-def user_list(*, filters: dict | None = None) -> QuerySet[BaseUser]:
+def user_list(*, filters: dict | None = None, for_user: BaseUser | None = None) -> QuerySet[BaseUser]:
     filters = filters or {}
     qs = BaseUser.objects.select_related("profile").all()
-    return BaseUserFilter(filters, qs).qs
+    qs = BaseUserFilter(filters, qs).qs
+    if for_user is not None:
+        # Cloisonnement territorial : un admin scopé ne gère que les utilisateurs de
+        # ses paroisses (repli legacy si aucune affectation territoriale).
+        from django.db.models import Q
+
+        from apps.users.scoping import accessible_parish_ids, is_global_admin
+
+        if not is_global_admin(for_user):
+            parish_ids = accessible_parish_ids(for_user)
+            if parish_ids:
+                qs = qs.filter(
+                    Q(profile__primary_parish_id__in=parish_ids) | Q(id=for_user.id)
+                )
+    return qs
 
 
 def user_list_for_admin(*, filters: dict | None = None) -> QuerySet[BaseUser]:
