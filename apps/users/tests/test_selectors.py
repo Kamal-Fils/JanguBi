@@ -14,7 +14,8 @@ Couvre :
 
 import pytest
 
-from apps.users.enums import AuditEvent, UserRole
+from apps.org.tests.factories import ParishFactory
+from apps.users.enums import AuditEvent, PastoralRole, UserRole
 from apps.users.models import SecurityAuditLog
 from apps.users.selectors import (
     audit_log_list,
@@ -81,6 +82,58 @@ def test_user_get_login_data_returns_empty_profile_dict_when_no_profile():
 
     # Assert
     assert data["profile"] == {}
+
+
+# --- Lot 1 / Phase 3 : contrat /auth/me enrichi -----------------------------
+
+
+@pytest.mark.django_db
+def test_user_get_login_data_includes_onboarding_and_pastoral_role():
+    # Arrange
+    user = BaseUserFactory(pastoral_role=PastoralRole.PRETRE)
+
+    # Act
+    data = user_get_login_data(user=user)
+
+    # Assert
+    assert data["pastoral_role"] == PastoralRole.PRETRE
+    assert data["onboarding_state"] == user.onboarding_state
+    assert "diocese" in data
+    assert "province" in data
+
+
+@pytest.mark.django_db
+def test_user_get_login_data_returns_org_refs_as_id_name():
+    # Arrange — paroisse principale → signal remplit diocese/province sur BaseUser
+    parish = ParishFactory()
+    user = BaseUserFactory()
+    ProfileFactory(user=user, primary_parish=parish)
+    user.refresh_from_db()
+
+    # Act
+    data = user_get_login_data(user=user)
+
+    # Assert — formes {id, name}, pas de valeurs brutes
+    assert data["profile"]["primary_parish"] == {"id": parish.id, "name": parish.name}
+    assert data["diocese"] == {"id": parish.diocese.id, "name": parish.diocese.name}
+    assert data["province"] == {
+        "id": parish.diocese.province.id,
+        "name": parish.diocese.province.name,
+    }
+
+
+@pytest.mark.django_db
+def test_user_get_login_data_org_refs_none_when_unset():
+    # Arrange — fidèle sans paroisse
+    user = BaseUserFactory()
+
+    # Act
+    data = user_get_login_data(user=user)
+
+    # Assert
+    assert data["diocese"] is None
+    assert data["province"] is None
+    assert data["pastoral_role"] is None
 
 
 # ---------------------------------------------------------------------------

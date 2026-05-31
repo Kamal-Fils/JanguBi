@@ -15,6 +15,13 @@ from apps.users.models import BaseUser, Profile, SecurityAuditLog
 # Données de connexion (réponse /me/)
 # ---------------------------------------------------------------------------
 
+def _org_ref(obj) -> dict | None:
+    """Référence légère {id, name} vers une entité territoriale (ou None)."""
+    if obj is None:
+        return None
+    return {"id": obj.id, "name": obj.name}
+
+
 def user_get_login_data(*, user: BaseUser) -> dict:
     """Données renvoyées après login ou via /api/auth/me/."""
     profile_data = {}
@@ -25,7 +32,7 @@ def user_get_login_data(*, user: BaseUser) -> dict:
             "last_name": p.last_name,
             "title": p.title,
             "phone": str(p.phone) if p.phone else None,
-            "primary_parish": p.primary_parish,
+            "primary_parish": _org_ref(p.primary_parish),
             "avatar": p.avatar.url if p.avatar else None,
         }
 
@@ -34,10 +41,14 @@ def user_get_login_data(*, user: BaseUser) -> dict:
         "email": user.email,
         "phone_number": str(user.phone_number),
         "role": user.role,
+        "pastoral_role": user.pastoral_role,
+        "onboarding_state": user.onboarding_state,
         "is_active": user.is_active,
         "is_verified": user.is_verified,
         "is_admin": user.is_admin,
         "is_staff": user.is_staff,
+        "diocese": _org_ref(user.diocese),
+        "province": _org_ref(user.province),
         "profile": profile_data,
     }
 

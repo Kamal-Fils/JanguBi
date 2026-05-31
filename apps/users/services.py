@@ -27,7 +27,7 @@ from django.db import transaction
 from apps.common.services import model_update
 from apps.core.exceptions import ApplicationError, TokenInvalidError
 from apps.emails.services import send_multi_format_email
-from apps.users.enums import AuditEvent, UserRole
+from apps.users.enums import AuditEvent, UserOnboardingState, UserRole
 from apps.users.models import BaseUser, Profile, SecurityAuditLog
 from apps.users.otp import (
     RESET_TOKEN_TTL,
@@ -287,7 +287,14 @@ def user_activate_account(*, token: str, ip: str | None = None) -> BaseUser:
 
     user.is_verified = True
     user.is_active = True
-    user.save(update_fields=["is_verified", "is_active", "updated_at"])
+    update_fields = ["is_verified", "is_active", "updated_at"]
+
+    # Vérif email franchie → étape suivante : sélection de la paroisse.
+    if user.onboarding_state == UserOnboardingState.PENDING_EMAIL_VERIFICATION:
+        user.onboarding_state = UserOnboardingState.PENDING_PARISH_SELECTION
+        update_fields.append("onboarding_state")
+
+    user.save(update_fields=update_fields)
 
     _assign_group(user, UserRole.FIDELE)
     _audit(user, AuditEvent.EMAIL_VERIFIED, ip)
@@ -386,6 +393,31 @@ def user_hard_delete(
 # 6. Mise à jour profil
 # ---------------------------------------------------------------------------
 
+def _profile_set_primary_parish(*, profile: Profile, parish_id: int | None) -> None:
+    """Affecte la paroisse principale depuis un ID (FK).
+
+    `model_update` ne sait pas résoudre un ID vers une instance FK, d'où ce
+    traitement explicite. Le signal post_save de Profile synchronise ensuite
+    `diocese`/`province` sur le BaseUser.
+    """
+    if parish_id is None:
+        if profile.primary_parish_id is not None:
+            profile.primary_parish = None
+            profile.save(update_fields=["primary_parish", "updated_at"])
+        return
+
+    from apps.org.models import Parish
+
+    try:
+        parish = Parish.objects.get(pk=parish_id)
+    except Parish.DoesNotExist:
+        raise ApplicationError("Paroisse introuvable.")
+
+    if profile.primary_parish_id != parish.id:
+        profile.primary_parish = parish
+        profile.save(update_fields=["primary_parish", "updated_at"])
+
+
 @transaction.atomic
 def user_update_profile(
     *,
@@ -398,14 +430,26 @@ def user_update_profile(
     if performed_by != user and performed_by.role not in _ADMIN_ROLES:
         raise ApplicationError("Permission refusée.")
 
-    profile_fields = ["first_name", "last_name", "title", "date_of_birth", "phone", "primary_parish"]
+    profile_fields = ["first_name", "last_name", "title", "date_of_birth", "phone"]
 
     profile, _ = Profile.objects.get_or_create(user=user)
     profile, _ = model_update(instance=profile, fields=profile_fields, data=data)
 
+    # La paroisse principale est une FK reçue sous forme d'ID → traitée à part.
+    if "primary_parish" in data:
+        _profile_set_primary_parish(profile=profile, parish_id=data["primary_parish"])
+
     if "avatar" in data and data["avatar"] is not None:
         profile.avatar = data["avatar"]
         profile.save(update_fields=["avatar"])
+
+    # Sélection d'une paroisse principale → onboarding terminé.
+    if (
+        profile.primary_parish_id
+        and user.onboarding_state != UserOnboardingState.COMPLETED
+    ):
+        user.onboarding_state = UserOnboardingState.COMPLETED
+        user.save(update_fields=["onboarding_state", "updated_at"])
 
     _audit(user, AuditEvent.PROFILE_UPDATED, ip, {"performed_by": performed_by.email})
 
