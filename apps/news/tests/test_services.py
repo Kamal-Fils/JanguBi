@@ -15,6 +15,7 @@ from apps.news.services import (
     article_unpublish,
     article_update,
 )
+from apps.users.enums import PastoralRole
 from apps.users.tests.factories import BaseUserFactory, StaffUserFactory
 
 from .factories import ArticleCategoryFactory, ArticleFactory, PublishedArticleFactory
@@ -406,3 +407,84 @@ def test_article_increment_views_uses_database_update():
 
     db_value = ArticleModel.objects.values_list("views_count", flat=True).get(pk=article.pk)
     assert db_value == 101
+
+
+# ---------------------------------------------------------------------------
+# Publication par le clergé — Lot 1 (fix is_news_editor / is_bishop)
+#
+# Le clergé est identifié par `pastoral_role` (dimension pastorale), son
+# `role` admin reste `fidele`. L'ancien code comparait `_BISHOP_ROLES` à
+# `user.role`, ce qui bloquait tout le clergé. Ces tests verrouillent la
+# correction. La portée territoriale (paroisse/diocèse) n'est PAS testée ici
+# (différée hors Lot 1).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_eveque_can_publish_pastoral_letter():
+    # Arrange — évêque par pastoral_role, role admin resté fidèle
+    eveque = BaseUserFactory(pastoral_role=PastoralRole.EVEQUE)
+    article = ArticleFactory(
+        author=eveque, content_type=Article.ContentType.PASTORAL_LETTER
+    )
+
+    # Act
+    published = article_publish(article=article, editor=eveque)
+
+    # Assert
+    assert published.status == Article.Status.PUBLISHED
+    assert published.published_at is not None
+
+
+@pytest.mark.django_db
+def test_cure_can_publish_announcement():
+    # Arrange — curé (prêtre) par pastoral_role, role admin resté fidèle
+    cure = BaseUserFactory(pastoral_role=PastoralRole.PRETRE)
+    article = ArticleFactory(
+        author=cure, content_type=Article.ContentType.ANNOUNCEMENT
+    )
+
+    # Act
+    published = article_publish(article=article, editor=cure)
+
+    # Assert
+    assert published.status == Article.Status.PUBLISHED
+
+
+@pytest.mark.django_db
+def test_diacre_can_create_draft_but_cannot_publish():
+    # Arrange — diacre : brouillon autorisé, publication interdite (matrice §16)
+    diacre = BaseUserFactory(pastoral_role=PastoralRole.DIACRE)
+    category = ArticleCategoryFactory()
+
+    # Act — création du brouillon
+    article = article_create(
+        author=diacre,
+        title="Brouillon du diacre",
+        content="Contenu du brouillon.",
+        category_id=category.id,
+        content_type=Article.ContentType.ANNOUNCEMENT,
+    )
+
+    # Assert — brouillon bien créé
+    assert article.status == Article.Status.DRAFT
+
+    # Act & Assert — publication refusée
+    with pytest.raises(ApplicationError, match="droits nécessaires"):
+        article_publish(article=article, editor=diacre)
+
+
+@pytest.mark.django_db
+def test_fidele_cannot_create_article():
+    # Arrange — fidèle sans rôle pastoral clérical
+    fidele = BaseUserFactory()
+    category = ArticleCategoryFactory()
+
+    # Act & Assert
+    with pytest.raises(ApplicationError, match="administrateurs"):
+        article_create(
+            author=fidele,
+            title="Tentative fidèle",
+            content="Contenu.",
+            category_id=category.id,
+        )

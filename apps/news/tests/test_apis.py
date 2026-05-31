@@ -8,6 +8,7 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.news.models import Article
+from apps.users.enums import PastoralRole
 from apps.users.tests.factories import BaseUserFactory, StaffUserFactory
 
 from .factories import (
@@ -295,6 +296,47 @@ def test_admin_create_returns_400_for_inactive_category(admin_client):
 
     # Assert
     assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_admin_create_allows_clergy_via_pastoral_role():
+    # Régression Lot 1 : un évêque (pastoral_role=eveque, role admin=fidele) doit
+    # passer la permission IsArticleEditor au niveau API (auparavant 403, car
+    # IsArticleEditor ne testait que `role`).
+    client = APIClient()
+    eveque = BaseUserFactory(pastoral_role=PastoralRole.EVEQUE)
+    client.force_authenticate(user=eveque)
+    category = ArticleCategoryFactory()
+    url = reverse("api:news:admin-create")
+    payload = {
+        "title": "Lettre de l'évêque",
+        "content": "Contenu pastoral.",
+        "category_id": category.id,
+    }
+
+    # Act
+    response = client.post(url, payload, format="json")
+
+    # Assert
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_admin_create_forbids_fidele_at_api(auth_client):
+    # Un fidèle (ni admin ni clergé) reste bloqué par IsArticleEditor (403).
+    category = ArticleCategoryFactory()
+    url = reverse("api:news:admin-create")
+    payload = {
+        "title": "Tentative",
+        "content": "Contenu.",
+        "category_id": category.id,
+    }
+
+    # Act
+    response = auth_client.post(url, payload, format="json")
+
+    # Assert
+    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------

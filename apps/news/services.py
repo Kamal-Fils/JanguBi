@@ -5,9 +5,10 @@ from django.utils.text import slugify
 
 from apps.core.exceptions import ApplicationError
 from apps.news.models import Article, ArticleCategory
-from apps.users.enums import UserRole
+from apps.users.enums import PastoralRole, UserRole
 from apps.users.models import BaseUser
 
+# Rôles d'administration digitale (UserRole) autorisés à gérer/publier des articles.
 _EDITOR_ROLES = {
     UserRole.SUPER_ADMIN,
     UserRole.PROVINCE_ADMIN,
@@ -16,26 +17,64 @@ _EDITOR_ROLES = {
     UserRole.CHURCH_ADMIN,
 }
 
-_BISHOP_ROLES = {"eveque", "archeveque"}
+# Rôles admin équivalant à un évêque pour publier une lettre pastorale.
+_BISHOP_ADMIN_ROLES = {
+    UserRole.SUPER_ADMIN,
+    UserRole.PROVINCE_ADMIN,
+    UserRole.DIOCESE_ADMIN,
+}
+
+# Rôles pastoraux (PastoralRole) — dimension orthogonale à `role`.
+# eveque/archeveque vivent UNIQUEMENT dans pastoral_role (jamais dans role).
+_BISHOP_PASTORAL_ROLES = {PastoralRole.EVEQUE, PastoralRole.ARCHEVEQUE}
+
+# Clergé pouvant créer / gérer un article (brouillon inclus) — diacre compris.
+_CLERGY_EDITOR_ROLES = {
+    PastoralRole.DIACRE,
+    PastoralRole.PRETRE,
+    PastoralRole.EVEQUE,
+    PastoralRole.ARCHEVEQUE,
+}
+
+# Clergé pouvant PUBLIER — diacre EXCLU (brouillon seulement, matrice §16).
+_CLERGY_PUBLISHER_ROLES = {
+    PastoralRole.PRETRE,
+    PastoralRole.EVEQUE,
+    PastoralRole.ARCHEVEQUE,
+}
 
 
 # ---------------------------------------------------------------------------
-# Helpers internes
+# Helpers d'autorisation — source unique, réutilisée par permissions.py
 # ---------------------------------------------------------------------------
+
+
+def is_bishop(user: BaseUser) -> bool:
+    """Évêque/archevêque (pastoral_role) OU admin diocèse-et-plus (role)."""
+    return (
+        user.pastoral_role in _BISHOP_PASTORAL_ROLES
+        or user.role in _BISHOP_ADMIN_ROLES
+    )
+
+
+def is_news_editor(user: BaseUser) -> bool:
+    """Peut créer/gérer un article : admin digital OU clergé (diacre inclus)."""
+    return (
+        user.role in _EDITOR_ROLES
+        or user.pastoral_role in _CLERGY_EDITOR_ROLES
+    )
 
 
 def _check_editor(user: BaseUser) -> None:
-    can_manage = user.role in _EDITOR_ROLES or user.role in _BISHOP_ROLES
-    if not can_manage:
+    if not is_news_editor(user):
         raise ApplicationError("Seuls les administrateurs et le clergé peuvent gérer les articles.")
 
 
 def article_can_publish(*, user: BaseUser, article: Article) -> bool:
     if article.content_type == Article.ContentType.PASTORAL_LETTER:
-        return user.role in _BISHOP_ROLES
-    if article.content_type == Article.ContentType.ANNOUNCEMENT:
-        return user.role in _EDITOR_ROLES
-    return user.role in _EDITOR_ROLES or user.role in _BISHOP_ROLES
+        return is_bishop(user)
+    # ANNOUNCEMENT et ARTICLE : admin digital OU clergé publicateur (diacre exclu).
+    return user.role in _EDITOR_ROLES or user.pastoral_role in _CLERGY_PUBLISHER_ROLES
 
 
 def _check_scope_consistency(
