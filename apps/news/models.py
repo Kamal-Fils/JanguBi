@@ -44,6 +44,7 @@ class Article(BaseModel):
         GLOBAL = "global", _("Global (toute l'Église du Sénégal)")
         DIOCESE = "diocese", _("Diocèse")
         PARISH = "parish", _("Paroisse")
+        CHURCH = "church", _("Église")
 
     class Status(models.TextChoices):
         DRAFT = "draft", _("Brouillon")
@@ -98,12 +99,33 @@ class Article(BaseModel):
         db_index=True,
         verbose_name=_("Portée"),
     )
-    # Placeholders — seront remplacés par FK réelles quand le module ORG sera livré (V2)
-    scope_parish_id = models.IntegerField(
-        null=True, blank=True, db_index=True, verbose_name=_("ID paroisse (placeholder)")
+    # FK territoriales réelles (Chantier 3a — ex-placeholders IntegerField).
+    scope_diocese = models.ForeignKey(
+        "org.Diocese",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="scoped_articles",
+        db_index=True,
+        verbose_name=_("Diocèse de portée"),
     )
-    scope_diocese_id = models.IntegerField(
-        null=True, blank=True, db_index=True, verbose_name=_("ID diocèse (placeholder)")
+    scope_parish = models.ForeignKey(
+        "org.Parish",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="scoped_articles",
+        db_index=True,
+        verbose_name=_("Paroisse de portée"),
+    )
+    scope_church = models.ForeignKey(
+        "org.Church",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="scoped_articles",
+        db_index=True,
+        verbose_name=_("Église de portée"),
     )
 
     # --- Statut & workflow ---
@@ -137,19 +159,23 @@ class Article(BaseModel):
         constraints = [
             # Slug unique par portée paroisse
             models.UniqueConstraint(
-                fields=["slug", "scope_type", "scope_parish_id"],
+                fields=["slug", "scope_type", "scope_parish"],
                 name="unique_article_slug_parish",
             ),
         ]
         indexes = [
             models.Index(fields=["status", "-published_at"], name="article_status_pub_idx"),
             models.Index(
-                fields=["scope_type", "scope_parish_id", "status"],
+                fields=["scope_type", "scope_parish", "status"],
                 name="article_parish_idx",
             ),
             models.Index(
-                fields=["scope_type", "scope_diocese_id", "status"],
+                fields=["scope_type", "scope_diocese", "status"],
                 name="article_diocese_idx",
+            ),
+            models.Index(
+                fields=["scope_type", "scope_church", "status"],
+                name="article_church_idx",
             ),
             models.Index(fields=["category", "status"], name="article_category_idx"),
             models.Index(fields=["author", "-created_at"], name="article_author_idx"),
