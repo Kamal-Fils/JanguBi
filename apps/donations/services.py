@@ -14,6 +14,17 @@ from .models import (
 
 ANONYMOUS_DONATION_MAX = Decimal("25000")
 
+# Providers de paiement EN LIGNE — désactivés tant que l'IPN signé n'est pas livré
+# (Chantier 5b). Le 5b retirera cette garde en branchant le webhook. Évite un don en
+# ligne bloqué en PENDING indéfiniment ; le cash/manuel reste pleinement fonctionnel.
+ONLINE_PAYMENT_PROVIDERS = frozenset(
+    {
+        PaymentProvider.WAVE,
+        PaymentProvider.ORANGE_MONEY,
+        PaymentProvider.FREE_MONEY,
+    }
+)
+
 
 @transaction.atomic
 def campaign_create(
@@ -135,6 +146,14 @@ def donation_make(
     anonymous_donor_name: str = "",
     anonymous_donor_phone: str = "",
 ) -> Donation:
+    # Garde de transition : pas de paiement en ligne tant que l'IPN (5b) n'est pas
+    # branché — sinon le don resterait PENDING indéfiniment (jamais confirmé).
+    if payment_provider in ONLINE_PAYMENT_PROVIDERS:
+        raise ApplicationError(
+            "Le paiement en ligne sera bientôt disponible. Utilisez les espèces "
+            "pour le moment."
+        )
+
     campaign = None
     if campaign_id is not None:
         try:

@@ -140,6 +140,29 @@ def test_anonymous_donation_max_25000():
 
 
 # ---------------------------------------------------------------------------
+# Garde de transition : paiement en ligne désactivé jusqu'à l'IPN (5b)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("provider", ["wave", "orange_money", "free_money"])
+def test_online_donation_rejected_until_ipn_available(provider):
+    # Tant que l'IPN n'est pas livré, un don en ligne est refusé (jamais bloqué PENDING).
+    with pytest.raises(ApplicationError, match="bientôt disponible"):
+        donation_make(
+            donor=_donor_primary(), amount=Decimal("1000"), payment_provider=provider
+        )
+
+
+@pytest.mark.django_db
+def test_cash_donation_still_created():
+    d = donation_make(
+        donor=_donor_primary(), amount=Decimal("1000"), payment_provider="cash"
+    )
+    assert d.status == DonationStatus.PENDING
+
+
+# ---------------------------------------------------------------------------
 # Machine à états (RG-PAY-04 + RG-PAY-05)
 # ---------------------------------------------------------------------------
 
@@ -208,9 +231,18 @@ def test_manual_confirm_by_parish_authority_completes():
 
 @pytest.mark.django_db
 def test_online_provider_not_manually_confirmable():
+    # Un don en ligne PENDING (créé hors donation_make, p.ex. futur IPN 5b) ne doit
+    # PAS être confirmable manuellement — défense en profondeur sur donation_confirm.
     church = ChurchFactory()
-    donor = _donor_primary(church)
-    d = donation_make(donor=donor, amount=Decimal("2000"), payment_provider="wave")
+    donor = BaseUserFactory()
+    d = Donation.objects.create(
+        donor=donor,
+        parish=church.parish,
+        church=church,
+        amount=Decimal("2000"),
+        payment_provider="wave",
+        status=DonationStatus.PENDING,
+    )
 
     client = APIClient()
     client.force_authenticate(_cure(church.parish, "cure_online@test.com"))

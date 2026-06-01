@@ -160,9 +160,10 @@ def test_make_donation_201(fidele_client, pretre_client):
         created_by=pretre_client._user,
     )
     url = reverse("api:donations:donate")
+    # Espèces : le paiement en ligne est désactivé jusqu'à l'IPN (Chantier 5b).
     resp = fidele_client.post(
         url,
-        {"campaign_id": campaign.pk, "amount": 5000, "payment_provider": "wave"},
+        {"campaign_id": campaign.pk, "amount": 5000, "payment_provider": "cash"},
         format="json",
     )
     assert resp.status_code == status.HTTP_201_CREATED
