@@ -282,3 +282,20 @@ class UserUpdateProfileTests(TestCase):
                 data={"primary_parish": 999999},
                 performed_by=self.user,
             )
+
+    def test_update_profile_returns_fresh_territory_after_parish_selection(self):
+        # 🟠 /me périmé : le signal remplit diocese/province via queryset .update()
+        # (ne touche pas l'objet en mémoire). Le service DOIT renvoyer l'objet
+        # rafraîchi, sinon PATCH /me renvoie diocese/province = null juste après
+        # la sélection de paroisse.
+        parish = ParishFactory()
+
+        user = user_update_profile(
+            user=self.user,
+            data={"primary_parish": parish.id},
+            performed_by=self.user,
+        )
+
+        # Pas de refresh_from_db manuel ici : le service doit déjà l'avoir fait.
+        self.assertEqual(user.diocese_id, parish.diocese_id)
+        self.assertEqual(user.province_id, parish.diocese.province_id)

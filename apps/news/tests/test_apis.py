@@ -8,8 +8,24 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.news.models import Article
-from apps.users.enums import PastoralRole
-from apps.users.tests.factories import BaseUserFactory, StaffUserFactory
+from apps.org.tests.factories import ParishFactory
+from apps.users.enums import PastoralRole, RoleScope, UserRole
+from apps.users.models import RoleAssignment
+from apps.users.tests.factories import (
+    AdminUserFactory,
+    BaseUserFactory,
+    StaffUserFactory,
+)
+
+
+def _make_cure(parish):
+    """Curé : user.role='fidele' + pastoral_role + RoleAssignment(parish_admin)."""
+    user = BaseUserFactory(role=UserRole.FIDELE, pastoral_role=PastoralRole.PRETRE)
+    RoleAssignment.objects.create(
+        user=user, role=UserRole.PARISH_ADMIN, scope=RoleScope.PARISH,
+        parish=parish, is_active=True,
+    )
+    return user
 
 from .factories import (
     ArticleCategoryFactory,
@@ -38,8 +54,9 @@ def auth_client():
 
 @pytest.fixture
 def admin_client():
+    # Admin GLOBAL (super_admin) : autorité sur toutes les portées (global inclus).
     client = APIClient()
-    user = StaffUserFactory()
+    user = AdminUserFactory()
     client.force_authenticate(user=user)
     client._user = user
     return client
@@ -299,26 +316,50 @@ def test_admin_create_returns_400_for_inactive_category(admin_client):
 
 
 @pytest.mark.django_db
-def test_admin_create_allows_clergy_via_pastoral_role():
-    # Régression Lot 1 : un évêque (pastoral_role=eveque, role admin=fidele) doit
-    # passer la permission IsArticleEditor au niveau API (auparavant 403, car
-    # IsArticleEditor ne testait que `role`).
+def test_admin_create_clergy_within_own_parish_returns_201():
+    # Régression Lot 1 : un curé (pastoral_role=pretre, role='fidele') porteur d'une
+    # RoleAssignment(parish_admin) passe IsArticleEditor ET crée un article de SA
+    # paroisse (autorité territoriale OK).
+    parish = ParishFactory()
+    cure = _make_cure(parish)
     client = APIClient()
-    eveque = BaseUserFactory(pastoral_role=PastoralRole.EVEQUE)
-    client.force_authenticate(user=eveque)
+    client.force_authenticate(user=cure)
     category = ArticleCategoryFactory()
     url = reverse("api:news:admin-create")
     payload = {
-        "title": "Lettre de l'évêque",
-        "content": "Contenu pastoral.",
+        "title": "Annonce paroissiale",
+        "content": "Contenu.",
         "category_id": category.id,
+        "scope_type": Article.ScopeType.PARISH,
+        "scope_parish_id": parish.id,
     }
 
-    # Act
     response = client.post(url, payload, format="json")
 
-    # Assert
     assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_admin_create_cross_parish_forbidden():
+    # EXPLOIT 🔴-2 (API) : un curé de A crée un article scopé sur la paroisse B → refusé.
+    parish_a = ParishFactory()
+    parish_b = ParishFactory()
+    cure_a = _make_cure(parish_a)
+    client = APIClient()
+    client.force_authenticate(user=cure_a)
+    category = ArticleCategoryFactory()
+    url = reverse("api:news:admin-create")
+    payload = {
+        "title": "Injection",
+        "content": "Contenu.",
+        "category_id": category.id,
+        "scope_type": Article.ScopeType.PARISH,
+        "scope_parish_id": parish_b.id,
+    }
+
+    response = client.post(url, payload, format="json")
+
+    assert response.status_code == 400
 
 
 @pytest.mark.django_db

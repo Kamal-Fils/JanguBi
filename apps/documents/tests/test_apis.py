@@ -13,9 +13,26 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.documents.models import DocumentRequest, DocumentRequestStatusLog
-from apps.users.tests.factories import BaseUserFactory, StaffUserFactory
+from apps.org.tests.factories import ParishFactory
+from apps.users.enums import RoleScope, UserRole
+from apps.users.models import RoleAssignment
+from apps.users.tests.factories import AdminUserFactory, BaseUserFactory, StaffUserFactory
 
 from .factories import DocumentRequestFactory, InternalNoteFactory, ValidFileFactory
+
+
+def _make_cure(parish):
+    """Curé : user.role='fidele' + RoleAssignment(parish_admin) sur `parish`."""
+    user = BaseUserFactory(role=UserRole.FIDELE)
+    RoleAssignment.objects.create(
+        user=user,
+        role=UserRole.PARISH_ADMIN,
+        scope=RoleScope.PARISH,
+        parish=parish,
+        is_principal=True,
+        is_active=True,
+    )
+    return user
 
 
 # ---------------------------------------------------------------------------
@@ -34,8 +51,9 @@ def fidele_client():
 
 @pytest.fixture
 def admin_client():
+    # Admin GLOBAL (super_admin) : voit tout, contourne le cloisonnement territorial.
     client = APIClient()
-    user = StaffUserFactory()
+    user = AdminUserFactory()
     client.force_authenticate(user=user)
     client._user = user
     return client
@@ -899,3 +917,90 @@ def test_admin_logs_get_returns_403_for_fidele(fidele_client):
 
     # Assert
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Lot 1 / Phase 5 — cloisonnement inter-paroisses (🔴-3) + RoleAssignment source de vérité
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_admin_detail_cross_parish_returns_404():
+    # EXPLOIT : un curé de la paroisse A lit une demande de la paroisse B par UUID.
+    parish_a = ParishFactory()
+    parish_b = ParishFactory()
+    cure_a = _make_cure(parish_a)
+    req_b = DocumentRequestFactory(target_parish=parish_b)
+
+    client = APIClient()
+    client.force_authenticate(user=cure_a)
+    url = reverse("api:documents:admin-document-request-detail", kwargs={"request_id": req_b.id})
+
+    response = client.get(url)
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_admin_validate_cross_parish_returns_404():
+    # EXPLOIT : curé de A valide la demande de B → refusé (avant : succès).
+    parish_a = ParishFactory()
+    parish_b = ParishFactory()
+    cure_a = _make_cure(parish_a)
+    req_b = DocumentRequestFactory(
+        target_parish=parish_b, status=DocumentRequest.Status.UNDER_VERIFICATION
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=cure_a)
+    url = reverse("api:documents:admin-document-validate", kwargs={"request_id": req_b.id})
+
+    response = client.post(url)
+
+    assert response.status_code == 404
+    req_b.refresh_from_db()
+    assert req_b.status == DocumentRequest.Status.UNDER_VERIFICATION  # inchangé
+
+
+@pytest.mark.django_db
+def test_cure_can_process_own_parish_request():
+    # SCÉNARIO MÉTIER CENTRAL : curé (role='fidele' + RoleAssignment parish_admin/P)
+    # traite une demande de SA paroisse → doit passer de bout en bout.
+    parish = ParishFactory()
+    cure = _make_cure(parish)
+    req = DocumentRequestFactory(
+        target_parish=parish, status=DocumentRequest.Status.UNDER_VERIFICATION
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=cure)
+
+    detail_url = reverse(
+        "api:documents:admin-document-request-detail", kwargs={"request_id": req.id}
+    )
+    assert client.get(detail_url).status_code == 200
+
+    validate_url = reverse(
+        "api:documents:admin-document-validate", kwargs={"request_id": req.id}
+    )
+    response = client.post(validate_url)
+    assert response.status_code == 200
+    req.refresh_from_db()
+    assert req.status == DocumentRequest.Status.VALIDATED
+
+
+@pytest.mark.django_db
+def test_admin_list_empty_for_admin_without_role_assignment():
+    # FAIL-CLOSED : un admin (role=parish_admin) SANS RoleAssignment ne voit RIEN
+    # (avant : repli legacy fail-open → voyait TOUT).
+    DocumentRequestFactory()
+    DocumentRequestFactory()
+    flat_admin = StaffUserFactory()  # role=parish_admin, aucune RoleAssignment
+    client = APIClient()
+    client.force_authenticate(user=flat_admin)
+    url = reverse("api:documents:admin-document-request-list")
+
+    response = client.get(url)
+
+    assert response.status_code == 200
+    assert response.data["count"] == 0

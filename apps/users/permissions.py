@@ -25,16 +25,17 @@ class IsSuperAdmin(BasePermission):
 
 
 class IsAnyAdmin(BasePermission):
-    """Autorise tous les rôles admin (province, diocèse, paroisse, église, super)."""
+    """Autorise tout administrateur — par ``user.role`` OU par une ``RoleAssignment``
+    admin active (source de vérité). Permet au clergé scopé (curé avec
+    RoleAssignment, ``user.role='fidele'``) d'atteindre les endpoints admin ;
+    l'autorité territoriale fine reste tranchée au niveau objet/selector."""
 
     message = "Accès réservé aux administrateurs."
 
     def has_permission(self, request, view) -> bool:
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and request.user.role in _ADMIN_ROLES
-        )
+        from apps.users.scoping import is_any_admin
+
+        return is_any_admin(request.user)
 
 
 class IsFidele(BasePermission):

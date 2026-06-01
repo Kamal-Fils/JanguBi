@@ -37,6 +37,31 @@ def is_global_admin(user) -> bool:
     return active_role_assignments(user).filter(role=UserRole.SUPER_ADMIN).exists()
 
 
+# Rôles d'administration digitale (UserRole). Source de vérité = RoleAssignment :
+# un curé porteur d'une RoleAssignment(parish_admin) est admin même si user.role
+# est resté 'fidele'.
+_ANY_ADMIN_ROLES = {
+    UserRole.SUPER_ADMIN,
+    UserRole.PROVINCE_ADMIN,
+    UserRole.DIOCESE_ADMIN,
+    UserRole.PARISH_ADMIN,
+    UserRole.CHURCH_ADMIN,
+}
+
+
+def is_any_admin(user) -> bool:
+    """Vrai si l'utilisateur possède une capacité admin, par ``user.role`` OU par
+    une ``RoleAssignment`` admin active. Permet aux endpoints view-level d'admettre
+    le clergé scopé (curé avec RoleAssignment, user.role='fidele') ; l'autorité
+    territoriale fine reste décidée par ``user_can_admin_*`` / ``accessible_*_ids``.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "role", None) in _ANY_ADMIN_ROLES:
+        return True
+    return active_role_assignments(user).filter(role__in=_ANY_ADMIN_ROLES).exists()
+
+
 def role_assignment_list(*, user=None) -> QuerySet[RoleAssignment]:
     qs = RoleAssignment.objects.select_related(
         "user", "province", "diocese", "parish", "church", "granted_by"

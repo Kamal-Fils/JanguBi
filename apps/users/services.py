@@ -451,6 +451,12 @@ def user_update_profile(
         user.onboarding_state = UserOnboardingState.COMPLETED
         user.save(update_fields=["onboarding_state", "updated_at"])
 
+    # Le signal post_save de Profile remplit diocese/province via queryset
+    # .update() (ne touche pas l'objet en mémoire). On recharge pour que la
+    # réponse (PATCH /me) reflète immédiatement la hiérarchie territoriale.
+    if "primary_parish" in data:
+        user.refresh_from_db()
+
     _audit(user, AuditEvent.PROFILE_UPDATED, ip, {"performed_by": performed_by.email})
 
     return user

@@ -15,6 +15,7 @@ from apps.documents.models import DocumentRequest
 from apps.documents.permissions import IsDocumentRequester, IsDocumentRequesterOrAdmin
 from apps.documents.selectors import (
     document_request_get,
+    document_request_get_for_admin,
     document_request_internal_note_list,
     document_request_list,
     document_request_status_log_list,
@@ -205,7 +206,7 @@ class AdminDocumentRequestDetailApi(ApiAuthMixin, APIView):
         summary="Détail d'une demande (admin)",
     )
     def get(self, request, request_id: UUID):
-        req = document_request_get(request_id=request_id, user=request.user)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         return Response(DocumentRequestDetailOutputSerializer(req).data)
 
 
@@ -218,7 +219,7 @@ class AdminStartVerificationApi(ApiAuthMixin, APIView):
         summary="Démarrer la vérification (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = get_object_or_404(DocumentRequest, pk=request_id)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         try:
             req = document_request_start_verification(request_obj=req, agent=request.user)
         except ApplicationError as exc:
@@ -236,7 +237,7 @@ class AdminRequestInfoApi(ApiAuthMixin, APIView):
         summary="Demander un complément d'information (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = get_object_or_404(DocumentRequest, pk=request_id)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         serializer = StatusActionWithCommentInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -259,7 +260,7 @@ class AdminValidateApi(ApiAuthMixin, APIView):
         summary="Valider une demande (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = get_object_or_404(DocumentRequest, pk=request_id)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         try:
             req = document_request_validate(request_obj=req, agent=request.user)
         except ApplicationError as exc:
@@ -277,7 +278,7 @@ class AdminRejectApi(ApiAuthMixin, APIView):
         summary="Rejeter une demande (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = get_object_or_404(DocumentRequest, pk=request_id)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         serializer = RejectInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -301,7 +302,7 @@ class AdminDepositApi(ApiAuthMixin, APIView):
         summary="Déposer le document final (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = get_object_or_404(DocumentRequest, pk=request_id)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         serializer = DepositDocumentInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -325,7 +326,7 @@ class AdminNotesApi(ApiAuthMixin, APIView):
         summary="Lister les notes internes (admin)",
     )
     def get(self, request, request_id: UUID):
-        req = get_object_or_404(DocumentRequest, pk=request_id)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         notes = document_request_internal_note_list(request_obj=req)
         return Response(InternalNoteOutputSerializer(notes, many=True).data)
 
@@ -336,7 +337,7 @@ class AdminNotesApi(ApiAuthMixin, APIView):
         summary="Ajouter une note interne (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = get_object_or_404(DocumentRequest, pk=request_id)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         serializer = InternalNoteCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         note = document_request_add_internal_note(
@@ -356,6 +357,6 @@ class AdminLogsApi(ApiAuthMixin, APIView):
         summary="Historique des statuts (admin)",
     )
     def get(self, request, request_id: UUID):
-        req = get_object_or_404(DocumentRequest, pk=request_id)
+        req = document_request_get_for_admin(request_id=request_id, user=request.user)
         logs = document_request_status_log_list(request_obj=req)
         return Response(StatusLogOutputSerializer(logs, many=True).data)

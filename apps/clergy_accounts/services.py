@@ -40,14 +40,37 @@ def _can_invite(*, inviter: BaseUser, pastoral_role: str) -> bool:
     )
 
 
-def _validate_target_exists(*, parish_id: int | None, church_id: int | None) -> None:
-    """Valide l'existence des cibles territoriales fournies (FK)."""
-    from apps.org.models import Church, Parish
+def _validate_and_authorize_target(
+    *, inviter: BaseUser, parish_id: int | None, church_id: int | None, diocese_id: int | None
+) -> None:
+    """Valide l'existence des cibles ET l'autorité territoriale de l'invitant.
 
-    if parish_id is not None and not Parish.objects.filter(pk=parish_id).exists():
-        raise ApplicationError("Paroisse cible introuvable.")
-    if church_id is not None and not Church.objects.filter(pk=church_id).exists():
-        raise ApplicationError("Église cible introuvable.")
+    Source de vérité = RoleAssignment (via scoping.py). Empêche un évêque du
+    diocèse X de planter une capacité scopée (parish_admin/diocese_admin) dans
+    une paroisse/diocèse hors de son territoire. Le super_admin (admin global)
+    passe partout.
+    """
+    from apps.org.models import Church, Diocese, Parish
+    from apps.users.scoping import user_can_admin_diocese, user_can_admin_parish
+
+    if parish_id is not None:
+        if not Parish.objects.filter(pk=parish_id).exists():
+            raise ApplicationError("Paroisse cible introuvable.")
+        if not user_can_admin_parish(inviter, parish_id):
+            raise ApplicationError("Vous n'avez pas autorité sur cette paroisse.")
+
+    if church_id is not None:
+        church = Church.objects.filter(pk=church_id).first()
+        if church is None:
+            raise ApplicationError("Église cible introuvable.")
+        if not user_can_admin_parish(inviter, church.parish_id):
+            raise ApplicationError("Vous n'avez pas autorité sur cette église.")
+
+    if diocese_id is not None:
+        if not Diocese.objects.filter(pk=diocese_id).exists():
+            raise ApplicationError("Diocèse cible introuvable.")
+        if not user_can_admin_diocese(inviter, diocese_id):
+            raise ApplicationError("Vous n'avez pas autorité sur ce diocèse.")
 
 
 @transaction.atomic
@@ -68,7 +91,9 @@ def invitation_create(
     if ClergicalInvitation.objects.filter(email=email, status=ClergicalInvitation.Status.PENDING).exists():
         raise ApplicationError("Une invitation est déjà en attente pour cette adresse email.")
 
-    _validate_target_exists(parish_id=parish_id, church_id=church_id)
+    _validate_and_authorize_target(
+        inviter=inviter, parish_id=parish_id, church_id=church_id, diocese_id=diocese_id
+    )
 
     expires_at = timezone.now() + timedelta(hours=_INVITATION_EXPIRY_HOURS)
 
@@ -212,8 +237,21 @@ def invitation_accept(*, token: str, user: BaseUser) -> ClergicalInvitation:
     user.is_active = True
     update_fields = ["pastoral_role", "is_verified", "is_active", "updated_at"]
     if diocese_id:
+        from apps.org.models import Diocese
+
         user.diocese_id = diocese_id
         update_fields.append("diocese_id")
+        # Province dérivée du diocèse — cohérence avec le signal territorial des
+        # fidèles (qui remplit diocese ET province). Sinon archevêque/évêque
+        # créés par invitation gardaient province=NULL.
+        province_id = (
+            Diocese.objects.filter(id=diocese_id)
+            .values_list("province_id", flat=True)
+            .first()
+        )
+        if province_id:
+            user.province_id = province_id
+            update_fields.append("province_id")
     user.save(update_fields=update_fields)
 
     # Capacité administrative scopée (curé → parish_admin principal, etc.).

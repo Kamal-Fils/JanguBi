@@ -50,19 +50,26 @@ _CLERGY_PUBLISHER_ROLES = {
 
 
 def is_bishop(user: BaseUser) -> bool:
-    """Évêque/archevêque (pastoral_role) OU admin diocèse-et-plus (role)."""
-    return (
-        user.pastoral_role in _BISHOP_PASTORAL_ROLES
-        or user.role in _BISHOP_ADMIN_ROLES
-    )
+    """Autorité de niveau évêque : pastoral_role évêque/archevêque, OU admin
+    diocèse-et-plus — par ``user.role`` OU par une RoleAssignment diocèse/province
+    (source de vérité). Utilisé pour la publication des lettres pastorales."""
+    from apps.users.scoping import accessible_diocese_ids, is_global_admin
+
+    if user.pastoral_role in _BISHOP_PASTORAL_ROLES:
+        return True
+    if user.role in _BISHOP_ADMIN_ROLES:
+        return True
+    if is_global_admin(user):
+        return True
+    return bool(accessible_diocese_ids(user))
 
 
 def is_news_editor(user: BaseUser) -> bool:
-    """Peut créer/gérer un article : admin digital OU clergé (diacre inclus)."""
-    return (
-        user.role in _EDITOR_ROLES
-        or user.pastoral_role in _CLERGY_EDITOR_ROLES
-    )
+    """Peut créer/gérer un article : admin digital (user.role OU RoleAssignment)
+    OU clergé (diacre inclus). L'autorité territoriale fine est vérifiée à part."""
+    from apps.users.scoping import is_any_admin
+
+    return is_any_admin(user) or user.pastoral_role in _CLERGY_EDITOR_ROLES
 
 
 def _check_editor(user: BaseUser) -> None:
@@ -71,10 +78,17 @@ def _check_editor(user: BaseUser) -> None:
 
 
 def article_can_publish(*, user: BaseUser, article: Article) -> bool:
+    from apps.users.scoping import is_any_admin
+
     if article.content_type == Article.ContentType.PASTORAL_LETTER:
         return is_bishop(user)
-    # ANNOUNCEMENT et ARTICLE : admin digital OU clergé publicateur (diacre exclu).
-    return user.role in _EDITOR_ROLES or user.pastoral_role in _CLERGY_PUBLISHER_ROLES
+    # Diacre = brouillon seulement (matrice §16), même s'il détient une capacité
+    # admin : la publication reste réservée au curé qui valide.
+    if user.pastoral_role == PastoralRole.DIACRE:
+        return False
+    # ANNOUNCEMENT et ARTICLE : admin digital (role OU RoleAssignment) OU clergé
+    # publicateur. Le « où » est tranché par _check_scope_authority.
+    return is_any_admin(user) or user.pastoral_role in _CLERGY_PUBLISHER_ROLES
 
 
 def _check_scope_consistency(
@@ -90,6 +104,38 @@ def _check_scope_consistency(
         raise ApplicationError(
             "Un article global ne doit pas avoir de scope_parish_id ou scope_diocese_id."
         )
+
+
+def _check_scope_authority(
+    *,
+    user: BaseUser,
+    scope_type: str,
+    scope_parish_id: int | None,
+    scope_diocese_id: int | None,
+) -> None:
+    """L'auteur/éditeur doit avoir autorité territoriale RÉELLE (RoleAssignment)
+    sur la portée de l'article. Ferme l'injection inter-paroisses/diocèses : un
+    curé de la paroisse A ne peut ni créer ni publier un article scopé sur B, et
+    un clergé sans affectation ne peut rien publier de scopé.
+    """
+    from apps.users.scoping import (
+        accessible_province_ids,
+        is_global_admin,
+        user_can_admin_diocese,
+        user_can_admin_parish,
+    )
+
+    if scope_type == Article.ScopeType.PARISH:
+        if not user_can_admin_parish(user, scope_parish_id):
+            raise ApplicationError("Vous n'avez pas autorité sur cette paroisse.")
+    elif scope_type == Article.ScopeType.DIOCESE:
+        if not user_can_admin_diocese(user, scope_diocese_id):
+            raise ApplicationError("Vous n'avez pas autorité sur ce diocèse.")
+    else:  # GLOBAL — réservé aux administrateurs province / national.
+        if not (is_global_admin(user) or accessible_province_ids(user)):
+            raise ApplicationError(
+                "La portée globale est réservée aux administrateurs province ou national."
+            )
 
 
 def _build_slug(title: str, scope_type: str, scope_id: int | None) -> str:
@@ -123,6 +169,12 @@ def article_create(
 ) -> Article:
     _check_editor(author)
     _check_scope_consistency(scope_type, scope_parish_id, scope_diocese_id)
+    _check_scope_authority(
+        user=author,
+        scope_type=scope_type,
+        scope_parish_id=scope_parish_id,
+        scope_diocese_id=scope_diocese_id,
+    )
 
     try:
         category = ArticleCategory.objects.get(pk=category_id, is_active=True)
@@ -217,6 +269,13 @@ def article_publish(*, article: Article, editor: BaseUser) -> Article:
         raise ApplicationError(
             "Vous n'avez pas les droits nécessaires pour publier ce type de contenu."
         )
+    # Autorité territoriale sur la portée réelle de l'article (anti inter-paroisses).
+    _check_scope_authority(
+        user=editor,
+        scope_type=article.scope_type,
+        scope_parish_id=article.scope_parish_id,
+        scope_diocese_id=article.scope_diocese_id,
+    )
 
     if article.status == Article.Status.PUBLISHED:
         raise ApplicationError("L'article est déjà publié.")
