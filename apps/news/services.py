@@ -155,6 +155,7 @@ def _check_scope_authority(
     from apps.users.scoping import (
         accessible_province_ids,
         is_global_admin,
+        user_can_admin_church,
         user_can_admin_diocese,
         user_can_admin_parish,
     )
@@ -163,12 +164,8 @@ def _check_scope_authority(
         if not user_can_admin_parish(user, scope_parish_id):
             raise ApplicationError("Vous n'avez pas autorité sur cette paroisse.")
     elif scope_type == Article.ScopeType.CHURCH:
-        from apps.org.models import Church
-
-        church = Church.objects.filter(pk=scope_church_id).first()
-        if church is None:
-            raise ApplicationError("Église introuvable.")
-        if not user_can_admin_parish(user, church.parish_id):
+        # Autorité église (RG-CONT 3b) : church_admin sur X, OU autorité sur sa paroisse.
+        if not user_can_admin_church(user, scope_church_id):
             raise ApplicationError("Vous n'avez pas autorité sur cette église.")
     elif scope_type == Article.ScopeType.DIOCESE:
         if not user_can_admin_diocese(user, scope_diocese_id):
