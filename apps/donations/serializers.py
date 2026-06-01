@@ -52,6 +52,22 @@ class DonationMakeInputSerializer(serializers.Serializer):
     payment_provider = serializers.ChoiceField(choices=PaymentProvider.choices)
     is_anonymous = serializers.BooleanField(default=False)
     note = serializers.CharField(required=False, allow_blank=True, default="")
+    # Étiquetage (B6a) — défaut = église/paroisse principale du donateur côté service.
+    church_id = serializers.IntegerField(required=False, allow_null=True)
+    parish_id = serializers.IntegerField(required=False, allow_null=True)
+    # Don anonyme (RG-PAY-01/02).
+    anonymous_donor_name = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=120
+    )
+    anonymous_donor_phone = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=30
+    )
+
+
+class DonationConfirmInputSerializer(serializers.Serializer):
+    payment_reference = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=200
+    )
 
 
 class DonationOutputSerializer(serializers.ModelSerializer):
