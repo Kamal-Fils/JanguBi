@@ -15,7 +15,7 @@ from apps.donations.models import Donation
 from apps.donations.selectors import donation_flow_for_parish
 from apps.mass_intentions.models import MassIntention
 from apps.org.models import Church, Diocese, Parish
-from apps.users.models import Profile, RoleAssignment
+from apps.users.models import Membership, Profile, RoleAssignment
 from apps.users.enums import RoleScope
 from apps.users.scoping import clergy_of_parish, parish_principal_cure
 
@@ -65,7 +65,14 @@ def cure_dashboard(*, parish_id: int) -> dict | None:
             "diocese": parish.diocese.name,
         },
         "total_fideles": Profile.objects.filter(primary_parish_id=parish_id).count(),
-        "followers": parish.followers.count(),
+        # Membres de la paroisse via appartenance (ex-followed_parishes retiré au 3a) :
+        # fidèles distincts rattachés à une église de cette paroisse.
+        "followers": (
+            Membership.objects.filter(church__parish_id=parish_id)
+            .values("user")
+            .distinct()
+            .count()
+        ),
         "donation_flow_year": donation_flow_for_parish(parish_id=parish_id, since=_start_of_year()),
         "donation_flow_month": donation_flow_for_parish(parish_id=parish_id, since=_start_of_month()),
         "pending_documents": _parish_pending_documents(parish_id),
