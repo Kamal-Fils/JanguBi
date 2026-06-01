@@ -9,6 +9,16 @@ class OrgRefSerializer(serializers.Serializer):
     name = serializers.CharField(read_only=True)
 
 
+class MembershipMeSerializer(serializers.Serializer):
+    """Appartenance exposée dans /me : église + paroisse + diocèse + flag principal."""
+
+    id = serializers.IntegerField(read_only=True)
+    church = OrgRefSerializer(read_only=True)
+    parish = OrgRefSerializer(read_only=True)
+    diocese = OrgRefSerializer(read_only=True)
+    is_primary = serializers.BooleanField(read_only=True)
+
+
 @extend_schema_serializer(
     component_name="MonProfil",
     examples=[
@@ -57,6 +67,20 @@ class MeOutputSerializer(serializers.Serializer):
     province = OrgRefSerializer(read_only=True, allow_null=True)
     profile = serializers.DictField(
         help_text="Objet profil. `primary_parish` y est exposé en {id, name} | null."
+    )
+    # Multi-appartenance (Chantier 2). Singuliers diocese/province/primary_parish =
+    # principaux (rétro-compat) ; pluriels = toutes les appartenances.
+    memberships = MembershipMeSerializer(
+        many=True, read_only=True, help_text="Toutes les appartenances (principale en tête)."
+    )
+    church_ids = serializers.ListField(
+        child=serializers.IntegerField(), read_only=True, help_text="IDs des églises."
+    )
+    parish_ids = serializers.ListField(
+        child=serializers.IntegerField(), read_only=True, help_text="IDs des paroisses (distincts)."
+    )
+    diocese_ids = serializers.ListField(
+        child=serializers.IntegerField(), read_only=True, help_text="IDs des diocèses (distincts)."
     )
 
 
