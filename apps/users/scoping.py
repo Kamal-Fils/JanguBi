@@ -172,6 +172,24 @@ def user_can_admin_parish(user, parish_id: int) -> bool:
     return False
 
 
+def user_can_admin_church(user, church_id: int) -> bool:
+    """Autorité sur une église X (RG-CONT Chantier 3b). Vrai si :
+    admin global, OU RoleAssignment scope=church sur X, OU autorité sur la PAROISSE
+    de X (parish/diocese/province au-dessus). → un church_admin scopé sur X PEUT
+    publier sur X, sans exiger l'autorité paroisse."""
+    if is_global_admin(user):
+        return True
+    try:
+        church = Church.objects.select_related("parish").get(id=church_id)
+    except Church.DoesNotExist:
+        return False
+    if active_role_assignments(user).filter(
+        scope=RoleScope.CHURCH, church_id=church_id
+    ).exists():
+        return True
+    return user_can_admin_parish(user, church.parish_id)
+
+
 def user_can_admin_diocese(user, diocese_id: int) -> bool:
     if is_global_admin(user):
         return True
