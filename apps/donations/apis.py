@@ -11,14 +11,16 @@ from apps.core.exceptions import ApplicationError
 from apps.users.permissions import IsOnboardingCompleted
 from apps.users.scoping import user_can_admin_parish
 
+from .models import Donation
 from .selectors import campaign_list_active, donation_list_for_donor
 from .serializers import (
     CampaignCreateInputSerializer,
     CampaignOutputSerializer,
+    DonationConfirmInputSerializer,
     DonationMakeInputSerializer,
     DonationOutputSerializer,
 )
-from .services import campaign_create, donation_make
+from .services import campaign_create, donation_confirm, donation_make
 
 
 def _error(exc: ApplicationError) -> Response:
@@ -112,6 +114,45 @@ class DonationMakeApi(ApiAuthMixin, APIView):
         except ApplicationError as e:
             return _error(e)
         return Response(DonationOutputSerializer(donation).data, status=status.HTTP_201_CREATED)
+
+
+class DonationConfirmApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        request=DonationConfirmInputSerializer,
+        responses={200: DonationOutputSerializer},
+        tags=["donations"],
+        summary="Confirmer manuellement un don en espèces (autorité paroisse)",
+    )
+    def post(self, request, donation_id: int):
+        donation = (
+            Donation.objects.select_related("parish").filter(id=donation_id).first()
+        )
+        if donation is None:
+            return Response(
+                {"detail": "Don introuvable."}, status=status.HTTP_404_NOT_FOUND
+            )
+        # Autorité territoriale RÉELLE sur la paroisse bénéficiaire (sinon 403).
+        from apps.users.scoping import is_global_admin
+
+        if not (
+            is_global_admin(request.user)
+            or (
+                donation.parish_id is not None
+                and user_can_admin_parish(request.user, donation.parish_id)
+            )
+        ):
+            return Response(
+                {"detail": "Vous n'avez pas autorité sur la paroisse de ce don."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = DonationConfirmInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            donation = donation_confirm(donation=donation, **serializer.validated_data)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(DonationOutputSerializer(donation).data)
 
 
 class DonationMyListApi(ApiAuthMixin, APIView):

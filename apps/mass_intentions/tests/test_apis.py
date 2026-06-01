@@ -43,6 +43,11 @@ def pretre_client(db):
 
 @pytest.mark.django_db
 def test_submit_intention_201(fidele_client):
+    # B6b : l'intention se rattache par défaut à la paroisse principale du demandeur.
+    from apps.org.tests.factories import ChurchFactory
+    from apps.users.services_memberships import membership_create
+
+    membership_create(user=fidele_client._user, church=ChurchFactory(), is_primary=True)
     url = reverse("api:mass-intentions:submit")
     resp = fidele_client.post(
         url,
