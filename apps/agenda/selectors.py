@@ -15,6 +15,20 @@ def event_list(*, scope_type: str | None = None, event_type: str | None = None, 
     return qs.order_by("start_at")
 
 
+def event_list_for_user(*, user, event_type: str | None = None, upcoming_only: bool = True) -> QuerySet:
+    """Feed agenda scopé aux appartenances de l'utilisateur (Chantier 3b) :
+    global ∪ église ∪ paroisse ∪ diocèse, via le helper générique du 3a."""
+    from apps.agenda.models import Event
+    from apps.users.scoping import get_scoped_queryset
+
+    qs = Event.objects.select_related("organizer")
+    if upcoming_only:
+        qs = qs.filter(start_at__gte=timezone.now())
+    if event_type:
+        qs = qs.filter(event_type=event_type)
+    return get_scoped_queryset(qs, user).order_by("start_at")
+
+
 def event_get(*, event_id: int):
     from apps.agenda.models import Event
     from apps.core.exceptions import ApplicationError

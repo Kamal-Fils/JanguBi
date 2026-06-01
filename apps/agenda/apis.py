@@ -24,7 +24,6 @@ def _error(exc: ApplicationError) -> Response:
 class EventListCreateApi(ApiAuthMixin, APIView):
     @extend_schema(
         parameters=[
-            OpenApiParameter("scope_type", OpenApiTypes.STR, description="Filter by scope (global/diocese/parish)"),
             OpenApiParameter("event_type", OpenApiTypes.STR, description="Filter by event type"),
             OpenApiParameter("upcoming_only", OpenApiTypes.BOOL, description="Only future events (default true)"),
             OpenApiParameter("limit", OpenApiTypes.INT),
@@ -32,15 +31,16 @@ class EventListCreateApi(ApiAuthMixin, APIView):
         ],
         responses={200: EventOutputSerializer(many=True)},
         tags=["Agenda"],
-        summary="Liste des événements",
+        summary="Liste des événements (scopée aux appartenances de l'utilisateur)",
     )
     def get(self, request):
-        from apps.agenda.selectors import event_list
+        from apps.agenda.selectors import event_list_for_user
 
-        scope_type = request.query_params.get("scope_type")
         event_type = request.query_params.get("event_type")
         upcoming_only = request.query_params.get("upcoming_only", "true").lower() != "false"
-        events = event_list(scope_type=scope_type, event_type=event_type, upcoming_only=upcoming_only)
+        events = event_list_for_user(
+            user=request.user, event_type=event_type, upcoming_only=upcoming_only
+        )
         return get_paginated_response(
             pagination_class=LimitOffsetPagination,
             serializer_class=EventOutputSerializer,
@@ -103,14 +103,49 @@ class EventRegisterApi(ApiAuthMixin, APIView):
         return Response(status=status.HTTP_201_CREATED)
 
 
+def _can_view_event_registrations(user, event) -> bool:
+    """Liste des inscrits réservée : organisateur, admin global, ou autorité sur la
+    portée de l'événement (église→sa paroisse, paroisse, diocèse). Ferme le trou
+    où tout authentifié lisait la liste."""
+    if event.organizer_id is not None and event.organizer_id == user.id:
+        return True
+    from apps.agenda.models import Event
+    from apps.users.scoping import (
+        is_global_admin,
+        user_can_admin_church,
+        user_can_admin_diocese,
+        user_can_admin_parish,
+    )
+
+    if is_global_admin(user):
+        return True
+    if event.scope_type == Event.ScopeType.CHURCH and event.scope_church_id:
+        return user_can_admin_church(user, event.scope_church_id)
+    if event.scope_type == Event.ScopeType.PARISH and event.scope_parish_id:
+        return user_can_admin_parish(user, event.scope_parish_id)
+    if event.scope_type == Event.ScopeType.DIOCESE and event.scope_diocese_id:
+        return user_can_admin_diocese(user, event.scope_diocese_id)
+    return False
+
+
 class EventRegistrationsApi(ApiAuthMixin, APIView):
     @extend_schema(
         responses={200: RegistrationOutputSerializer(many=True)},
         tags=["Agenda"],
-        summary="Liste des inscrits (clergé seulement)",
+        summary="Liste des inscrits (autorité sur la portée de l'événement)",
     )
     def get(self, request, event_id: int):
-        from apps.agenda.selectors import event_registrations_list
+        from apps.agenda.selectors import event_get, event_registrations_list
+
+        try:
+            event = event_get(event_id=event_id)
+        except ApplicationError as e:
+            return _error(e)
+        if not _can_view_event_registrations(request.user, event):
+            return Response(
+                {"detail": "Réservé au clergé/admin ayant autorité sur cet événement."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         registrations = event_registrations_list(event_id=event_id)
         return get_paginated_response(

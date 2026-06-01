@@ -56,11 +56,28 @@ def fidele_client(db):
 
 
 @pytest.mark.django_db
-def test_event_create_clergy_201(pretre_client):
+def test_event_create_clergy_201():
+    # Un curé (RoleAssignment parish_admin) crée un événement scopé à SA paroisse.
+    # (La portée globale est désormais réservée aux admins province/national.)
+    from apps.org.tests.factories import ParishFactory
+    from apps.users.enums import RoleScope, UserRole
+    from apps.users.models import RoleAssignment
+
+    parish = ParishFactory()
+    cure = _make_user("cure-agenda@example.com", "pretre")
+    RoleAssignment.objects.create(
+        user=cure, role=UserRole.PARISH_ADMIN, scope=RoleScope.PARISH,
+        parish=parish, is_active=True,
+    )
+    client = APIClient()
+    client.force_authenticate(user=cure)
     url = reverse("api:agenda:event-list-create")
-    resp = pretre_client.post(url, _event_data(), format="json")
+    data = {**_event_data(), "scope_type": "parish", "scope_id": parish.id}
+
+    resp = client.post(url, data, format="json")
+
     assert resp.status_code == status.HTTP_201_CREATED
-    assert Event.objects.filter(organizer=pretre_client._user).count() == 1
+    assert Event.objects.filter(organizer=cure).count() == 1
 
 
 @pytest.mark.django_db
