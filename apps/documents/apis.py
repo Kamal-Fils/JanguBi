@@ -42,7 +42,7 @@ from apps.documents.services import (
     document_request_submit_supplement,
     document_request_validate,
 )
-from apps.users.permissions import IsAnyAdmin
+from apps.users.permissions import IsAnyAdmin, IsOnboardingCompleted
 
 
 def _error(exc: ApplicationError) -> Response:
@@ -57,6 +57,13 @@ def _error(exc: ApplicationError) -> Response:
 class DocumentRequestListCreateApi(ApiAuthMixin, APIView):
     class Pagination(LimitOffsetPagination):
         default_limit = 20
+
+    def get_permissions(self):
+        # GET (lister ses demandes) : authentification suffit. POST (créer une
+        # demande = écriture territoriale) : onboarding finalisé requis (A1).
+        if self.request.method == "POST":
+            return [IsAuthenticated(), IsOnboardingCompleted()]
+        return [IsAuthenticated()]
 
     @extend_schema(
         parameters=[

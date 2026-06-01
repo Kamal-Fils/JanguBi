@@ -1,12 +1,14 @@
 from drf_spectacular.openapi import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
 from apps.api.pagination import LimitOffsetPagination, get_paginated_response
 from apps.core.exceptions import ApplicationError
+from apps.users.permissions import IsOnboardingCompleted
 
 from .selectors import (
     mass_intention_get,
@@ -35,6 +37,8 @@ def _error(exc: ApplicationError) -> Response:
 
 
 class MassIntentionSubmitApi(ApiAuthMixin, APIView):
+    permission_classes = [IsAuthenticated, IsOnboardingCompleted]  # A1 — écriture territoriale
+
     @extend_schema(
         request=MassIntentionSubmitInputSerializer,
         responses={201: MassIntentionOutputSerializer},

@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.agenda.models import Event
+from apps.users.enums import UserOnboardingState
 from apps.users.models import BaseUser
 
 import datetime
@@ -20,7 +21,8 @@ def _make_user(email, pastoral_role="fidele", role="fidele"):
         is_verified=True,
     )
     user.pastoral_role = pastoral_role
-    user.save(update_fields=["pastoral_role"])
+    user.onboarding_state = UserOnboardingState.COMPLETED  # onboardé → peut écrire (A1)
+    user.save(update_fields=["pastoral_role", "onboarding_state"])
     return user
 
 
@@ -125,3 +127,28 @@ def test_event_requires_auth():
     url = reverse("api:agenda:event-list-create")
     resp = client.get(url)
     assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_event_register_pending_parish_blocked_returns_403():
+    # EXPLOIT A1 : un fidèle pur en pending_parish (paroisse non choisie) ne peut
+    # PAS s'inscrire à un événement. Même endpoint que test_event_register
+    # (completed → 201) : seul l'onboarding_state change → le 403 vient de la garde.
+    # La garde (has_permission) précède la résolution de l'objet, d'où l'event_id factice.
+    user = BaseUser.objects.create_user(
+        email="pending_ag@test.com",
+        password="StrongPassw0rd!",
+        role="fidele",
+        phone_number="+221770999333",
+        is_active=True,
+        is_verified=True,
+    )
+    user.onboarding_state = UserOnboardingState.PENDING_PARISH_SELECTION
+    user.save(update_fields=["onboarding_state"])
+    client = APIClient()
+    client.force_authenticate(user=user)
+    url = reverse("api:agenda:event-register", kwargs={"event_id": 999999})
+
+    resp = client.post(url)
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN

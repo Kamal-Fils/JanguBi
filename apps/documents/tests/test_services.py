@@ -25,13 +25,25 @@ from apps.documents.services import (
     document_request_submit_supplement,
     document_request_validate,
 )
-from apps.users.tests.factories import BaseUserFactory, StaffUserFactory
+from apps.org.tests.factories import ParishFactory
+from apps.users.tests.factories import (
+    BaseUserFactory,
+    ProfileFactory,
+    StaffUserFactory,
+)
 
 from .factories import (
     DocumentRequestFactory,
     InvalidFileFactory,
     ValidFileFactory,
 )
+
+
+def _requester_with_parish():
+    """Demandeur avec une paroisse principale (résolution target_parish OK)."""
+    user = BaseUserFactory()
+    ProfileFactory(user=user, primary_parish=ParishFactory())
+    return user
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -64,7 +76,7 @@ MINIMUM_DATA = {
 @pytest.mark.django_db
 def test_document_request_create_success():
     # Arrange
-    requester = BaseUserFactory()
+    requester = _requester_with_parish()
     data = {**MINIMUM_DATA}
 
     # Act
@@ -80,10 +92,36 @@ def test_document_request_create_success():
     assert result.consent_given is True
 
 
+# --- A5 — pas de repli silencieux sur la paroisse cible ---------------------
+
+
+@pytest.mark.django_db
+def test_invalid_parish_id_raises():
+    # parish_id invalide → erreur explicite, jamais de repli silencieux sur la
+    # paroisse principale.
+    requester = _requester_with_parish()
+    data = {**MINIMUM_DATA, "parish_id": 999999}
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="introuvable"):
+            document_request_create(requester=requester, data=data)
+
+
+@pytest.mark.django_db
+def test_document_create_without_resolved_parish_raises():
+    # Aucune paroisse résolue (pas de parish_id, pas de paroisse principale) →
+    # rejet, jamais de demande orpheline (target_parish=None).
+    requester = BaseUserFactory()  # aucun profil → primary_parish None
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError):
+            document_request_create(requester=requester, data={**MINIMUM_DATA})
+
+
 @pytest.mark.django_db
 def test_document_request_create_logs_initial_status():
     # Arrange
-    requester = BaseUserFactory()
+    requester = _requester_with_parish()
     data = {**MINIMUM_DATA}
 
     # Act
@@ -100,7 +138,7 @@ def test_document_request_create_logs_initial_status():
 @pytest.mark.django_db
 def test_document_request_create_with_valid_attachment():
     # Arrange
-    requester = BaseUserFactory()
+    requester = _requester_with_parish()
     valid_file = ValidFileFactory(uploaded_by=requester)
     data = {**MINIMUM_DATA, "attachment_file_id": valid_file.id}
 
@@ -116,7 +154,7 @@ def test_document_request_create_with_valid_attachment():
 @pytest.mark.django_db
 def test_document_request_create_raises_when_attachment_not_found():
     # Arrange
-    requester = BaseUserFactory()
+    requester = _requester_with_parish()
     data = {**MINIMUM_DATA, "attachment_file_id": uuid.uuid4()}
 
     # Act & Assert
@@ -128,7 +166,7 @@ def test_document_request_create_raises_when_attachment_not_found():
 @pytest.mark.django_db
 def test_document_request_create_raises_when_attachment_not_finalized():
     # Arrange
-    requester = BaseUserFactory()
+    requester = _requester_with_parish()
     invalid_file = InvalidFileFactory(uploaded_by=requester)
     data = {**MINIMUM_DATA, "attachment_file_id": invalid_file.id}
 
@@ -173,7 +211,7 @@ def test_document_request_create_raises_when_godparent_missing_celebration_type(
 @pytest.mark.django_db
 def test_document_request_create_succeeds_with_valid_religious_marriage_details():
     # Arrange
-    requester = BaseUserFactory()
+    requester = _requester_with_parish()
     data = {
         **MINIMUM_DATA,
         "document_type": DocumentRequest.DocumentType.RELIGIOUS_MARRIAGE,
