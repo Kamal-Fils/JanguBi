@@ -4,8 +4,19 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.donations.models import Donation, DonationCampaign
-from apps.users.enums import UserOnboardingState
-from apps.users.models import BaseUser
+from apps.org.tests.factories import ChurchFactory, ParishFactory
+from apps.users.enums import RoleScope, UserOnboardingState, UserRole
+from apps.users.models import BaseUser, RoleAssignment
+
+
+def _cure_with_ra(parish, email):
+    """Curé (pastoral_role=pretre) + RoleAssignment(parish_admin) sur `parish`."""
+    user = _make_user(email, "pretre")
+    RoleAssignment.objects.create(
+        user=user, role=UserRole.PARISH_ADMIN, scope=RoleScope.PARISH,
+        parish=parish, is_active=True,
+    )
+    return user
 
 
 def _make_user(email, pastoral_role="fidele"):
@@ -73,6 +84,72 @@ def test_create_campaign_fidele_400(fidele_client):
         format="json",
     )
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
+# --- A3 — autorité sur la paroisse EFFECTIVE (church_id / scope_id) ----------
+
+
+@pytest.mark.django_db
+def test_campaign_create_via_church_id_of_other_parish_returns_403():
+    # EXPLOIT : un curé de A crée une campagne pour une église de la paroisse B.
+    parish_a = ParishFactory()
+    parish_b = ParishFactory()
+    church_b = ChurchFactory(parish=parish_b)
+    cure_a = _cure_with_ra(parish_a, "cure_a@test.com")
+    client = APIClient()
+    client.force_authenticate(user=cure_a)
+    url = reverse("api:donations:campaign-list-create")
+
+    resp = client.post(
+        url,
+        {"title": "X", "donation_type": "free_donation", "church_id": church_b.id},
+        format="json",
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+def test_campaign_create_via_scope_id_other_parish_returns_403():
+    # EXPLOIT : même contournement via scope_type=parish + scope_id d'une autre paroisse.
+    parish_a = ParishFactory()
+    parish_b = ParishFactory()
+    cure_a = _cure_with_ra(parish_a, "cure_a2@test.com")
+    client = APIClient()
+    client.force_authenticate(user=cure_a)
+    url = reverse("api:donations:campaign-list-create")
+
+    resp = client.post(
+        url,
+        {
+            "title": "X",
+            "donation_type": "free_donation",
+            "scope_type": "parish",
+            "scope_id": parish_b.id,
+        },
+        format="json",
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+def test_campaign_create_own_parish_via_church_id_201():
+    # Le curé PEUT créer une campagne pour une église de SA paroisse (non sur-bloqué).
+    parish_a = ParishFactory()
+    church_a = ChurchFactory(parish=parish_a)
+    cure_a = _cure_with_ra(parish_a, "cure_own@test.com")
+    client = APIClient()
+    client.force_authenticate(user=cure_a)
+    url = reverse("api:donations:campaign-list-create")
+
+    resp = client.post(
+        url,
+        {"title": "X", "donation_type": "free_donation", "church_id": church_a.id},
+        format="json",
+    )
+
+    assert resp.status_code == status.HTTP_201_CREATED
 
 
 @pytest.mark.django_db

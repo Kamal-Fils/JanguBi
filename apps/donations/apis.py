@@ -25,6 +25,28 @@ def _error(exc: ApplicationError) -> Response:
     return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
 
 
+def _effective_campaign_parish_id(data) -> int | None:
+    """Paroisse RÉELLEMENT ciblée par une campagne, quelle que soit la voie
+    d'entrée — empêche le contournement du contrôle d'autorité :
+    church_id → paroisse de l'église ; sinon parish_id ; sinon scope parish.
+    """
+    church_id = data.get("church_id")
+    if church_id:
+        from apps.org.models import Church
+
+        return (
+            Church.objects.filter(id=church_id)
+            .values_list("parish_id", flat=True)
+            .first()
+        )
+    parish_id = data.get("parish_id")
+    if parish_id:
+        return parish_id
+    if data.get("scope_type") == "parish" and data.get("scope_id"):
+        return data["scope_id"]
+    return None
+
+
 class CampaignListCreateApi(ApiAuthMixin, APIView):
     @extend_schema(
         parameters=[
@@ -55,9 +77,13 @@ class CampaignListCreateApi(ApiAuthMixin, APIView):
         serializer = CampaignCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        # Cloisonnement territorial : une campagne paroissiale exige l'autorité sur la paroisse.
-        parish_id = data.get("parish_id")
-        if parish_id and not user_can_admin_parish(request.user, parish_id):
+        # Cloisonnement territorial : autorité requise sur la paroisse EFFECTIVE,
+        # résolue après church_id ET scope_type/scope_id (pas seulement parish_id),
+        # sinon contournement du garde.
+        effective_parish_id = _effective_campaign_parish_id(data)
+        if effective_parish_id is not None and not user_can_admin_parish(
+            request.user, effective_parish_id
+        ):
             return Response(
                 {"detail": "Vous ne pouvez créer une campagne que pour votre paroisse."},
                 status=status.HTTP_403_FORBIDDEN,
