@@ -65,6 +65,34 @@ def test_submit_intention_requires_auth():
 
 
 @pytest.mark.django_db
+def test_submit_intention_pending_parish_blocked_returns_403():
+    # EXPLOIT A1 : un fidèle pur en pending_parish (paroisse non choisie) ne peut
+    # PAS soumettre d'intention. Même endpoint/payload que test_submit_intention_201
+    # (completed → 201) : seul l'onboarding_state change → le 403 vient de la garde.
+    user = BaseUser.objects.create_user(
+        email="pending_mi@test.com",
+        password="StrongPassw0rd!",
+        role="fidele",
+        phone_number="+221770999111",
+        is_active=True,
+        is_verified=True,
+    )
+    user.onboarding_state = UserOnboardingState.PENDING_PARISH_SELECTION
+    user.save(update_fields=["onboarding_state"])
+    client = APIClient()
+    client.force_authenticate(user=user)
+    url = reverse("api:mass-intentions:submit")
+
+    resp = client.post(
+        url,
+        {"intention_type": "for_deceased", "intention_text": "X"},
+        format="json",
+    )
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
 def test_my_intentions_list(fidele_client):
     url = reverse("api:mass-intentions:my-list")
     resp = fidele_client.get(url)
