@@ -39,6 +39,26 @@ class ClergicalInvitation(BaseModel):
         blank=True,
     )
 
+    # Cible territoriale fine de la capacité accordée à l'acceptation.
+    # La capacité (role/scope/is_principal) est dérivée de pastoral_role + cible.
+    parish = models.ForeignKey(
+        "org.Parish",
+        verbose_name=_("paroisse cible"),
+        on_delete=models.PROTECT,
+        related_name="clergy_invitations",
+        null=True,
+        blank=True,
+    )
+
+    church = models.ForeignKey(
+        "org.Church",
+        verbose_name=_("église cible"),
+        on_delete=models.PROTECT,
+        related_name="clergy_invitations",
+        null=True,
+        blank=True,
+    )
+
     created_by = models.ForeignKey(
         "users.BaseUser",
         verbose_name=_("créé par"),

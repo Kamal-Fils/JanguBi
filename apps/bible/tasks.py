@@ -23,8 +23,13 @@ def compute_embeddings_task(self, book_id: int):
     """
     Computes vector embeddings for a given book's verses.
     """
+    from django.conf import settings
+    if not getattr(settings, "PGVECTOR_ENABLED", False):
+        logger.info(f"Embeddings disabled (PGVECTOR_ENABLED=False), skipping book_id={book_id}")
+        return
+
     from apps.bible.services.embedding_service import EmbeddingService
-    
+
     try:
         service = EmbeddingService()
         service.compute_bulk_embeddings(book_id)

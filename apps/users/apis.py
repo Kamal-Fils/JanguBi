@@ -540,7 +540,7 @@ class UserListApi(ApiAuthMixin, APIView):
         filters_s = self.FilterSerializer(data=request.query_params)
         filters_s.is_valid(raise_exception=True)
 
-        users = user_list(filters=filters_s.validated_data)
+        users = user_list(filters=filters_s.validated_data, for_user=request.user)
 
         return get_paginated_response(
             pagination_class=self.Pagination,

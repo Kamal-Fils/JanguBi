@@ -32,6 +32,21 @@ class DonationCampaign(models.Model):
     currency = models.CharField(max_length=3, default="XOF")
     scope_type = models.CharField(max_length=20, default="global")
     scope_id = models.IntegerField(null=True, blank=True)
+    # FK territoriales réelles (remplacent progressivement scope_type/scope_id).
+    parish = models.ForeignKey(
+        "org.Parish",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="donation_campaigns",
+    )
+    church = models.ForeignKey(
+        "org.Church",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="donation_campaigns",
+    )
     is_active = models.BooleanField(default=True, db_index=True)
     starts_at = models.DateTimeField(default=timezone.now)
     ends_at = models.DateTimeField(null=True, blank=True)
@@ -60,6 +75,14 @@ class Donation(models.Model):
     )
     campaign = models.ForeignKey(
         DonationCampaign,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="donations",
+    )
+    # Paroisse bénéficiaire (déduite de la campagne, ou directe pour un don libre).
+    parish = models.ForeignKey(
+        "org.Parish",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

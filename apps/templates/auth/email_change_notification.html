@@ -1,10 +1,10 @@
 {% extends "emails/_base_email.html" %}
-{% block title %}Votre adresse e-mail a été modifiée - Jaaykoo{% endblock %}
+{% block title %}Votre adresse e-mail a été modifiée - Jàngu Bi{% endblock %}
 {% block content %}
 <h1>Adresse e-mail modifiée</h1>
 <p>Bonjour <strong>{{ user.profile.first_name|default:old_email }}</strong>,</p>
 <p>
-  L'adresse e-mail de votre compte <strong style="color:#ff9800;">Jaaykoo</strong> a été modifiée.
+  L'adresse e-mail de votre compte <strong class="brand">Jàngu Bi</strong> a été modifiée.
 </p>
 <div class="address-block">
   <strong>Ancienne adresse :</strong> {{ old_email }}<br>
@@ -15,17 +15,14 @@
   <strong>Si vous n'avez pas effectué ce changement</strong>, annulez immédiatement en cliquant ici :
 </p>
 <div style="text-align:center;">
-  <a href="{{ revert_url }}"
-     style="display:inline-block;padding:13px 28px;background-color:#dc3545;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:15px;margin-top:10px;">
-    Annuler le changement d'e-mail
-  </a>
+  <a href="{{ revert_url }}" class="button-danger">Annuler le changement d'e-mail</a>
 </div>
-<p style="margin-top:20px;font-size:13px;color:#888;">
-  Ou copiez ce lien : <a href="{{ revert_url }}" style="color:#dc3545;word-break:break-all;">{{ revert_url }}</a><br><br>
+<p style="margin-top:20px;font-size:13px;" class="text-muted">
+  Ou copiez ce lien : <a href="{{ revert_url }}" class="text-danger" style="word-break:break-all;">{{ revert_url }}</a><br><br>
   Ce lien est valable <strong>{{ revert_days }} jours</strong>.
 </p>
-<p style="margin-top:30px;font-size:13px;color:#888;">
-  <strong>L'équipe <span style="color:#ff9800;">Jaaykoo</span></strong><br>
+<p style="margin-top:30px;font-size:13px;" class="text-muted">
+  <strong>L'équipe <span class="brand">Jàngu Bi</span></strong><br>
   <span style="font-size:12px;">Ce message est généré automatiquement, merci de ne pas y répondre.</span>
 </p>
 {% endblock %}

@@ -20,9 +20,9 @@ class SearchService:
         self.ts_config = getattr(settings, "PG_TS_CONFIG", "french")
 
     def search(
-        self, query: str, testament_slug: Optional[str] = None, 
+        self, query: str, testament_slug: Optional[str] = None,
         book_slug: Optional[str] = None, chapter_number: Optional[int] = None,
-        limit: int = 100, use_hybrid: bool = False, source_file: Optional[str] = "bible_fr"
+        limit: int = 100, use_hybrid: bool = False, source_file: Optional[str] = None
     ) -> List[Dict]:
         """
         Main entrypoint for search.
@@ -42,27 +42,61 @@ class SearchService:
         return self._group_results_by_book(raw_results)
 
     def _lexical_search(
-        self, query: str, testament_slug: Optional[str], 
+        self, query: str, testament_slug: Optional[str],
         book_slug: Optional[str], chapter_number: Optional[int], limit: int, source_file: Optional[str] = "bible_fr"
     ) -> List[Dict]:
-        """Performs Postgres full-text search using tsvector."""
+        """Full-text TSV search blended with pg_trgm trigram similarity (no external API required)."""
         sql = f"""
-            SELECT 
+            SELECT
                 v.id, v.chapter_id, v.number as verse_number, v.text,
                 c.number as chapter_number,
                 b.id as book_id, b.name as book_name, b.slug as book_slug, b.order as book_order,
                 t.slug as testament_slug,
-                ts_rank(v.tsv, plainto_tsquery('{self.ts_config}', %s)) as score
+                (0.6 * ts_rank(v.tsv, plainto_tsquery('{self.ts_config}', %s))
+                 + 0.4 * similarity(v.text, %s)) as score
             FROM bible_verse v
             JOIN bible_chapter c ON v.chapter_id = c.id
             JOIN bible_book b ON c.book_id = b.id
             JOIN bible_testament t ON b.testament_id = t.id
             WHERE v.tsv @@ plainto_tsquery('{self.ts_config}', %s)
         """
+        params = [query, query, query]
+
+        sql, params = self._apply_filters(sql, params, testament_slug, book_slug, chapter_number, source_file)
+
+        sql += " ORDER BY score DESC, b.order, c.number, v.number LIMIT %s"
+        params.append(limit)
+
+        results = self._execute_search_query(sql, params)
+
+        # Fallback to pure trigram when TSV finds nothing (short query, typo, accent mismatch)
+        if not results:
+            return self._trigram_fallback(query, testament_slug, book_slug, chapter_number, limit, source_file)
+
+        return results
+
+    def _trigram_fallback(
+        self, query: str, testament_slug: Optional[str],
+        book_slug: Optional[str], chapter_number: Optional[int], limit: int, source_file: Optional[str] = "bible_fr"
+    ) -> List[Dict]:
+        """Pure pg_trgm similarity search used when TSV yields no results."""
+        sql = """
+            SELECT
+                v.id, v.chapter_id, v.number as verse_number, v.text,
+                c.number as chapter_number,
+                b.id as book_id, b.name as book_name, b.slug as book_slug, b.order as book_order,
+                t.slug as testament_slug,
+                similarity(v.text, %s) as score
+            FROM bible_verse v
+            JOIN bible_chapter c ON v.chapter_id = c.id
+            JOIN bible_book b ON c.book_id = b.id
+            JOIN bible_testament t ON b.testament_id = t.id
+            WHERE similarity(v.text, %s) > 0.15
+        """
         params = [query, query]
 
         sql, params = self._apply_filters(sql, params, testament_slug, book_slug, chapter_number, source_file)
-        
+
         sql += " ORDER BY score DESC, b.order, c.number, v.number LIMIT %s"
         params.append(limit)
 

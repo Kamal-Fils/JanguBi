@@ -20,6 +20,7 @@ urlpatterns = [
         path("agenda/", include(("apps.agenda.urls", "agenda"))),
         path("mass-intentions/", include(("apps.mass_intentions.urls", "mass-intentions"))),
         path("donations/", include(("apps.donations.urls", "donations"))),
+        path("dashboards/", include(("apps.dashboards.urls", "dashboards"))),
     ])),
 
     path('schema/', SpectacularAPIView.as_view(), name='schema'),

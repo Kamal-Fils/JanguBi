@@ -19,6 +19,12 @@ class InvitationCreateInputSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=150)
     pastoral_role = serializers.ChoiceField(choices=[(r, r) for r in _INVITABLE_ROLES])
     diocese_id = serializers.IntegerField(required=False, allow_null=True)
+    parish_id = serializers.IntegerField(
+        required=False, allow_null=True, help_text="Paroisse cible (prêtre/diacre)."
+    )
+    church_id = serializers.IntegerField(
+        required=False, allow_null=True, help_text="Église cible (diacre)."
+    )
 
 
 class InvitationOutputSerializer(serializers.ModelSerializer):

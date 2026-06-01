@@ -1,14 +1,7 @@
 from rest_framework.permissions import BasePermission
 
+from apps.news.services import is_news_editor
 from apps.users.enums import UserRole
-
-_EDITOR_ROLES = {
-    UserRole.SUPER_ADMIN,
-    UserRole.PROVINCE_ADMIN,
-    UserRole.DIOCESE_ADMIN,
-    UserRole.PARISH_ADMIN,
-    UserRole.CHURCH_ADMIN,
-}
 
 _UNPUBLISH_ROLES = {
     UserRole.SUPER_ADMIN,
@@ -19,15 +12,20 @@ _UNPUBLISH_ROLES = {
 
 
 class IsArticleEditor(BasePermission):
-    """Autorise les rôles pouvant créer / modifier / publier des articles."""
+    """Autorise les rôles pouvant créer / modifier / publier des articles (admin OU clergé).
 
-    message = "Seuls les administrateurs peuvent gérer les articles."
+    Délègue à ``is_news_editor`` (apps.news.services) — source unique partagée
+    avec la couche service — pour que le clergé identifié par ``pastoral_role``
+    (role admin resté ``fidele``) ne soit pas bloqué à l'API.
+    """
+
+    message = "Seuls les administrateurs et le clergé peuvent gérer les articles."
 
     def has_permission(self, request, view) -> bool:
         return bool(
             request.user
             and request.user.is_authenticated
-            and request.user.role in _EDITOR_ROLES
+            and is_news_editor(request.user)
         )
 
 

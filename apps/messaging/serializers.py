@@ -60,10 +60,17 @@ class ConversationParticipantSerializer(serializers.Serializer):
         return obj.email
 
 
+class LastMessageSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    content = serializers.CharField(allow_null=True)
+    sent_at = serializers.DateTimeField(source="created_at")
+
+
 class ConversationOutputSerializer(serializers.ModelSerializer):
     participant_a = ConversationParticipantSerializer(read_only=True)
     participant_b = ConversationParticipantSerializer(read_only=True)
     unread_count = serializers.IntegerField(default=0)
+    last_message = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
@@ -71,6 +78,7 @@ class ConversationOutputSerializer(serializers.ModelSerializer):
             "id",
             "participant_a",
             "participant_b",
+            "last_message",
             "last_message_at",
             "is_archived",
             "cgu_accepted_by_a",
@@ -79,6 +87,12 @@ class ConversationOutputSerializer(serializers.ModelSerializer):
             "unread_count",
             "created_at",
         ]
+
+    def get_last_message(self, obj):
+        msg = obj.messages.filter(deleted_at__isnull=True).order_by("-created_at").first()
+        if msg is None:
+            return None
+        return LastMessageSerializer(msg).data
 
 
 class ConversationCreateInputSerializer(serializers.Serializer):

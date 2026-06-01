@@ -1,5 +1,9 @@
 from django.urls import path
 
+from .apis_roles import (
+    RoleAssignmentListApi,
+    RoleAssignmentRevokeApi,
+)
 from .apis import (
     EmailChangeConfirmApi,
     EmailChangeRequestApi,
@@ -59,4 +63,14 @@ urlpatterns = [
     path("<uuid:user_id>/delete/", UserSoftDeleteApi.as_view(), name="soft-delete"),
     path("<uuid:user_id>/hard-delete/", UserHardDeleteApi.as_view(), name="hard-delete"),
     path("<uuid:user_id>/audit-logs/", UserAuditLogApi.as_view(), name="audit-logs"),
+
+    # -------------------------------------------------------------------------
+    # Affectations de rôle scopées (RBAC territorial)
+    # -------------------------------------------------------------------------
+    path("role-assignments/", RoleAssignmentListApi.as_view(), name="role-assignment-list"),
+    path(
+        "role-assignments/<int:assignment_id>/revoke/",
+        RoleAssignmentRevokeApi.as_view(),
+        name="role-assignment-revoke",
+    ),
 ]

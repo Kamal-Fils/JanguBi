@@ -26,6 +26,22 @@ class UserRole(models.TextChoices):
     FIDELE         = ("fidele",         _("Fidèle"))
 
 
+class RoleScope(models.TextChoices):
+    """
+    Niveau territorial d'une capacité administrative (RoleAssignment).
+
+    Permet de cloisonner les permissions : un PARISH_ADMIN scopé à la paroisse A
+    (= le curé) ne peut pas agir sur la paroisse B. Un CHURCH_ADMIN scopé à une
+    église (= un vicaire / responsable d'église) n'agit que sur cette église.
+    """
+
+    GLOBAL   = ("global",   _("Global"))
+    PROVINCE = ("province", _("Province"))
+    DIOCESE  = ("diocese",  _("Diocèse"))
+    PARISH   = ("parish",   _("Paroisse"))
+    CHURCH   = ("church",   _("Église"))
+
+
 class Title(models.TextChoices):
     MR  = ("MR",  _("M."))
     MRS = ("MRS", _("Mme"))

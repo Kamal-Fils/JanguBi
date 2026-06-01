@@ -69,13 +69,9 @@ class AELFService:
         created_records = []
 
         for lecture in lectures:
-            # AELF sends some keys (notably "titre" on psalms) as JSON null.
-            # dict.get(key, default) only falls back when the key is absent —
-            # a present-but-null value returns None and would violate the
-            # NOT NULL constraints on DailyText.title / .content / .category.
-            category = lecture.get("type") or "lecture"
-            title = lecture.get("titre") or ""
-            raw_content = lecture.get("contenu") or ""
+            category = lecture.get("type", "lecture")
+            title = lecture.get("titre", "")
+            raw_content = lecture.get("contenu", "")
             
             # Clean HTML and formatting
             clean_content = CleaningService.clean_text(raw_content)
