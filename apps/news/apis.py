@@ -18,6 +18,7 @@ from apps.news.selectors import (
     article_list,
     article_list_for_diocese,
     article_list_for_parish,
+    article_list_for_user,
     article_list_global,
     category_list,
 )
@@ -137,6 +138,39 @@ class ArticleParishListApi(ApiAuthMixin, APIView):
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
         )
+        return get_paginated_response(
+            pagination_class=self.Pagination,
+            serializer_class=ArticleListOutputSerializer,
+            queryset=qs,
+            request=request,
+            view=self,
+        )
+
+
+class ArticleFeedApi(ApiAuthMixin, APIView):
+    """Fil d'actualités AGRÉGÉ de l'utilisateur connecté (Chantier 7b) :
+    global ∪ église ∪ paroisse ∪ diocèse de toutes ses appartenances (C3a)."""
+
+    class Pagination(LimitOffsetPagination):
+        default_limit = 20
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
+            OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+        ],
+        responses={200: ArticleListOutputSerializer(many=True)},
+        tags=["news"],
+        summary="Fil d'actualités agrégé (toutes mes portées)",
+    )
+    def get(self, request):
+        qs = article_list_for_user(user=request.user)
+        if category := request.query_params.get("category"):
+            qs = qs.filter(category__slug=category)
+        if search := request.query_params.get("search"):
+            qs = qs.filter(title__icontains=search)
         return get_paginated_response(
             pagination_class=self.Pagination,
             serializer_class=ArticleListOutputSerializer,
