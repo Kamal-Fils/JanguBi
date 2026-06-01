@@ -393,29 +393,39 @@ def user_hard_delete(
 # 6. Mise à jour profil
 # ---------------------------------------------------------------------------
 
-def _profile_set_primary_parish(*, profile: Profile, parish_id: int | None) -> None:
-    """Affecte la paroisse principale depuis un ID (FK).
+def _onboard_via_primary_parish_shim(*, user: BaseUser, parish_id: int | None) -> None:
+    """COMPAT (Chantier 2 — début du cutover).
 
-    `model_update` ne sait pas résoudre un ID vers une instance FK, d'où ce
-    traitement explicite. Le signal post_save de Profile synchronise ensuite
-    `diocese`/`province` sur le BaseUser.
+    Le PATCH legacy `primary_parish` (id scalaire, envoyé par le front actuel) ne
+    touche plus `Profile.primary_parish` en direct : il crée/promeut une Membership
+    PRINCIPALE sur l'église principale (`is_main`) de la paroisse. Le signal Membership
+    miroir ensuite `primary_parish` + `diocese`/`province`, et l'onboarding est
+    recalculé depuis les appartenances.
+
+    Pas de repli silencieux : paroisse introuvable ou sans église principale → erreur.
     """
     if parish_id is None:
-        if profile.primary_parish_id is not None:
-            profile.primary_parish = None
-            profile.save(update_fields=["primary_parish", "updated_at"])
+        # Le front legacy ne désélectionne jamais la paroisse → no-op.
         return
 
-    from apps.org.models import Parish
+    from apps.org.models import Church, Parish
+    from apps.users.models import Membership
+    from apps.users.services_memberships import membership_create, membership_set_primary
 
     try:
         parish = Parish.objects.get(pk=parish_id)
     except Parish.DoesNotExist:
         raise ApplicationError("Paroisse introuvable.")
 
-    if profile.primary_parish_id != parish.id:
-        profile.primary_parish = parish
-        profile.save(update_fields=["primary_parish", "updated_at"])
+    main_church = Church.objects.filter(parish=parish, is_main=True).first()
+    if main_church is None:
+        raise ApplicationError("Cette paroisse n'a pas d'église principale.")
+
+    existing = Membership.objects.filter(user=user, church=main_church).first()
+    if existing is not None:
+        membership_set_primary(user=user, membership=existing)
+    else:
+        membership_create(user=user, church=main_church, is_primary=True)
 
 
 @transaction.atomic
@@ -435,25 +445,19 @@ def user_update_profile(
     profile, _ = Profile.objects.get_or_create(user=user)
     profile, _ = model_update(instance=profile, fields=profile_fields, data=data)
 
-    # La paroisse principale est une FK reçue sous forme d'ID → traitée à part.
+    # COMPAT : la paroisse principale (id scalaire legacy) est ROUTÉE vers une
+    # Membership principale (shim Chantier 2). Le signal Membership + le recalcul
+    # d'onboarding font le reste (miroir primary_parish, diocese/province, completed).
     if "primary_parish" in data:
-        _profile_set_primary_parish(profile=profile, parish_id=data["primary_parish"])
+        _onboard_via_primary_parish_shim(user=user, parish_id=data["primary_parish"])
 
     if "avatar" in data and data["avatar"] is not None:
         profile.avatar = data["avatar"]
         profile.save(update_fields=["avatar"])
 
-    # Sélection d'une paroisse principale → onboarding terminé.
-    if (
-        profile.primary_parish_id
-        and user.onboarding_state != UserOnboardingState.COMPLETED
-    ):
-        user.onboarding_state = UserOnboardingState.COMPLETED
-        user.save(update_fields=["onboarding_state", "updated_at"])
-
-    # Le signal post_save de Profile remplit diocese/province via queryset
-    # .update() (ne touche pas l'objet en mémoire). On recharge pour que la
-    # réponse (PATCH /me) reflète immédiatement la hiérarchie territoriale.
+    # Le signal Membership remplit diocese/province + onboarding_state via queryset
+    # .update()/.save() hors de l'objet en mémoire selon le chemin. On recharge pour
+    # que la réponse (PATCH /me) reflète immédiatement la hiérarchie territoriale.
     if "primary_parish" in data:
         user.refresh_from_db()
 

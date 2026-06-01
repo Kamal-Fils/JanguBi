@@ -14,7 +14,7 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 
 from apps.core.exceptions import ApplicationError, TokenInvalidError
-from apps.org.tests.factories import ParishFactory
+from apps.org.tests.factories import ChurchFactory, ParishFactory
 from apps.users.enums import UserOnboardingState
 from apps.users.models import BaseUser, Profile, SecurityAuditLog
 from apps.users.otp import VERIFY_TOKEN_TTL, generate_url_token, token_store
@@ -255,10 +255,13 @@ class UserUpdateProfileTests(TestCase):
         self.assertTrue(SecurityAuditLog.objects.filter(user=self.user).exists())
 
     def test_setting_primary_parish_completes_onboarding(self):
-        # Arrange — fidèle en attente de sélection de paroisse
+        # Arrange — fidèle en attente de sélection de paroisse. Le PATCH legacy est
+        # désormais routé (compat shim) vers une Membership sur l'église principale →
+        # la paroisse doit posséder son église is_main.
         self.user.onboarding_state = UserOnboardingState.PENDING_PARISH_SELECTION
         self.user.save(update_fields=["onboarding_state"])
         parish = ParishFactory()
+        ChurchFactory(parish=parish, is_main=True, church_type="paroissiale")
 
         # Act — sélection de la paroisse principale (id, comme l'envoie le front)
         user_update_profile(
@@ -289,6 +292,7 @@ class UserUpdateProfileTests(TestCase):
         # rafraîchi, sinon PATCH /me renvoie diocese/province = null juste après
         # la sélection de paroisse.
         parish = ParishFactory()
+        ChurchFactory(parish=parish, is_main=True, church_type="paroissiale")
 
         user = user_update_profile(
             user=self.user,
