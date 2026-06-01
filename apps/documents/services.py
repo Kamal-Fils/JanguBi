@@ -201,15 +201,24 @@ def document_request_create(*, requester: BaseUser, data: dict) -> DocumentReque
 
     attachment_file_id = data.get("attachment_file_id")
 
-    # Rattachement territorial : paroisse cible explicite, sinon paroisse principale du demandeur.
+    # Rattachement territorial : paroisse cible explicite, sinon paroisse principale
+    # du demandeur. A5 — pas de repli silencieux : un parish_id invalide lève une
+    # erreur, et une demande sans paroisse résolue est rejetée (pas d'orphelin).
     target_parish = None
     parish_id = data.get("parish_id")
     if parish_id:
         from apps.org.models import Parish
 
         target_parish = Parish.objects.filter(id=parish_id).first()
+        if target_parish is None:
+            raise ApplicationError("Paroisse cible introuvable.")
     if target_parish is None:
         target_parish = getattr(getattr(requester, "profile", None), "primary_parish", None)
+    if target_parish is None:
+        raise ApplicationError(
+            "Aucune paroisse cible : précisez la paroisse de la demande ou "
+            "définissez votre paroisse principale."
+        )
 
     request_obj = DocumentRequest.objects.create(
         reference=_generate_reference(),
