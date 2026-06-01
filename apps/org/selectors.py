@@ -1,4 +1,4 @@
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from apps.org.models import Church, Deanery, Diocese, Parish, Province, ReligiousCommunity
 
@@ -14,13 +14,22 @@ def diocese_list(*, province_id: int | None = None) -> QuerySet[Diocese]:
     return qs.order_by("name")
 
 
-def parish_list(*, diocese_id: int | None = None, search: str | None = None) -> QuerySet[Parish]:
+def parish_list(
+    *,
+    diocese_id: int | None = None,
+    search: str | None = None,
+    city: str | None = None,
+) -> QuerySet[Parish]:
+    """Recherche de paroisses sur TOUTES les paroisses (aucun scoping) — alimente
+    le picker du formulaire documents (Chantier 4). ``search`` = nom OU ville ;
+    ``city`` = filtre ville dédié (cumulable)."""
     qs = Parish.objects.select_related("diocese__province")
     if diocese_id is not None:
         qs = qs.filter(diocese_id=diocese_id)
     if search:
-        qs = qs.filter(name__icontains=search) | qs.filter(city__icontains=search)
-        qs = qs.distinct()
+        qs = qs.filter(Q(name__icontains=search) | Q(city__icontains=search))
+    if city:
+        qs = qs.filter(city__icontains=city)
     return qs.order_by("name")
 
 

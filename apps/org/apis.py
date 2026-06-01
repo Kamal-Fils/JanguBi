@@ -132,19 +132,22 @@ class ParishListApi(ApiAuthMixin, APIView):
         parameters=[
             OpenApiParameter("diocese", OpenApiTypes.INT, description="Filtrer par diocèse ID"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche par nom ou ville"),
+            OpenApiParameter("city", OpenApiTypes.STR, description="Filtrer par ville (dédié)"),
             OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
             OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
         ],
         responses={200: ParishOutputSerializer(many=True)},
         tags=["org"],
-        summary="Lister les paroisses avec recherche et pagination",
+        summary="Lister/rechercher les paroisses (toutes paroisses) — picker documents",
     )
     def get(self, request):
         diocese_id = request.query_params.get("diocese")
         search = request.query_params.get("search")
+        city = request.query_params.get("city")
         parishes = parish_list(
             diocese_id=int(diocese_id) if diocese_id else None,
             search=search or None,
+            city=city or None,
         )
         return get_paginated_response(
             pagination_class=self.Pagination,

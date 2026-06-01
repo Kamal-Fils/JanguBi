@@ -35,9 +35,16 @@ def document_request_list(*, user: BaseUser, filters: Optional[dict] = None) -> 
         qs = qs.filter(requester=user)
     elif not is_global_admin(user):
         parish_ids = accessible_parish_ids(user)  # set (jamais None ici)
+        # Visibilité = admins de la paroisse CIBLE uniquement (confidentialité PII
+        # inter-paroisse). Le repli sur la paroisse principale du demandeur ne vaut
+        # QUE pour les demandes orphelines (target_parish NULL) — sinon le curé de la
+        # paroisse home verrait une demande adressée à une AUTRE paroisse.
         qs = qs.filter(
             Q(target_parish_id__in=parish_ids)
-            | Q(requester__profile__primary_parish_id__in=parish_ids)
+            | Q(
+                target_parish_id__isnull=True,
+                requester__profile__primary_parish_id__in=parish_ids,
+            )
         )
     # is_global_admin → aucune restriction
 

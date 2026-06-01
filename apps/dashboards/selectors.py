@@ -7,7 +7,7 @@ territorial est appliqué par les vues via ``apps.users.scoping``.
 
 from __future__ import annotations
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.documents.models import DocumentRequest
@@ -33,8 +33,15 @@ def _start_of_month():
 
 
 def _parish_pending_documents(parish_id: int) -> int:
+    # Cohérent avec la visibilité (confidentialité) : on compte les demandes dont la
+    # paroisse CIBLE est celle-ci ; repli sur la paroisse principale du demandeur
+    # seulement pour les demandes orphelines (target_parish NULL).
     return DocumentRequest.objects.filter(
-        requester__profile__primary_parish_id=parish_id,
+        Q(target_parish_id=parish_id)
+        | Q(
+            target_parish_id__isnull=True,
+            requester__profile__primary_parish_id=parish_id,
+        ),
         status__in=_ACTIVE_DOC_STATUSES,
     ).count()
 
@@ -137,7 +144,11 @@ def diocese_dashboard(*, diocese_id: int) -> dict | None:
         # Alerte qualité de données : paroisses sans église principale.
         "parishes_without_main_church": parishes.exclude(churches__is_main=True).count(),
         "pending_documents": DocumentRequest.objects.filter(
-            requester__profile__primary_parish__diocese_id=diocese_id,
+            Q(target_parish__diocese_id=diocese_id)
+            | Q(
+                target_parish_id__isnull=True,
+                requester__profile__primary_parish__diocese_id=diocese_id,
+            ),
             status__in=_ACTIVE_DOC_STATUSES,
         ).count(),
     }
