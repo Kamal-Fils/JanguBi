@@ -118,6 +118,20 @@ class ArticleParishListApi(ApiAuthMixin, APIView):
         summary="Articles publiés d'une paroisse",
     )
     def get(self, request, parish_id: int):
+        # A2 — borner la lecture à l'appartenance/autorité : un fidèle ne lit que
+        # le fil des paroisses dont il est membre ; le clergé/admin, celles qu'il
+        # administre. Pas de lecture d'une paroisse arbitraire par id.
+        from apps.users.scoping import user_can_admin_parish
+
+        scope = request.user.get_scope_ids()
+        if parish_id not in scope["parish_ids"] and not user_can_admin_parish(
+            request.user, parish_id
+        ):
+            return Response(
+                {"detail": "Vous n'êtes pas membre de cette paroisse."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         qs = article_list_for_parish(
             parish_id=parish_id,
             category_slug=request.query_params.get("category"),
@@ -193,6 +207,18 @@ class ArticleDioceseListApi(ApiAuthMixin, APIView):
         summary="Articles publiés d'un diocèse",
     )
     def get(self, request, diocese_id: int):
+        # A2 — borner à l'appartenance/autorité diocésaine (cf. ArticleParishListApi).
+        from apps.users.scoping import user_can_admin_diocese
+
+        scope = request.user.get_scope_ids()
+        if diocese_id != scope["diocese_id"] and not user_can_admin_diocese(
+            request.user, diocese_id
+        ):
+            return Response(
+                {"detail": "Vous n'êtes pas membre de ce diocèse."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         qs = article_list_for_diocese(
             diocese_id=diocese_id,
             category_slug=request.query_params.get("category"),
