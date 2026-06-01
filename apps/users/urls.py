@@ -1,5 +1,10 @@
 from django.urls import path
 
+from .apis_memberships import (
+    MembershipMeDeleteApi,
+    MembershipMeListCreateApi,
+    MembershipMeSetPrimaryApi,
+)
 from .apis_roles import (
     RoleAssignmentListApi,
     RoleAssignmentRevokeApi,
@@ -52,6 +57,23 @@ urlpatterns = [
     path("me/", UserMeDetailApi.as_view(), name="me-detail"),
     path("me/update/", UserMeUpdateApi.as_view(), name="me-update"),
     path("me/delete/", UserMeDeleteApi.as_view(), name="me-delete"),
+
+    # Appartenances ecclésiales (multi-appartenance) — propriétaire uniquement
+    path(
+        "me/memberships/",
+        MembershipMeListCreateApi.as_view(),
+        name="me-membership-list-create",
+    ),
+    path(
+        "me/memberships/<int:membership_id>/",
+        MembershipMeDeleteApi.as_view(),
+        name="me-membership-delete",
+    ),
+    path(
+        "me/memberships/<int:membership_id>/set-primary/",
+        MembershipMeSetPrimaryApi.as_view(),
+        name="me-membership-set-primary",
+    ),
 
     # -------------------------------------------------------------------------
     # Administration
