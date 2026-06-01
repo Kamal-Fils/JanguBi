@@ -19,11 +19,10 @@ def sync_territorial_hierarchy(sender, instance, **kwargs):
             province_id=province.pk,
         )
     else:
-        if not user.followed_parishes.exists():
-            BaseUser.objects.filter(pk=user.pk).update(
-                diocese_id=None,
-                province_id=None,
-            )
+        BaseUser.objects.filter(pk=user.pk).update(
+            diocese_id=None,
+            province_id=None,
+        )
 
 
 @receiver(post_save, sender="users.Membership")

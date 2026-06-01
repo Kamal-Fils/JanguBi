@@ -20,6 +20,35 @@ from apps.users.models import BaseUser, RoleAssignment
 
 
 # ---------------------------------------------------------------------------
+# Scoping de contenu (multi-appartenance) — générique, réutilisable
+# ---------------------------------------------------------------------------
+
+# Vocabulaire de portée partagé par les contenus scopés (Article, Event, …).
+# Doit rester aligné avec les ScopeType de chaque modèle (mêmes valeurs).
+SCOPE_GLOBAL = "global"
+SCOPE_DIOCESE = "diocese"
+SCOPE_PARISH = "parish"
+SCOPE_CHURCH = "church"
+
+
+def get_scoped_queryset(qs: QuerySet, user) -> QuerySet:
+    """Restreint ``qs`` (modèle scopé : ``scope_type`` + FK
+    ``scope_church``/``scope_parish``/``scope_diocese``) à ce que ``user`` peut voir,
+    d'après ses appartenances : global ∪ église∈church_ids ∪ paroisse∈parish_ids ∪
+    diocèse∈diocese_ids. Helper générique consommé par les feeds (Article ici,
+    Event au Chantier 3b)."""
+    scope = user.get_scope_ids()
+    filters = Q(scope_type=SCOPE_GLOBAL)
+    if scope["church_ids"]:
+        filters |= Q(scope_type=SCOPE_CHURCH, scope_church_id__in=scope["church_ids"])
+    if scope["parish_ids"]:
+        filters |= Q(scope_type=SCOPE_PARISH, scope_parish_id__in=scope["parish_ids"])
+    if scope["diocese_ids"]:
+        filters |= Q(scope_type=SCOPE_DIOCESE, scope_diocese_id__in=scope["diocese_ids"])
+    return qs.filter(filters)
+
+
+# ---------------------------------------------------------------------------
 # Affectations actives
 # ---------------------------------------------------------------------------
 
