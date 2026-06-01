@@ -7,6 +7,7 @@ Couvre : category_list, article_list, article_list_global,
 
 import pytest
 
+from apps.org.tests.factories import DioceseFactory, ParishFactory
 from apps.news.models import Article
 from apps.news.selectors import (
     article_get,
@@ -207,26 +208,29 @@ def test_article_list_global_filtered_by_search():
 @pytest.mark.django_db
 def test_article_list_for_parish_returns_only_matching_parish():
     # Arrange
-    PublishedParishArticleFactory(scope_parish_id=10)
-    PublishedParishArticleFactory(scope_parish_id=20)
+    parish_a = ParishFactory()
+    parish_b = ParishFactory()
+    PublishedParishArticleFactory(scope_parish=parish_a)
+    PublishedParishArticleFactory(scope_parish=parish_b)
     PublishedArticleFactory()
 
     # Act
-    result = article_list_for_parish(parish_id=10)
+    result = article_list_for_parish(parish_id=parish_a.id)
 
     # Assert
     assert result.count() == 1
-    assert result.first().scope_parish_id == 10
+    assert result.first().scope_parish_id == parish_a.id
 
 
 @pytest.mark.django_db
 def test_article_list_for_parish_only_published():
     # Arrange
-    ParishArticleFactory(scope_parish_id=5, status=Article.Status.DRAFT)
-    PublishedParishArticleFactory(scope_parish_id=5)
+    parish = ParishFactory()
+    ParishArticleFactory(scope_parish=parish, status=Article.Status.DRAFT)
+    PublishedParishArticleFactory(scope_parish=parish)
 
     # Act
-    result = article_list_for_parish(parish_id=5)
+    result = article_list_for_parish(parish_id=parish.id)
 
     # Assert
     assert result.count() == 1
@@ -241,26 +245,29 @@ def test_article_list_for_parish_only_published():
 @pytest.mark.django_db
 def test_article_list_for_diocese_returns_only_matching_diocese():
     # Arrange
-    PublishedDioceseArticleFactory(scope_diocese_id=3)
-    PublishedDioceseArticleFactory(scope_diocese_id=7)
+    diocese_a = DioceseFactory()
+    diocese_b = DioceseFactory()
+    PublishedDioceseArticleFactory(scope_diocese=diocese_a)
+    PublishedDioceseArticleFactory(scope_diocese=diocese_b)
     PublishedArticleFactory()
 
     # Act
-    result = article_list_for_diocese(diocese_id=3)
+    result = article_list_for_diocese(diocese_id=diocese_a.id)
 
     # Assert
     assert result.count() == 1
-    assert result.first().scope_diocese_id == 3
+    assert result.first().scope_diocese_id == diocese_a.id
 
 
 @pytest.mark.django_db
 def test_article_list_for_diocese_only_published():
     # Arrange
-    DioceseArticleFactory(scope_diocese_id=2, status=Article.Status.DRAFT)
-    PublishedDioceseArticleFactory(scope_diocese_id=2)
+    diocese = DioceseFactory()
+    DioceseArticleFactory(scope_diocese=diocese, status=Article.Status.DRAFT)
+    PublishedDioceseArticleFactory(scope_diocese=diocese)
 
     # Act
-    result = article_list_for_diocese(diocese_id=2)
+    result = article_list_for_diocese(diocese_id=diocese.id)
 
     # Assert
     assert result.count() == 1

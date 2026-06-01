@@ -8,9 +8,10 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.news.models import Article
-from apps.org.tests.factories import DioceseFactory, ParishFactory
+from apps.org.tests.factories import ChurchFactory, DioceseFactory, ParishFactory
 from apps.users.enums import PastoralRole, RoleScope, UserRole
 from apps.users.models import RoleAssignment
+from apps.users.services_memberships import membership_create
 from apps.users.tests.factories import (
     AdminUserFactory,
     BaseUserFactory,
@@ -30,9 +31,11 @@ def _make_cure(parish):
 
 
 def _member_of(parish):
-    """Fidèle membre d'une paroisse (primary_parish → signal remplit diocese)."""
+    """Fidèle membre d'une paroisse via une appartenance (Chantier 3a : get_scope_ids
+    dérive des memberships, plus de primary_parish/followed_parishes)."""
     user = BaseUserFactory()
-    ProfileFactory(user=user, primary_parish=parish)
+    church = ChurchFactory(parish=parish, is_main=True, church_type="paroissiale")
+    membership_create(user=user, church=church, is_primary=True)
     user.refresh_from_db()
     return user
 

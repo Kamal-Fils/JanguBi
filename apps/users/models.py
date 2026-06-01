@@ -175,13 +175,6 @@ class BaseUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         blank=True,
         related_name="members",
     )
-    followed_parishes = models.ManyToManyField(
-        "org.Parish",
-        verbose_name=_("paroisses suivies"),
-        blank=True,
-        related_name="followers",
-    )
-
     groups = models.ManyToManyField(
         Group,
         verbose_name=_("groupes"),
@@ -213,17 +206,27 @@ class BaseUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         self.save(update_fields=["jwt_key", "updated_at"])
 
     def get_scope_ids(self) -> dict:
-        """Retourne les IDs territoriaux pour le scoping du contenu."""
-        parish_ids = list(self.followed_parishes.values_list("id", flat=True))
-        try:
-            if self.profile.primary_parish_id:
-                parish_ids.append(self.profile.primary_parish_id)
-        except Profile.DoesNotExist:
-            pass
+        """IDs territoriaux pour le scoping du contenu, dérivés des appartenances
+        (multi-appartenance, Chantier 3a). Renvoie des ENSEMBLES pluriels ; un
+        fidèle sans appartenance obtient des ensembles vides. Un seul SELECT avec
+        jointures (pas de N+1)."""
+        rows = Membership.objects.filter(user=self).values_list(
+            "church_id", "church__parish_id", "church__parish__diocese_id"
+        )
+        church_ids: set[int] = set()
+        parish_ids: set[int] = set()
+        diocese_ids: set[int] = set()
+        for church_id, parish_id, diocese_id in rows:
+            if church_id is not None:
+                church_ids.add(church_id)
+            if parish_id is not None:
+                parish_ids.add(parish_id)
+            if diocese_id is not None:
+                diocese_ids.add(diocese_id)
         return {
-            "parish_ids": parish_ids,
-            "diocese_id": self.diocese_id,
-            "province_id": self.province_id,
+            "church_ids": list(church_ids),
+            "parish_ids": list(parish_ids),
+            "diocese_ids": list(diocese_ids),
         }
 
 

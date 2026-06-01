@@ -1,4 +1,4 @@
-from django.db.models import Q, QuerySet
+from django.db.models import QuerySet
 
 from apps.news.models import Article, ArticleCategory
 from apps.users.models import BaseUser
@@ -103,17 +103,12 @@ def article_get_by_slug(*, slug: str) -> Article | None:
 
 
 def article_list_for_user(*, user: BaseUser) -> QuerySet[Article]:
-    """Published articles visible to this user based on their territorial scope."""
-    scope = user.get_scope_ids()
+    """Articles publiés visibles par l'utilisateur selon ses appartenances
+    (multi-appartenance, Chantier 3a) : agrégation global ∪ église ∪ paroisse ∪
+    diocèse via le helper générique get_scoped_queryset."""
+    from apps.users.scoping import get_scoped_queryset
+
     qs = Article.objects.select_related("category", "author", "cover_image").filter(
         status=Article.Status.PUBLISHED
     )
-    filters = Q(scope_type=Article.ScopeType.GLOBAL)
-    if scope["diocese_id"]:
-        filters |= Q(scope_type=Article.ScopeType.DIOCESE, scope_diocese_id=scope["diocese_id"])
-    if scope["parish_ids"]:
-        filters |= Q(
-            scope_type=Article.ScopeType.PARISH,
-            scope_parish_id__in=scope["parish_ids"],
-        )
-    return qs.filter(filters).order_by("-published_at", "-created_at")
+    return get_scoped_queryset(qs, user).order_by("-published_at", "-created_at")
