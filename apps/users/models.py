@@ -440,3 +440,72 @@ class RoleAssignment(BaseModel):
             RoleScope.PARISH: self.parish_id,
             RoleScope.CHURCH: self.church_id,
         }.get(self.scope)
+
+
+# ---------------------------------------------------------------------------
+# Appartenance ecclésiale (multi-appartenance) — couche ADDITIVE (Chantier 1)
+# ---------------------------------------------------------------------------
+
+class Membership(BaseModel):
+    """
+    Appartenance d'un utilisateur à une église (lieu de culte).
+
+    Un fidèle peut appartenir à plusieurs églises (multi-appartenance). Au plus
+    une appartenance est marquée principale (``is_primary``) : c'est elle qui
+    pilote la hiérarchie territoriale dérivée de l'utilisateur
+    (``BaseUser.diocese`` / ``province``) et, en miroir transitoire,
+    ``Profile.primary_parish``.
+
+    Couche ADDITIVE introduite au Chantier 1 : elle coexiste avec le chemin
+    historique ``Profile.primary_parish`` + son signal. Le cutover (primary_parish
+    dérivé de l'appartenance principale, retrait du vieux signal) est réservé au
+    Chantier 2. L'invariant « exactement une appartenance principale tant qu'il
+    reste ≥ 1 appartenance » est tenu par les services (``services_memberships``)
+    ; la base garantit « au plus une principale par utilisateur » via une
+    contrainte d'unicité partielle.
+    """
+
+    user = models.ForeignKey(
+        "users.BaseUser",
+        verbose_name=_("utilisateur"),
+        on_delete=models.CASCADE,
+        related_name="memberships",
+    )
+    church = models.ForeignKey(
+        "org.Church",
+        verbose_name=_("église"),
+        on_delete=models.CASCADE,
+        related_name="member_links",
+    )
+    is_primary = models.BooleanField(
+        _("appartenance principale"),
+        default=False,
+        db_index=True,
+        help_text=_("Église de référence : pilote diocèse/province et primary_parish."),
+    )
+
+    class Meta:
+        verbose_name = _("appartenance")
+        verbose_name_plural = _("appartenances")
+        ordering = ["-is_primary", "created_at"]
+        indexes = [
+            models.Index(fields=["user", "is_primary"]),
+            models.Index(fields=["church"]),
+        ]
+        constraints = [
+            # Pas deux fois la même église pour un même utilisateur.
+            models.UniqueConstraint(
+                fields=["user", "church"],
+                name="unique_membership_user_church",
+            ),
+            # Au plus une appartenance principale par utilisateur.
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(is_primary=True),
+                name="unique_primary_membership_per_user",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        flag = " ★" if self.is_primary else ""
+        return f"{self.user_id} · église {self.church_id}{flag}"
