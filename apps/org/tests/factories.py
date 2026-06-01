@@ -1,7 +1,15 @@
 import factory
 from factory.django import DjangoModelFactory
 
-from apps.org.models import Diocese, Parish, Province, ReligiousOrder, ReligiousCommunity
+from apps.org.models import (
+    Church,
+    Deanery,
+    Diocese,
+    Parish,
+    Province,
+    ReligiousOrder,
+    ReligiousCommunity,
+)
 
 
 class ProvinceFactory(DjangoModelFactory):
@@ -48,3 +56,22 @@ class ReligiousCommunityFactory(DjangoModelFactory):
     order = factory.SubFactory(ReligiousOrderFactory)
     diocese = factory.SubFactory(DioceseFactory)
     parish = None
+
+
+class ChurchFactory(DjangoModelFactory):
+    class Meta:
+        model = Church
+
+    parish = factory.SubFactory(ParishFactory)
+    name = factory.Sequence(lambda n: f"Église {n}")
+    church_type = "succursale"
+    is_main = False
+
+
+class DeaneryFactory(DjangoModelFactory):
+    class Meta:
+        model = Deanery
+
+    name = factory.Sequence(lambda n: f"Doyenné {n}")
+    diocese = factory.SubFactory(DioceseFactory)
+    dean = None

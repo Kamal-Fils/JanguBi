@@ -14,6 +14,8 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 
 from apps.core.exceptions import ApplicationError, TokenInvalidError
+from apps.org.tests.factories import ParishFactory
+from apps.users.enums import UserOnboardingState
 from apps.users.models import BaseUser, Profile, SecurityAuditLog
 from apps.users.otp import VERIFY_TOKEN_TTL, generate_url_token, token_store
 from apps.users.services import (
@@ -81,6 +83,13 @@ class UserActivateAccountTests(TestCase):
         token_store("email_verify", bad_token, {"user_id": 999999}, ttl=VERIFY_TOKEN_TTL)
         with self.assertRaises(TokenInvalidError):
             user_activate_account(token=bad_token)
+
+    def test_activation_advances_onboarding_to_pending_parish(self):
+        # InactiveUserFactory part de pending_email → après vérif email → pending_parish
+        user = user_activate_account(token=self.token)
+        self.assertEqual(
+            user.onboarding_state, UserOnboardingState.PENDING_PARISH_SELECTION
+        )
 
 
 @override_settings(**CACHE_SETTINGS)
@@ -244,3 +253,49 @@ class UserUpdateProfileTests(TestCase):
             performed_by=self.user,
         )
         self.assertTrue(SecurityAuditLog.objects.filter(user=self.user).exists())
+
+    def test_setting_primary_parish_completes_onboarding(self):
+        # Arrange — fidèle en attente de sélection de paroisse
+        self.user.onboarding_state = UserOnboardingState.PENDING_PARISH_SELECTION
+        self.user.save(update_fields=["onboarding_state"])
+        parish = ParishFactory()
+
+        # Act — sélection de la paroisse principale (id, comme l'envoie le front)
+        user_update_profile(
+            user=self.user,
+            data={"primary_parish": parish.id},
+            performed_by=self.user,
+        )
+
+        # Assert — onboarding terminé + hiérarchie territoriale auto-remplie (signal)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.onboarding_state, UserOnboardingState.COMPLETED)
+        profile = Profile.objects.get(user=self.user)
+        self.assertEqual(profile.primary_parish_id, parish.id)
+        self.assertEqual(self.user.diocese_id, parish.diocese_id)
+        self.assertEqual(self.user.province_id, parish.diocese.province_id)
+
+    def test_setting_unknown_parish_raises(self):
+        with self.assertRaises(ApplicationError):
+            user_update_profile(
+                user=self.user,
+                data={"primary_parish": 999999},
+                performed_by=self.user,
+            )
+
+    def test_update_profile_returns_fresh_territory_after_parish_selection(self):
+        # 🟠 /me périmé : le signal remplit diocese/province via queryset .update()
+        # (ne touche pas l'objet en mémoire). Le service DOIT renvoyer l'objet
+        # rafraîchi, sinon PATCH /me renvoie diocese/province = null juste après
+        # la sélection de paroisse.
+        parish = ParishFactory()
+
+        user = user_update_profile(
+            user=self.user,
+            data={"primary_parish": parish.id},
+            performed_by=self.user,
+        )
+
+        # Pas de refresh_from_db manuel ici : le service doit déjà l'avoir fait.
+        self.assertEqual(user.diocese_id, parish.diocese_id)
+        self.assertEqual(user.province_id, parish.diocese.province_id)

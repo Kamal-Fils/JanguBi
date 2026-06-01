@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from apps.api.mixins import ApiAuthMixin
 from apps.api.pagination import LimitOffsetPagination, get_paginated_response
 from apps.core.exceptions import ApplicationError
+from apps.users.scoping import user_can_admin_parish
 
 from .selectors import campaign_list_active, donation_list_for_donor
 from .serializers import (
@@ -51,8 +52,16 @@ class CampaignListCreateApi(ApiAuthMixin, APIView):
     def post(self, request):
         serializer = CampaignCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        # Cloisonnement territorial : une campagne paroissiale exige l'autorité sur la paroisse.
+        parish_id = data.get("parish_id")
+        if parish_id and not user_can_admin_parish(request.user, parish_id):
+            return Response(
+                {"detail": "Vous ne pouvez créer une campagne que pour votre paroisse."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         try:
-            campaign = campaign_create(created_by=request.user, **serializer.validated_data)
+            campaign = campaign_create(created_by=request.user, **data)
         except ApplicationError as e:
             return _error(e)
         return Response(CampaignOutputSerializer(campaign).data, status=status.HTTP_201_CREATED)

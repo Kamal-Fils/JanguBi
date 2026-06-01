@@ -17,8 +17,12 @@ def mass_intention_list_pending(*, pretre=None) -> QuerySet[MassIntention]:
     qs = MassIntention.objects.filter(status="pending").select_related(
         "requestor", "pretre", "parish"
     )
-    if pretre is not None and getattr(pretre, "primary_parish_id", None):
-        qs = qs.filter(parish_id=pretre.primary_parish_id)
+    if pretre is not None:
+        # Bug corrigé : primary_parish vit sur Profile, pas sur BaseUser.
+        profile = getattr(pretre, "profile", None)
+        primary_parish_id = getattr(profile, "primary_parish_id", None)
+        if primary_parish_id:
+            qs = qs.filter(parish_id=primary_parish_id)
     return qs
 
 

@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from apps.org.models import Diocese, Parish, Province, ReligiousCommunity, ReligiousOrder
+from apps.org.models import (
+    Church,
+    Deanery,
+    Diocese,
+    Parish,
+    Province,
+    ReligiousCommunity,
+    ReligiousOrder,
+)
 
 
 @admin.register(Province)
@@ -38,3 +46,19 @@ class ReligiousCommunityAdmin(admin.ModelAdmin):
     search_fields = ["name"]
     list_filter = ["order", "diocese"]
     raw_id_fields = ["order", "diocese", "parish"]
+
+
+@admin.register(Church)
+class ChurchAdmin(admin.ModelAdmin):
+    list_display = ["id", "name", "parish", "church_type", "is_main", "is_active", "created_at"]
+    list_filter = ["church_type", "is_main", "is_active"]
+    search_fields = ["name", "parish__name", "city"]
+    raw_id_fields = ["parish"]
+
+
+@admin.register(Deanery)
+class DeaneryAdmin(admin.ModelAdmin):
+    list_display = ["id", "name", "diocese", "dean", "created_at"]
+    search_fields = ["name"]
+    list_filter = ["diocese"]
+    raw_id_fields = ["diocese", "dean"]

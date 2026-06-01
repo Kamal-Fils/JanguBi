@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
-from apps.users.models import BaseUser, Profile, SecurityAuditLog
+from apps.users.models import BaseUser, Profile, RoleAssignment, SecurityAuditLog
 
 
 class ProfileInline(admin.StackedInline):
@@ -37,6 +37,14 @@ class BaseUserAdmin(admin.ModelAdmin):
             return f"{obj.profile.first_name} {obj.profile.last_name}"
         return "-"
     full_name.short_description = _("Nom complet")
+
+
+@admin.register(RoleAssignment)
+class RoleAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "role", "scope", "is_principal", "is_active", "created_at")
+    list_filter = ("role", "scope", "is_active", "is_principal")
+    search_fields = ("user__email", "note")
+    raw_id_fields = ("user", "province", "diocese", "parish", "church", "granted_by")
 
 
 @admin.register(SecurityAuditLog)
