@@ -34,6 +34,7 @@ class ArticleCreateInputSerializer(serializers.Serializer):
     )
     scope_parish_id = serializers.IntegerField(required=False, allow_null=True)
     scope_diocese_id = serializers.IntegerField(required=False, allow_null=True)
+    scope_church_id = serializers.IntegerField(required=False, allow_null=True)
 
 
 class ArticleUpdateInputSerializer(serializers.Serializer):
@@ -66,6 +67,10 @@ class ArticleListOutputSerializer(serializers.ModelSerializer):
     scope_type_label = serializers.CharField(source="get_scope_type_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     content_type_label = serializers.CharField(source="get_content_type_display", read_only=True)
+    # FK exposées en ids (contrat front inchangé) ; +scope_church_id (Chantier 3a).
+    scope_parish_id = serializers.IntegerField(read_only=True, allow_null=True)
+    scope_diocese_id = serializers.IntegerField(read_only=True, allow_null=True)
+    scope_church_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = Article
@@ -83,6 +88,7 @@ class ArticleListOutputSerializer(serializers.ModelSerializer):
             "scope_type_label",
             "scope_parish_id",
             "scope_diocese_id",
+            "scope_church_id",
             "status",
             "status_label",
             "views_count",
@@ -107,6 +113,10 @@ class ArticleDetailOutputSerializer(serializers.ModelSerializer):
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     content_type_label = serializers.CharField(source="get_content_type_display", read_only=True)
     unpublished_by_name = serializers.SerializerMethodField()
+    # FK exposées en ids (contrat front inchangé) ; +scope_church_id (Chantier 3a).
+    scope_parish_id = serializers.IntegerField(read_only=True, allow_null=True)
+    scope_diocese_id = serializers.IntegerField(read_only=True, allow_null=True)
+    scope_church_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = Article
@@ -125,6 +135,7 @@ class ArticleDetailOutputSerializer(serializers.ModelSerializer):
             "scope_type_label",
             "scope_parish_id",
             "scope_diocese_id",
+            "scope_church_id",
             "status",
             "status_label",
             "views_count",

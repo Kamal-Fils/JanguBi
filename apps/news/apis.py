@@ -211,7 +211,7 @@ class ArticleDioceseListApi(ApiAuthMixin, APIView):
         from apps.users.scoping import user_can_admin_diocese
 
         scope = request.user.get_scope_ids()
-        if diocese_id != scope["diocese_id"] and not user_can_admin_diocese(
+        if diocese_id not in scope["diocese_ids"] and not user_can_admin_diocese(
             request.user, diocese_id
         ):
             return Response(
@@ -270,7 +270,7 @@ class AdminArticleListApi(ApiAuthMixin, APIView):
             OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
             OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
             OpenApiParameter("status", OpenApiTypes.STR, enum=["draft", "published", "unpublished"], description="Filtrer par statut"),
-            OpenApiParameter("scope_type", OpenApiTypes.STR, enum=["global", "diocese", "parish"], description="Filtrer par portée"),
+            OpenApiParameter("scope_type", OpenApiTypes.STR, enum=["global", "diocese", "parish", "church"], description="Filtrer par portée"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
         ],

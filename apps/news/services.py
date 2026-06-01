@@ -95,15 +95,47 @@ def _check_scope_consistency(
     scope_type: str,
     scope_parish_id: int | None,
     scope_diocese_id: int | None,
+    scope_church_id: int | None = None,
 ) -> None:
     if scope_type == Article.ScopeType.PARISH and not scope_parish_id:
         raise ApplicationError("Un article de portée 'paroisse' doit avoir un scope_parish_id.")
     if scope_type == Article.ScopeType.DIOCESE and not scope_diocese_id:
         raise ApplicationError("Un article de portée 'diocèse' doit avoir un scope_diocese_id.")
-    if scope_type == Article.ScopeType.GLOBAL and (scope_parish_id or scope_diocese_id):
+    if scope_type == Article.ScopeType.CHURCH and not scope_church_id:
+        raise ApplicationError("Un article de portée 'église' doit avoir un scope_church_id.")
+    if scope_type == Article.ScopeType.GLOBAL and (
+        scope_parish_id or scope_diocese_id or scope_church_id
+    ):
         raise ApplicationError(
-            "Un article global ne doit pas avoir de scope_parish_id ou scope_diocese_id."
+            "Un article global ne doit pas avoir de scope_parish_id, scope_diocese_id "
+            "ou scope_church_id."
         )
+
+
+def _resolve_scope_targets(
+    *,
+    scope_parish_id: int | None,
+    scope_diocese_id: int | None,
+    scope_church_id: int | None,
+):
+    """Résout les ids de portée (INT, contrat API inchangé) en instances FK.
+    Erreur claire si l'entité n'existe pas — jamais de FK fantôme."""
+    from apps.org.models import Church, Diocese, Parish
+
+    parish = diocese = church = None
+    if scope_parish_id is not None:
+        parish = Parish.objects.filter(pk=scope_parish_id).first()
+        if parish is None:
+            raise ApplicationError("Paroisse introuvable.")
+    if scope_diocese_id is not None:
+        diocese = Diocese.objects.filter(pk=scope_diocese_id).first()
+        if diocese is None:
+            raise ApplicationError("Diocèse introuvable.")
+    if scope_church_id is not None:
+        church = Church.objects.filter(pk=scope_church_id).first()
+        if church is None:
+            raise ApplicationError("Église introuvable.")
+    return parish, diocese, church
 
 
 def _check_scope_authority(
@@ -112,11 +144,13 @@ def _check_scope_authority(
     scope_type: str,
     scope_parish_id: int | None,
     scope_diocese_id: int | None,
+    scope_church_id: int | None = None,
 ) -> None:
     """L'auteur/éditeur doit avoir autorité territoriale RÉELLE (RoleAssignment)
-    sur la portée de l'article. Ferme l'injection inter-paroisses/diocèses : un
-    curé de la paroisse A ne peut ni créer ni publier un article scopé sur B, et
-    un clergé sans affectation ne peut rien publier de scopé.
+    sur la portée de l'article. Ferme l'injection inter-paroisses/diocèses/églises :
+    un curé de la paroisse A ne peut ni créer ni publier un article scopé sur B, et
+    un clergé sans affectation ne peut rien publier de scopé. L'autorité « église »
+    découle de l'autorité sur la paroisse de cette église.
     """
     from apps.users.scoping import (
         accessible_province_ids,
@@ -128,6 +162,14 @@ def _check_scope_authority(
     if scope_type == Article.ScopeType.PARISH:
         if not user_can_admin_parish(user, scope_parish_id):
             raise ApplicationError("Vous n'avez pas autorité sur cette paroisse.")
+    elif scope_type == Article.ScopeType.CHURCH:
+        from apps.org.models import Church
+
+        church = Church.objects.filter(pk=scope_church_id).first()
+        if church is None:
+            raise ApplicationError("Église introuvable.")
+        if not user_can_admin_parish(user, church.parish_id):
+            raise ApplicationError("Vous n'avez pas autorité sur cette église.")
     elif scope_type == Article.ScopeType.DIOCESE:
         if not user_can_admin_diocese(user, scope_diocese_id):
             raise ApplicationError("Vous n'avez pas autorité sur ce diocèse.")
@@ -166,14 +208,23 @@ def article_create(
     cover_image_id: int | None = None,
     scope_parish_id: int | None = None,
     scope_diocese_id: int | None = None,
+    scope_church_id: int | None = None,
 ) -> Article:
     _check_editor(author)
-    _check_scope_consistency(scope_type, scope_parish_id, scope_diocese_id)
+    _check_scope_consistency(scope_type, scope_parish_id, scope_diocese_id, scope_church_id)
     _check_scope_authority(
         user=author,
         scope_type=scope_type,
         scope_parish_id=scope_parish_id,
         scope_diocese_id=scope_diocese_id,
+        scope_church_id=scope_church_id,
+    )
+
+    # Contrat API inchangé : ids reçus en INT, résolus en FK ici.
+    scope_parish, scope_diocese, scope_church = _resolve_scope_targets(
+        scope_parish_id=scope_parish_id,
+        scope_diocese_id=scope_diocese_id,
+        scope_church_id=scope_church_id,
     )
 
     try:
@@ -192,7 +243,11 @@ def article_create(
         if not cover_image.is_valid:
             raise ApplicationError("Le fichier image n'a pas encore été finalisé.")
 
-    scope_id = scope_parish_id if scope_type == Article.ScopeType.PARISH else scope_diocese_id
+    scope_id = {
+        Article.ScopeType.PARISH: scope_parish_id,
+        Article.ScopeType.DIOCESE: scope_diocese_id,
+        Article.ScopeType.CHURCH: scope_church_id,
+    }.get(scope_type)
     slug = _build_slug(title, scope_type, scope_id)
 
     return Article.objects.create(
@@ -205,8 +260,9 @@ def article_create(
         author=author,
         cover_image=cover_image,
         scope_type=scope_type,
-        scope_parish_id=scope_parish_id,
-        scope_diocese_id=scope_diocese_id,
+        scope_parish=scope_parish,
+        scope_diocese=scope_diocese,
+        scope_church=scope_church,
         status=Article.Status.DRAFT,
     )
 
@@ -275,6 +331,7 @@ def article_publish(*, article: Article, editor: BaseUser) -> Article:
         scope_type=article.scope_type,
         scope_parish_id=article.scope_parish_id,
         scope_diocese_id=article.scope_diocese_id,
+        scope_church_id=article.scope_church_id,
     )
 
     if article.status == Article.Status.PUBLISHED:
