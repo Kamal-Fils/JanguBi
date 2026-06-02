@@ -42,10 +42,10 @@ class DocumentRequestCreateInputSerializer(serializers.Serializer):
     registered_first_names = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
     father_last_name = serializers.CharField(max_length=100)
     mother_last_name = serializers.CharField(max_length=100)
-    parish_name = serializers.CharField(max_length=200)
-    diocese = serializers.CharField(max_length=200)
-    # Paroisse cible explicite (sélectionnée dans la liste org) — optionnelle.
-    parish_id = serializers.IntegerField(required=False, allow_null=True)
+    # B5c — Paroisse du registre : FK OBLIGATOIRE (le front l'émet via le picker).
+    # parish_name/diocese ne sont plus acceptés en entrée : le nom et le diocèse sont
+    # dérivés de target_parish (C4). Les extras éventuels du front sont ignorés par DRF.
+    parish_id = serializers.IntegerField()
     sacrament_approximate_date = serializers.CharField(max_length=20)
     sacrament_location = serializers.CharField(max_length=200)
     additional_info = serializers.CharField(required=False, allow_blank=True, default="")
@@ -98,10 +98,27 @@ class InternalNoteCreateInputSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 
 
-class DocumentRequestListOutputSerializer(serializers.ModelSerializer):
+class _FkParishDisplayMixin:
+    """B5c — nom de paroisse + diocèse affichés depuis la FK target_parish ; repli sur
+    le texte stocké pour les demandes orphelines legacy (FK NULL)."""
+
+    def get_parish_name(self, obj) -> str:
+        if obj.target_parish_id:
+            return obj.target_parish.name
+        return obj.parish_name
+
+    def get_diocese(self, obj) -> str:
+        if obj.target_parish_id:
+            return obj.target_parish.diocese.name
+        return obj.diocese
+
+
+class DocumentRequestListOutputSerializer(_FkParishDisplayMixin, serializers.ModelSerializer):
     requester_email = serializers.EmailField(source="requester.email", read_only=True)
     document_type_label = serializers.CharField(source="get_document_type_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
+    parish_name = serializers.SerializerMethodField()
+    diocese = serializers.SerializerMethodField()
 
     class Meta:
         model = DocumentRequest
@@ -171,12 +188,14 @@ class InternalNoteOutputSerializer(serializers.ModelSerializer):
         return _user_display_name(obj.author)
 
 
-class DocumentRequestDetailOutputSerializer(serializers.ModelSerializer):
+class DocumentRequestDetailOutputSerializer(_FkParishDisplayMixin, serializers.ModelSerializer):
     requester_email = serializers.EmailField(source="requester.email", read_only=True)
     document_type_label = serializers.CharField(source="get_document_type_display", read_only=True)
     reason_label = serializers.CharField(source="get_reason_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     assigned_to_name = serializers.SerializerMethodField()
+    parish_name = serializers.SerializerMethodField()
+    diocese = serializers.SerializerMethodField()
     status_logs = StatusLogOutputSerializer(many=True, read_only=True)
     attachments = AttachmentOutputSerializer(many=True, read_only=True)
 

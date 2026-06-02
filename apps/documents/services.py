@@ -204,48 +204,22 @@ def document_request_create(*, requester: BaseUser, data: dict) -> DocumentReque
     # Rattachement territorial. La paroisse du REGISTRE peut être N'IMPORTE QUELLE
     # paroisse active (Chantier 4) : un fidèle demande un document À une paroisse sans
     # y être membre ni admin → AUCUN contrôle d'autorité côté demandeur.
-    # A5 — pas de repli silencieux : parish_id invalide lève une erreur, et une demande
-    # sans paroisse résolue est rejetée (pas d'orphelin).
-    target_parish = None
+    # B5c — parish_id est REQUIS (le front l'émet via le picker). A5 préservé : parish_id
+    # absent ou invalide → erreur (jamais de repli silencieux ni de demande orpheline).
     parish_id = data.get("parish_id")
-    if parish_id:
-        from apps.org.models import Parish
+    if not parish_id:
+        raise ApplicationError("La paroisse du registre est requise (parish_id).")
 
-        target_parish = Parish.objects.filter(id=parish_id).first()
-        if target_parish is None:
-            raise ApplicationError("Paroisse cible introuvable.")
+    from apps.org.models import Parish
+
+    target_parish = Parish.objects.filter(id=parish_id).select_related("diocese").first()
     if target_parish is None:
-        # Pas de parish_id explicite. Avec PLUSIEURS appartenances la cible est
-        # ambiguë → exiger un choix explicite (pas de repli silencieux). Avec UNE
-        # appartenance → sa paroisse (défaut de transition). Avec ZÉRO → repli legacy
-        # sur la paroisse principale du profil. Imparfait jusqu'au picker du Chantier 7.
-        from apps.users.models import Membership
+        raise ApplicationError("Paroisse cible introuvable.")
 
-        memberships = Membership.objects.filter(user=requester).select_related(
-            "church__parish"
-        )
-        count = memberships.count()
-        if count > 1:
-            raise ApplicationError(
-                "Vous appartenez à plusieurs paroisses : précisez la paroisse du "
-                "registre (parish_id)."
-            )
-        if count == 1:
-            target_parish = memberships.first().church.parish
-        else:
-            target_parish = getattr(
-                getattr(requester, "profile", None), "primary_parish", None
-            )
-    if target_parish is None:
-        raise ApplicationError(
-            "Aucune paroisse cible : précisez la paroisse de la demande ou "
-            "définissez votre paroisse principale."
-        )
-
-    # Quand la paroisse cible (FK) est résolue, DÉRIVER le diocèse du FK (ne plus
-    # dépendre du texte). parish_name (texte legacy) reste accepté et lisible pour
-    # l'affichage des anciennes demandes orphelines (FK NULL).
-    diocese_value = target_parish.diocese.name if target_parish is not None else data["diocese"]
+    # Nom de paroisse + diocèse DÉRIVÉS du FK (plus de texte libre en entrée). Les
+    # anciennes demandes orphelines (FK NULL) conservent leur parish_name/diocese stockés.
+    parish_name_value = target_parish.name
+    diocese_value = target_parish.diocese.name
 
     request_obj = DocumentRequest.objects.create(
         reference=_generate_reference(),
@@ -263,7 +237,7 @@ def document_request_create(*, requester: BaseUser, data: dict) -> DocumentReque
         registered_first_names=data.get("registered_first_names", ""),
         father_last_name=data["father_last_name"],
         mother_last_name=data["mother_last_name"],
-        parish_name=data["parish_name"],
+        parish_name=parish_name_value,
         diocese=diocese_value,
         target_parish=target_parish,
         sacrament_approximate_date=data["sacrament_approximate_date"],

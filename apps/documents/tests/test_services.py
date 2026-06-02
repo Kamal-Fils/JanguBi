@@ -68,6 +68,11 @@ MINIMUM_DATA = {
 }
 
 
+def _data_with_parish(**extra):
+    """Données de création valides : parish_id requis depuis B5c (FK obligatoire)."""
+    return {**MINIMUM_DATA, "parish_id": ParishFactory().id, **extra}
+
+
 # ---------------------------------------------------------------------------
 # document_request_create
 # ---------------------------------------------------------------------------
@@ -77,7 +82,7 @@ MINIMUM_DATA = {
 def test_document_request_create_success():
     # Arrange
     requester = _requester_with_parish()
-    data = {**MINIMUM_DATA}
+    data = _data_with_parish()
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):
@@ -109,8 +114,7 @@ def test_invalid_parish_id_raises():
 
 @pytest.mark.django_db
 def test_document_create_without_resolved_parish_raises():
-    # Aucune paroisse résolue (pas de parish_id, pas de paroisse principale) →
-    # rejet, jamais de demande orpheline (target_parish=None).
+    # B5c : pas de parish_id → rejet (jamais de demande orpheline target_parish=None).
     requester = BaseUserFactory()  # aucun profil → primary_parish None
 
     with patch("apps.documents.services.transaction.on_commit"):
@@ -122,7 +126,7 @@ def test_document_create_without_resolved_parish_raises():
 def test_document_request_create_logs_initial_status():
     # Arrange
     requester = _requester_with_parish()
-    data = {**MINIMUM_DATA}
+    data = _data_with_parish()
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):
@@ -140,7 +144,7 @@ def test_document_request_create_with_valid_attachment():
     # Arrange
     requester = _requester_with_parish()
     valid_file = ValidFileFactory(uploaded_by=requester)
-    data = {**MINIMUM_DATA, "attachment_file_id": valid_file.id}
+    data = _data_with_parish(attachment_file_id=valid_file.id)
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):
@@ -155,7 +159,7 @@ def test_document_request_create_with_valid_attachment():
 def test_document_request_create_raises_when_attachment_not_found():
     # Arrange
     requester = _requester_with_parish()
-    data = {**MINIMUM_DATA, "attachment_file_id": uuid.uuid4()}
+    data = _data_with_parish(attachment_file_id=uuid.uuid4())
 
     # Act & Assert
     with patch("apps.documents.services.transaction.on_commit"):
@@ -168,7 +172,7 @@ def test_document_request_create_raises_when_attachment_not_finalized():
     # Arrange
     requester = _requester_with_parish()
     invalid_file = InvalidFileFactory(uploaded_by=requester)
-    data = {**MINIMUM_DATA, "attachment_file_id": invalid_file.id}
+    data = _data_with_parish(attachment_file_id=invalid_file.id)
 
     # Act & Assert
     with patch("apps.documents.services.transaction.on_commit"):
@@ -212,14 +216,13 @@ def test_document_request_create_raises_when_godparent_missing_celebration_type(
 def test_document_request_create_succeeds_with_valid_religious_marriage_details():
     # Arrange
     requester = _requester_with_parish()
-    data = {
-        **MINIMUM_DATA,
-        "document_type": DocumentRequest.DocumentType.RELIGIOUS_MARRIAGE,
-        "document_details": {
+    data = _data_with_parish(
+        document_type=DocumentRequest.DocumentType.RELIGIOUS_MARRIAGE,
+        document_details={
             "spouse_full_name_groom": "Jean Dupont",
             "spouse_full_name_bride": "Marie Ndiaye",
         },
-    }
+    )
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):

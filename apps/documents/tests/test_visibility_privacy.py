@@ -21,6 +21,8 @@ from apps.users.enums import RoleScope, UserRole
 from apps.users.models import RoleAssignment
 from apps.users.tests.factories import BaseUserFactory, ProfileFactory
 
+from .factories import DocumentRequestFactory
+
 _NO_COMMIT = "apps.documents.services.transaction.on_commit"
 
 
@@ -111,12 +113,9 @@ def test_orphan_document_still_visible_to_home_parish_curate():
     requester = BaseUserFactory()
     ProfileFactory(user=requester, primary_parish=parish_a)
 
-    with patch(_NO_COMMIT):
-        req = document_request_create(requester=requester, data=_data())  # pas de parish_id
-    # 0 appartenance, pas de parish_id → target = primary_parish (A). Donc NON orpheline
-    # ici (target=A). On force l'orpheline pour le test du repli.
-    DocumentRequest.objects.filter(pk=req.pk).update(target_parish=None)
-    req.refresh_from_db()
+    # B5c ne produit plus d'orphelines (parish_id requis) → on construit l'orpheline
+    # legacy directement via la factory (target_parish NULL).
+    req = DocumentRequestFactory(requester=requester, target_parish=None)
     assert req.target_parish_id is None
 
     cure_a = _cure(parish_a, "cure_orphan_a@test.com")
