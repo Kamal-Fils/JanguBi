@@ -2,9 +2,11 @@
 Management command: seed_demo
 
 Peuple la base de données avec des données de démonstration réalistes pour
-la plateforme Jàngu Bi (communauté catholique sénégalaise).
+la plateforme Jàngu Bi (communauté catholique sénégalaise), au modèle
+MULTI-APPARTENANCE (Lot 2).
 
-Prérequis : exécuter `seed_senegal` d'abord pour créer Province/Diocese/Parish.
+Prérequis : exécuter `seed_senegal` d'abord (Province/Diocese/Parish + église
+principale par paroisse).
 
 Usage :
     docker compose exec django python manage.py seed_senegal
@@ -12,6 +14,17 @@ Usage :
     docker compose exec django python manage.py seed_demo --reset
 
 Idempotent : peut être exécuté plusieurs fois sans dupliquer les données.
+
+Données incarnant le GOLDEN-PATH :
+- Aminata Fall est membre de DEUX églises de diocèses différents (Dakar +
+  Thiès) via Membership (PAS Profile.primary_parish en direct : le signal dérive
+  diocèse/province/primary_parish et complète l'onboarding par le vrai chemin).
+- Le clergé/les admins ont une autorité réelle via RoleAssignment.
+- Une demande de document cible une paroisse NON-membre (registre), + une
+  orpheline legacy (target_parish NULL).
+- Articles scopés église/paroisse/diocèse/global → fil agrégé varié.
+- Dons espèces étiquetés à une église (PENDING/CONFIRMED + anonymes).
+- Événements (scopes variés) + intentions de messe.
 """
 
 import datetime
@@ -27,7 +40,6 @@ from django.utils.text import slugify
 
 DEMO_PASSWORD = "Jangu2024!"
 
-# Emails référencés dans le reste du fichier
 EMAIL_SUPER_ADMIN = "admin@jangubidev.sn"
 EMAIL_ARCHEVEQUE = "archeveque.dakar@jangubidev.sn"
 EMAIL_EVEQUE = "eveque.thies@jangubidev.sn"
@@ -36,6 +48,16 @@ EMAIL_DIACRE = "diacre.diop@jangubidev.sn"
 EMAIL_FIDELE1 = "aminata.fall@jangubidev.sn"
 EMAIL_FIDELE2 = "moussa.ndiaye@jangubidev.sn"
 EMAIL_RELIGIEUX = "soeur.marguerite@jangubidev.sn"
+
+# Paroisses de référence (doivent exister via seed_senegal).
+PARISH_CATHEDRALE_DAKAR = "Cathédrale du Souvenir Africain"
+PARISH_MEDINA = "Paroisse Saint-Joseph de Medina"
+PARISH_SAINTE_MARIE = "Paroisse Sainte-Marie de la Mer"
+PARISH_CATHEDRALE_THIES = "Cathédrale Saint-Joseph de Thiès"
+
+DIOCESE_DAKAR = "Archidiocèse de Dakar"
+DIOCESE_THIES = "Diocèse de Thiès"
+PROVINCE_DAKAR = "Province de Dakar"
 
 DEMO_USERS = [
     {
@@ -48,7 +70,6 @@ DEMO_USERS = [
         "first_name": "Mamadou",
         "last_name": "Sy",
         "title": "MR",
-        "parish_name": None,
     },
     {
         "email": EMAIL_ARCHEVEQUE,
@@ -60,7 +81,6 @@ DEMO_USERS = [
         "first_name": "Jean-Baptiste",
         "last_name": "Faye",
         "title": "MR",
-        "parish_name": None,
     },
     {
         "email": EMAIL_EVEQUE,
@@ -72,7 +92,6 @@ DEMO_USERS = [
         "first_name": "Thomas",
         "last_name": "Mendy",
         "title": "MR",
-        "parish_name": None,
     },
     {
         "email": EMAIL_PRETRE,
@@ -84,7 +103,6 @@ DEMO_USERS = [
         "first_name": "Pierre",
         "last_name": "Senghor",
         "title": "MR",
-        "parish_name": "Cathédrale du Souvenir Africain",
     },
     {
         "email": EMAIL_DIACRE,
@@ -96,7 +114,6 @@ DEMO_USERS = [
         "first_name": "Joseph",
         "last_name": "Diop",
         "title": "MR",
-        "parish_name": "Cathédrale du Souvenir Africain",
     },
     {
         "email": EMAIL_FIDELE1,
@@ -108,7 +125,6 @@ DEMO_USERS = [
         "first_name": "Aminata",
         "last_name": "Fall",
         "title": "MRS",
-        "parish_name": "Cathédrale du Souvenir Africain",
     },
     {
         "email": EMAIL_FIDELE2,
@@ -120,7 +136,6 @@ DEMO_USERS = [
         "first_name": "Moussa",
         "last_name": "Ndiaye",
         "title": "MR",
-        "parish_name": "Cathédrale Saint-Joseph de Thiès",
     },
     {
         "email": EMAIL_RELIGIEUX,
@@ -132,8 +147,38 @@ DEMO_USERS = [
         "first_name": "Marguerite",
         "last_name": "Coly",
         "title": "MRS",
-        "parish_name": None,
     },
+]
+
+# Appartenances ecclésiales — (email → liste de (parish_name, is_primary)).
+# Créées via membership_create : le signal dérive diocèse/province/primary_parish
+# et l'onboarding passe `completed`. Le clergé n'a PAS d'appartenance fidèle
+# (exempté ; autorité via RoleAssignment).
+MEMBERSHIPS = {
+    # Golden-path : multi-appartenance sur DEUX diocèses (Dakar principale + Thiès).
+    EMAIL_FIDELE1: [
+        (PARISH_CATHEDRALE_DAKAR, True),
+        (PARISH_CATHEDRALE_THIES, False),
+    ],
+    EMAIL_FIDELE2: [(PARISH_CATHEDRALE_THIES, True)],
+    # Le religieux a une appartenance pour pouvoir écrire (garde d'onboarding).
+    EMAIL_RELIGIEUX: [(PARISH_CATHEDRALE_DAKAR, True)],
+}
+
+# Autorité administrative réelle (RoleAssignment). `church_parish` = on rattache
+# l'assignation à l'église principale de cette paroisse.
+ROLE_ASSIGNMENTS = [
+    {"email": EMAIL_SUPER_ADMIN, "role": "super_admin", "scope": "global"},
+    {"email": EMAIL_ARCHEVEQUE, "role": "province_admin", "scope": "province", "province": PROVINCE_DAKAR},
+    {"email": EMAIL_EVEQUE, "role": "diocese_admin", "scope": "diocese", "diocese": DIOCESE_THIES},
+    {
+        "email": EMAIL_PRETRE,
+        "role": "parish_admin",
+        "scope": "parish",
+        "parish": PARISH_CATHEDRALE_DAKAR,
+        "is_principal": True,
+    },
+    {"email": EMAIL_DIACRE, "role": "church_admin", "scope": "church", "church_parish": PARISH_CATHEDRALE_DAKAR},
 ]
 
 TV_CATEGORIES = [
@@ -191,111 +236,139 @@ ARTICLE_CATEGORIES = [
     {"name": "Formation",       "slug": "formation-actu",  "icon": "book",      "color": "#10B981", "display_order": 4},
 ]
 
+# scope_ref : nom de l'entité ciblée selon scope_type
+#   global  → None ; diocese → nom diocèse ; parish → nom paroisse ;
+#   church  → nom de la paroisse (on cible son église principale).
 ARTICLES = [
     {
         "title": "Message de Carême 2024 — Archevêché de Dakar",
         "category_slug": "actualites",
         "scope_type": "global",
+        "scope_ref": None,
         "author_email": EMAIL_ARCHEVEQUE,
         "status": "published",
         "excerpt": "En ce temps de Carême, l'Archevêché de Dakar vous invite à un retour sincère vers Dieu.",
         "content": """<h2>Message de Carême 2024</h2>
 <p>Frères et sœurs dans le Christ,</p>
 <p>En ce temps de Carême, nous sommes invités à renouveler notre engagement baptismal et à approfondir notre relation avec Dieu. Le jeûne, la prière et l'aumône restent les piliers de cette démarche de conversion.</p>
-<h3>Intentions de prière</h3>
-<ul>
-<li>Pour la paix au Sénégal et dans le monde</li>
-<li>Pour les familles éprouvées par la pauvreté</li>
-<li>Pour nos prêtres et nos religieuses</li>
-</ul>
-<p>Que le Seigneur vous bénisse et vous garde dans Sa paix.</p>
 <p><em>† Jean-Baptiste Faye, Archevêque de Dakar</em></p>""",
     },
     {
         "title": "Lettre pastorale — Diocèse de Thiès : L'Église en sortie",
         "category_slug": "actualites",
-        "scope_type": "global",
+        "scope_type": "diocese",
+        "scope_ref": DIOCESE_THIES,
         "author_email": EMAIL_EVEQUE,
         "status": "published",
         "excerpt": "L'évêque de Thiès appelle les fidèles à porter l'Évangile dans les périphéries.",
         "content": """<h2>Lettre pastorale du Diocèse de Thiès</h2>
 <p>Chers fidèles du Diocèse de Thiès,</p>
-<p>Le Pape François nous appelle à être une Église en sortie. Cela signifie aller vers les périphéries géographiques et existentielles, rejoindre ceux qui sont loin de l'Église ou de la foi.</p>
-<p>Dans notre diocèse, cette mission prend la forme de visites aux familles, de catéchèse dans les quartiers, et d'accompagnement des jeunes en situation de vulnérabilité.</p>
-<p>Je compte sur chacun d'entre vous pour porter ce témoignage avec joie et humilité.</p>
+<p>Le Pape François nous appelle à être une Église en sortie. Allons vers les périphéries géographiques et existentielles.</p>
 <p><em>† Thomas Mendy, Évêque de Thiès</em></p>""",
+    },
+    {
+        "title": "Annonce diocésaine — Archidiocèse de Dakar : Synode des jeunes",
+        "category_slug": "actualites",
+        "scope_type": "diocese",
+        "scope_ref": DIOCESE_DAKAR,
+        "author_email": EMAIL_ARCHEVEQUE,
+        "status": "published",
+        "excerpt": "Le synode diocésain des jeunes se tiendra à Dakar en avril.",
+        "content": """<h2>Synode des jeunes — Archidiocèse de Dakar</h2>
+<p>Tous les jeunes du diocèse sont invités à participer au synode diocésain. Inscriptions auprès de votre paroisse.</p>""",
     },
     {
         "title": "Annonce : Retraite paroissiale — Cathédrale du Souvenir Africain",
         "category_slug": "vie-paroissiale",
         "scope_type": "parish",
+        "scope_ref": PARISH_CATHEDRALE_DAKAR,
         "author_email": EMAIL_PRETRE,
         "status": "published",
         "excerpt": "Du 14 au 16 mars 2024, rejoignez-nous pour notre retraite paroissiale annuelle.",
         "content": """<h2>Retraite paroissiale 2024</h2>
-<p>La paroisse Cathédrale du Souvenir Africain organise sa retraite spirituelle annuelle :</p>
-<ul>
-<li><strong>Date</strong> : Du vendredi 14 au dimanche 16 mars 2024</li>
-<li><strong>Lieu</strong> : Centre spirituel de Keur Moussa, Thiès</li>
-<li><strong>Animateur</strong> : Père Pierre Senghor</li>
-</ul>
-<h3>Thème : «Laisse-toi réconcilier avec Dieu» (2Co 5,20)</h3>
-<p>Programme : méditations, confessions, Eucharistie quotidienne, chemin de croix.</p>
-<p>Inscription au secrétariat paroissial avant le 5 mars. Places limitées.</p>""",
+<p>La paroisse Cathédrale du Souvenir Africain organise sa retraite spirituelle annuelle au Centre de Keur Moussa.</p>""",
     },
     {
-        "title": "Calendrier liturgique — Semaine Sainte 2024",
+        "title": "Vie de l'église — Cathédrale du Souvenir Africain : nouvel horaire des messes",
+        "category_slug": "vie-paroissiale",
+        "scope_type": "church",
+        "scope_ref": PARISH_CATHEDRALE_DAKAR,
+        "author_email": EMAIL_PRETRE,
+        "status": "published",
+        "excerpt": "À compter de dimanche, la messe dominicale est avancée à 9h00.",
+        "content": """<h2>Nouvel horaire des messes</h2>
+<p>À compter de ce dimanche, la messe dominicale de notre église est célébrée à 9h00 (au lieu de 9h30).</p>""",
+    },
+    {
+        "title": "Paroisse Saint-Joseph de Thiès — Kermesse paroissiale",
+        "category_slug": "vie-paroissiale",
+        "scope_type": "parish",
+        "scope_ref": PARISH_CATHEDRALE_THIES,
+        "author_email": EMAIL_EVEQUE,
+        "status": "published",
+        "excerpt": "La kermesse annuelle de la Cathédrale de Thiès aura lieu le dernier dimanche du mois.",
+        "content": """<h2>Kermesse paroissiale</h2>
+<p>La Cathédrale Saint-Joseph de Thiès organise sa kermesse annuelle au profit des œuvres caritatives.</p>""",
+    },
+    {
+        "title": "Église de Thiès — Veillée de prière mensuelle",
+        "category_slug": "vie-paroissiale",
+        "scope_type": "church",
+        "scope_ref": PARISH_CATHEDRALE_THIES,
+        "author_email": EMAIL_EVEQUE,
+        "status": "published",
+        "excerpt": "Veillée de prière le premier vendredi du mois à la Cathédrale de Thiès.",
+        "content": """<h2>Veillée de prière</h2>
+<p>Tous les premiers vendredis du mois, veillée de prière et adoration à notre église.</p>""",
+    },
+    {
+        "title": "Calendrier liturgique — Semaine Sainte 2024 (Souvenir Africain)",
         "category_slug": "liturgie",
         "scope_type": "parish",
+        "scope_ref": PARISH_CATHEDRALE_DAKAR,
         "author_email": EMAIL_PRETRE,
         "status": "published",
         "excerpt": "Retrouvez le programme complet des célébrations de la Semaine Sainte à la Cathédrale.",
         "content": """<h2>Semaine Sainte 2024 — Programme</h2>
-<table>
-<tr><th>Jour</th><th>Célébration</th><th>Heure</th></tr>
-<tr><td>Dimanche des Rameaux</td><td>Procession et messe</td><td>9h30</td></tr>
-<tr><td>Jeudi Saint</td><td>Messe de la Cène du Seigneur</td><td>18h30</td></tr>
-<tr><td>Vendredi Saint</td><td>Chemin de Croix (rue)</td><td>8h00</td></tr>
-<tr><td>Vendredi Saint</td><td>Célébration de la Passion</td><td>15h00</td></tr>
-<tr><td>Veillée Pascale</td><td>Vigile et baptêmes</td><td>21h00</td></tr>
-<tr><td>Dimanche de Pâques</td><td>Messe solennelle</td><td>9h30</td></tr>
-</table>
-<p>Les enfants catéchumènes seront baptisés lors de la Vigile Pascale. Merci de les accompagner dans votre prière.</p>""",
+<p>Dimanche des Rameaux 9h30 · Jeudi Saint 18h30 · Vendredi Saint 15h00 · Veillée Pascale 21h00 · Pâques 9h30.</p>""",
     },
     {
         "title": "Formation : Comprendre la liturgie des Heures",
         "category_slug": "formation-actu",
         "scope_type": "global",
+        "scope_ref": None,
         "author_email": EMAIL_SUPER_ADMIN,
         "status": "published",
         "excerpt": "L'Office Divin, prière de l'Église universelle, rythme la journée de 7 heures canoniales.",
         "content": """<h2>La Liturgie des Heures</h2>
-<p>La Liturgie des Heures est la prière officielle de l'Église catholique. Elle sanctifie les différents moments de la journée et de la nuit.</p>
-<h3>Les 7 offices</h3>
-<ol>
-<li><strong>Matines (Lectures)</strong> — prière nocturne ou matinale</li>
-<li><strong>Laudes</strong> — au lever du soleil</li>
-<li><strong>Tierce</strong> — 9h00</li>
-<li><strong>Sexte</strong> — midi</li>
-<li><strong>None</strong> — 15h00</li>
-<li><strong>Vêpres</strong> — au coucher du soleil</li>
-<li><strong>Complies</strong> — fin de journée</li>
-</ol>
-<p>Sur Jàngu Bi, les 7 offices de l'AELF sont accessibles aux membres du clergé et aux religieux.</p>""",
+<p>La prière officielle de l'Église : Matines, Laudes, Tierce, Sexte, None, Vêpres, Complies.</p>""",
+    },
+    {
+        "title": "Paroisse Saint-Joseph de Medina — Catéchèse de rentrée",
+        "category_slug": "vie-paroissiale",
+        "scope_type": "parish",
+        "scope_ref": PARISH_MEDINA,
+        "author_email": EMAIL_PRETRE,
+        "status": "published",
+        "excerpt": "Article scopé à une 3e paroisse — NE doit PAS apparaître dans le fil d'Aminata.",
+        "content": """<h2>Catéchèse de rentrée — Medina</h2>
+<p>Les inscriptions à la catéchèse de la paroisse Saint-Joseph de Medina sont ouvertes.</p>""",
     },
     {
         "title": "Brouillon — Témoignage de foi : l'Eucharistie au cœur de ma vie",
         "category_slug": "vie-paroissiale",
         "scope_type": "parish",
+        "scope_ref": PARISH_CATHEDRALE_DAKAR,
         "author_email": EMAIL_DIACRE,
         "status": "draft",
         "excerpt": "Un témoignage personnel sur la place de l'Eucharistie dans le quotidien d'un diacre.",
         "content": """<h2>L'Eucharistie, source et sommet</h2>
-<p>Depuis mon ordination diaconale, l'Eucharistie a pris une nouvelle dimension dans ma vie. Chaque célébration est une rencontre personnelle avec le Christ ressuscité.</p>
 <p>[Témoignage en cours de rédaction — à compléter avant publication]</p>""",
     },
 ]
 
+# target_parish_ref : paroisse RÉELLE du registre (résolue → target_parish FK).
+#   orphan=True → demande orpheline legacy (target_parish NULL, parish_name texte).
 DOCUMENT_REQUESTS = [
     {
         "requester_email": EMAIL_FIDELE1,
@@ -303,6 +376,7 @@ DOCUMENT_REQUESTS = [
         "reason": "personal",
         "status": "submitted",
         "reference_suffix": "DEMO001",
+        "target_parish_ref": PARISH_CATHEDRALE_DAKAR,  # paroisse d'appartenance
         "requester_last_name": "Fall",
         "requester_first_names": "Aminata Fatou",
         "date_of_birth": datetime.date(1993, 6, 15),
@@ -310,8 +384,6 @@ DOCUMENT_REQUESTS = [
         "contact_phone": "+221770000006",
         "father_last_name": "Fall",
         "mother_last_name": "Diop",
-        "parish_name": "Cathédrale du Souvenir Africain",
-        "diocese": "Archidiocèse de Dakar",
         "sacrament_approximate_date": "1993",
         "sacrament_location": "Cathédrale du Souvenir Africain, Dakar",
     },
@@ -321,6 +393,8 @@ DOCUMENT_REQUESTS = [
         "reason": "religious_marriage",
         "status": "under_verification",
         "reference_suffix": "DEMO002",
+        # REGISTRE : Aminata demande à une paroisse où elle N'EST PAS membre.
+        "target_parish_ref": PARISH_MEDINA,
         "requester_last_name": "Fall",
         "requester_first_names": "Aminata Fatou",
         "date_of_birth": datetime.date(1993, 6, 15),
@@ -328,8 +402,6 @@ DOCUMENT_REQUESTS = [
         "contact_phone": "+221770000006",
         "father_last_name": "Fall",
         "mother_last_name": "Diop",
-        "parish_name": "Paroisse Saint-Joseph de Medina",
-        "diocese": "Archidiocèse de Dakar",
         "sacrament_approximate_date": "2008",
         "sacrament_location": "Paroisse Saint-Joseph de Medina, Dakar",
     },
@@ -339,6 +411,7 @@ DOCUMENT_REQUESTS = [
         "reason": "catechism",
         "status": "validated",
         "reference_suffix": "DEMO003",
+        "target_parish_ref": PARISH_CATHEDRALE_THIES,
         "requester_last_name": "Ndiaye",
         "requester_first_names": "Moussa Ousmane",
         "date_of_birth": datetime.date(1990, 3, 22),
@@ -346,8 +419,6 @@ DOCUMENT_REQUESTS = [
         "contact_phone": "+221770000007",
         "father_last_name": "Ndiaye",
         "mother_last_name": "Seck",
-        "parish_name": "Cathédrale Saint-Joseph de Thiès",
-        "diocese": "Diocèse de Thiès",
         "sacrament_approximate_date": "2001",
         "sacrament_location": "Cathédrale Saint-Joseph de Thiès",
     },
@@ -357,6 +428,7 @@ DOCUMENT_REQUESTS = [
         "reason": "religious_marriage",
         "status": "document_deposited",
         "reference_suffix": "DEMO004",
+        "target_parish_ref": PARISH_CATHEDRALE_THIES,
         "requester_last_name": "Ndiaye",
         "requester_first_names": "Moussa Ousmane",
         "date_of_birth": datetime.date(1990, 3, 22),
@@ -364,8 +436,6 @@ DOCUMENT_REQUESTS = [
         "contact_phone": "+221770000007",
         "father_last_name": "Ndiaye",
         "mother_last_name": "Seck",
-        "parish_name": "Cathédrale Saint-Joseph de Thiès",
-        "diocese": "Diocèse de Thiès",
         "sacrament_approximate_date": "2018",
         "sacrament_location": "Cathédrale Saint-Joseph de Thiès",
     },
@@ -375,7 +445,12 @@ DOCUMENT_REQUESTS = [
         "reason": "godparent",
         "status": "info_requested",
         "reference_suffix": "DEMO005",
-        "info_request_message": "Les informations de parrainage fournies sont incomplètes. Merci de préciser la date exacte du baptême et le nom du parrain/marraine.",
+        # ORPHELINE legacy : aucune FK résolue, parish_name texte conservé pour
+        # illustrer l'affichage de repli (sortie via texte stocké).
+        "orphan": True,
+        "legacy_parish_name": "Paroisse Sainte-Marie de la Mer",
+        "legacy_diocese": "Archidiocèse de Dakar",
+        "info_request_message": "Les informations de parrainage sont incomplètes. Merci de préciser la date du baptême.",
         "requester_last_name": "Fall",
         "requester_first_names": "Aminata Fatou",
         "date_of_birth": datetime.date(1993, 6, 15),
@@ -383,8 +458,6 @@ DOCUMENT_REQUESTS = [
         "contact_phone": "+221770000006",
         "father_last_name": "Fall",
         "mother_last_name": "Diop",
-        "parish_name": "Paroisse Sainte-Marie de la Mer",
-        "diocese": "Archidiocèse de Dakar",
         "sacrament_approximate_date": "1995",
         "sacrament_location": "Paroisse Sainte-Marie de la Mer, Dakar",
     },
@@ -394,7 +467,8 @@ DOCUMENT_REQUESTS = [
         "reason": "personal",
         "status": "rejected",
         "reference_suffix": "DEMO006",
-        "rejection_reason": "Le dossier soumis ne correspond pas aux registres de la paroisse indiquée. Veuillez contacter directement l'archevêché pour les cas de confirmation antérieurs à 1990.",
+        "target_parish_ref": PARISH_CATHEDRALE_DAKAR,
+        "rejection_reason": "Le dossier soumis ne correspond pas aux registres de la paroisse indiquée.",
         "requester_last_name": "Diop",
         "requester_first_names": "Joseph Marie",
         "date_of_birth": datetime.date(1975, 11, 8),
@@ -402,11 +476,47 @@ DOCUMENT_REQUESTS = [
         "contact_phone": "+221770000005",
         "father_last_name": "Diop",
         "mother_last_name": "Gaye",
-        "parish_name": "Cathédrale du Souvenir Africain",
-        "diocese": "Archidiocèse de Dakar",
         "sacrament_approximate_date": "1989",
         "sacrament_location": "Église Saint-Louis du Sénégal",
     },
+]
+
+# Dons en ESPÈCES, étiquetés à l'église principale d'une paroisse (RG-PAY-03 :
+# church.parish == parish, dérivé par church_id). `confirm` → confirmation
+# manuelle par le clergé scopé. `anonymous` → donor NULL + nom anonyme (≤ 25 000).
+DONATIONS = [
+    {"donor_email": EMAIL_FIDELE1, "church_parish": PARISH_CATHEDRALE_DAKAR, "amount": 10000, "confirm": True,
+     "note": "[demo] Quête du dimanche"},
+    {"donor_email": EMAIL_FIDELE1, "church_parish": PARISH_CATHEDRALE_THIES, "amount": 5000, "confirm": False,
+     "note": "[demo] Denier — église de Thiès"},
+    {"donor_email": EMAIL_FIDELE2, "church_parish": PARISH_CATHEDRALE_THIES, "amount": 15000, "confirm": True,
+     "note": "[demo] Projet toiture"},
+    {"donor_email": EMAIL_FIDELE2, "church_parish": PARISH_CATHEDRALE_THIES, "amount": 2000, "confirm": False,
+     "note": "[demo] Don libre"},
+    {"donor_email": EMAIL_FIDELE1, "church_parish": PARISH_CATHEDRALE_DAKAR, "amount": 20000, "confirm": False,
+     "anonymous": True, "anonymous_name": "Bienfaiteur anonyme", "note": "[demo] Don anonyme"},
+    {"donor_email": EMAIL_FIDELE2, "church_parish": PARISH_CATHEDRALE_THIES, "amount": 12000, "confirm": False,
+     "anonymous": True, "anonymous_name": "Famille discrète", "note": "[demo] Don anonyme 2"},
+]
+
+# Événements — scopes variés. organizer doit être clergé/admin.
+EVENTS = [
+    {"organizer_email": EMAIL_SUPER_ADMIN, "title": "[demo] Journée nationale de la jeunesse catholique",
+     "event_type": "conference", "scope_type": "global", "scope_ref": None, "in_days": 30},
+    {"organizer_email": EMAIL_ARCHEVEQUE, "title": "[demo] Récollection diocésaine — Dakar",
+     "event_type": "retreat", "scope_type": "diocese", "scope_ref": DIOCESE_DAKAR, "in_days": 14},
+    {"organizer_email": EMAIL_PRETRE, "title": "[demo] Messe d'action de grâce — Souvenir Africain",
+     "event_type": "mass", "scope_type": "parish", "scope_ref": PARISH_CATHEDRALE_DAKAR, "in_days": 7},
+    {"organizer_email": EMAIL_PRETRE, "title": "[demo] Adoration eucharistique — église du Souvenir",
+     "event_type": "other", "scope_type": "church", "scope_ref": PARISH_CATHEDRALE_DAKAR, "in_days": 3},
+]
+
+# Intentions de messe — défaut = paroisse principale du demandeur.
+INTENTIONS = [
+    {"requestor_email": EMAIL_FIDELE1, "intention_type": "for_deceased",
+     "intention_text": "[demo] Pour le repos de l'âme de mon grand-père Ibrahima."},
+    {"requestor_email": EMAIL_FIDELE2, "intention_type": "for_living",
+     "intention_text": "[demo] En action de grâce pour la santé retrouvée de ma mère."},
 ]
 
 # (sender_key, text) — sender_key matches keys in sender_map built at runtime
@@ -414,17 +524,17 @@ CONVERSATION_MESSAGES_1 = [
     ("fidele", "Bonjour Père Senghor, j'aurais besoin de vos conseils pour une situation familiale délicate."),
     ("priest", "Bonjour Aminata, je vous lis. Je suis disponible. Racontez-moi ce qui se passe."),
     ("fidele", "Mon mari souhaite que nous nous réconciliions après une longue séparation, mais j'ai du mal à pardonner. Comment faire ?"),
-    ("priest", "Le pardon est un chemin, pas un acte ponctuel. Saint Paul dit : «Supportez-vous les uns les autres et pardonnez-vous mutuellement» (Col 3,13). Commencez par prier pour lui chaque jour, même si le cœur n'y est pas encore. Je vous propose une rencontre en paroisse samedi à 10h si vous êtes disponible."),
+    ("priest", "Le pardon est un chemin, pas un acte ponctuel. Commencez par prier pour lui chaque jour. Rencontrons-nous samedi à 10h en paroisse."),
 ]
 
 CONVERSATION_MESSAGES_2 = [
-    ("fidele", "Bonjour Père, pouvez-vous m'aider à comprendre comment participer à l'Office Divin ? Je suis intéressé."),
-    ("priest", "Bonjour Moussa ! C'est une belle démarche. L'Office Divin, c'est la prière de l'Église tout au long de la journée. Sur Jàngu Bi, vous pouvez y accéder depuis la section Liturgie. Commencez par les Laudes le matin et les Vêpres le soir. Que le Seigneur bénisse votre démarche !"),
+    ("fidele", "Bonjour Père, pouvez-vous m'aider à comprendre comment participer à l'Office Divin ?"),
+    ("priest", "Bonjour Moussa ! Commencez par les Laudes le matin et les Vêpres le soir, depuis la section Liturgie. Que le Seigneur bénisse votre démarche !"),
 ]
 
 
 class Command(BaseCommand):
-    help = "Peuple la base de données avec des données de démonstration réalistes (contexte sénégalais)"
+    help = "Peuple la base avec des données de démonstration réalistes (modèle multi-appartenance)"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -437,35 +547,64 @@ class Command(BaseCommand):
         if options["reset"]:
             self._reset()
 
-        self.stdout.write(self.style.MIGRATE_HEADING("\n=== Jàngu Bi — Seed Demo ===\n"))
+        self.stdout.write(self.style.MIGRATE_HEADING("\n=== Jàngu Bi — Seed Demo (multi-appartenance) ===\n"))
 
         with transaction.atomic():
+            self._load_org_maps()
             users = self._create_users()
+            self._create_memberships(users)
+            self._create_role_assignments(users)
             self._create_priest_profiles(users)
             self._create_tv_content()
             self._create_news_content(users)
             self._create_document_requests(users)
             self._create_conversations(users)
+            self._create_donations(users)
+            self._create_agenda_and_intentions(users)
 
         self._print_summary()
+
+    # ─── Org maps (résolution par nom) ─────────────────────────────────────────
+
+    def _load_org_maps(self):
+        from apps.org.models import Church, Diocese, Parish, Province
+
+        self._parishes = {p.name: p for p in Parish.objects.select_related("diocese").all()}
+        self._dioceses = {d.name: d for d in Diocese.objects.all()}
+        self._provinces = {p.name: p for p in Province.objects.all()}
+        self._main_church = {
+            c.parish.name: c
+            for c in Church.objects.select_related("parish").filter(is_main=True)
+        }
+        if not self._parishes or not self._main_church:
+            raise SystemExit(
+                "❌ Aucune paroisse/église trouvée. Lancez `seed_senegal` d'abord."
+            )
+
+    def _church_of(self, parish_name):
+        church = self._main_church.get(parish_name)
+        if church is None:
+            raise SystemExit(f"❌ Église principale introuvable pour « {parish_name} » (lancer seed_senegal).")
+        return church
 
     # ─── Users ────────────────────────────────────────────────────────────────
 
     def _create_users(self):
-        from apps.org.models import Parish
-        from apps.users.enums import PastoralRole, UserOnboardingState
+        from apps.users.enums import UserOnboardingState
         from apps.users.models import BaseUser, Profile
 
         self.stdout.write(self.style.MIGRATE_HEADING("\n  — Utilisateurs"))
 
-        # Pre-fetch parishes by name (seed_senegal must have been run first)
-        parishes = {p.name: p for p in Parish.objects.all()}
-
         created_users = {}
         for data in DEMO_USERS:
-            pastoral_role = data["pastoral_role"]
-            parish_name = data["parish_name"]
-            parish = parishes.get(parish_name) if parish_name else None
+            # Les fidèles/religieux partent en attente de paroisse : l'onboarding
+            # se complète par la création d'appartenance (vrai chemin, via le signal).
+            is_clergy_or_admin = bool(data["is_admin"]) or data["email"] not in MEMBERSHIPS
+            onboarding = (
+                UserOnboardingState.COMPLETED
+                if is_clergy_or_admin
+                else UserOnboardingState.PENDING_PARISH_SELECTION
+            )
 
             user, is_new = BaseUser.objects.get_or_create(
                 email=data["email"],
@@ -476,33 +615,92 @@ class Command(BaseCommand):
                     "is_admin": data.get("is_admin", False),
                     "is_active": True,
                     "is_verified": True,
-                    "pastoral_role": pastoral_role or "",
-                    "onboarding_state": UserOnboardingState.COMPLETED,
+                    "pastoral_role": data["pastoral_role"] or "",
+                    "onboarding_state": onboarding,
                 },
             )
             if is_new:
                 user.set_password(DEMO_PASSWORD)
                 user.save(update_fields=["password"])
 
+            # IMPORTANT : on ne pose PAS primary_parish ici — c'est le signal
+            # Membership qui le dérive (cf. _create_memberships).
             Profile.objects.get_or_create(
                 user=user,
                 defaults={
                     "first_name": data["first_name"],
                     "last_name": data["last_name"],
                     "title": data["title"],
-                    "primary_parish": parish,
                 },
             )
 
             label = "créé" if is_new else "existant"
-            parish_label = f" → {parish_name}" if parish_name else ""
             self.stdout.write(
-                f"  {'[+]' if is_new else '[=]'} {data['email']} [{data['role']}]{parish_label} ({label})"
+                f"  {'[+]' if is_new else '[=]'} {data['email']} [{data['role']}] ({label})"
             )
-
             created_users[data["email"]] = user
 
         return created_users
+
+    # ─── Memberships (appartenances ecclésiales) ───────────────────────────────
+
+    def _create_memberships(self, users):
+        from apps.users.models import Membership
+        from apps.users.services_memberships import membership_create
+
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  — Appartenances (multi-église)"))
+
+        for email, parishes in MEMBERSHIPS.items():
+            user = users[email]
+            for parish_name, is_primary in parishes:
+                church = self._church_of(parish_name)
+                if Membership.objects.filter(user=user, church=church).exists():
+                    self.stdout.write(f"  [=] {email} ↔ {parish_name} (existante)")
+                    continue
+                membership_create(user=user, church=church, is_primary=is_primary)
+                tag = " ★ principale" if is_primary else ""
+                self.stdout.write(f"  [+] {email} ↔ {parish_name}{tag}")
+
+    # ─── Role assignments (autorité réelle) ────────────────────────────────────
+
+    def _create_role_assignments(self, users):
+        from apps.users.enums import RoleScope
+        from apps.users.models import RoleAssignment
+        from apps.users.services_roles import role_assignment_create
+
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  — Autorité (RoleAssignment)"))
+
+        for spec in ROLE_ASSIGNMENTS:
+            user = users[spec["email"]]
+            scope = spec["scope"]
+            assert scope in RoleScope.values  # garde-fou cohérence enum
+            province = self._provinces.get(spec["province"]) if spec.get("province") else None
+            diocese = self._dioceses.get(spec["diocese"]) if spec.get("diocese") else None
+            parish = self._parishes.get(spec["parish"]) if spec.get("parish") else None
+            church = self._church_of(spec["church_parish"]) if spec.get("church_parish") else None
+
+            # Idempotence : une assignation (user, role, scope) suffit en démo.
+            if RoleAssignment.objects.filter(
+                user=user, role=spec["role"], scope=scope, is_active=True
+            ).exists():
+                self.stdout.write(f"  [=] {spec['email']} [{spec['role']}/{scope}] (existante)")
+                continue
+
+            role_assignment_create(
+                user=user,
+                role=spec["role"],
+                scope=scope,
+                province=province,
+                diocese=diocese,
+                parish=parish,
+                church=church,
+                is_principal=spec.get("is_principal", False),
+            )
+            target = (
+                spec.get("province") or spec.get("diocese")
+                or spec.get("parish") or spec.get("church_parish") or "—"
+            )
+            self.stdout.write(f"  [+] {spec['email']} [{spec['role']}/{scope}] → {target}")
 
     # ─── Priest / Deacon profiles ─────────────────────────────────────────────
 
@@ -512,23 +710,14 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING("\n  — Profils clergé"))
 
         clergy = [
-            (
-                users[EMAIL_PRETRE],
-                2010,
-                "Père Pierre Senghor, ordonné prêtre en 2010 pour l'Archidiocèse de Dakar. "
-                "Spécialisé en accompagnement spirituel des familles et des jeunes. "
-                "Disponible pour la messagerie pastorale.",
-            ),
-            (
-                users[EMAIL_DIACRE],
-                2018,
-                "Diacre Joseph Diop, ordonné en 2018. Responsable de la catéchèse des adultes "
-                "et de l'accompagnement des familles en difficulté à la Cathédrale.",
-            ),
+            (users[EMAIL_PRETRE], 2010,
+             "Père Pierre Senghor, ordonné en 2010 pour l'Archidiocèse de Dakar. "
+             "Accompagnement spirituel des familles et des jeunes."),
+            (users[EMAIL_DIACRE], 2018,
+             "Diacre Joseph Diop, ordonné en 2018. Catéchèse des adultes et accompagnement des familles."),
         ]
-
         for user, ordination_year, bio in clergy:
-            profile, is_new = PriestProfile.objects.get_or_create(
+            _, is_new = PriestProfile.objects.get_or_create(
                 user=user,
                 defaults={
                     "accepts_pastoral_chat": True,
@@ -537,8 +726,7 @@ class Command(BaseCommand):
                     "bio": bio,
                 },
             )
-            label = "créé" if is_new else "existant"
-            self.stdout.write(f"  {'[+]' if is_new else '[=]'} PriestProfile {user.email} ({label})")
+            self.stdout.write(f"  {'[+]' if is_new else '[=]'} PriestProfile {user.email}")
 
     # ─── TV content ───────────────────────────────────────────────────────────
 
@@ -550,29 +738,19 @@ class Command(BaseCommand):
         for data in TV_CATEGORIES:
             cat, is_new = Category.objects.get_or_create(
                 slug=data["slug"],
-                defaults={
-                    "name": data["name"],
-                    "order": data["order"],
-                    "is_clergy_only": data["is_clergy_only"],
-                },
+                defaults={"name": data["name"], "order": data["order"], "is_clergy_only": data["is_clergy_only"]},
             )
             cat_map[data["slug"]] = cat
-            label = "créée" if is_new else "existante"
             clergy_tag = " [clergé]" if data["is_clergy_only"] else ""
-            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Catégorie TV : {data['name']}{clergy_tag} ({label})")
+            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Catégorie TV : {data['name']}{clergy_tag}")
 
         for data in TV_VIDEOS:
             cat = cat_map[data["category_slug"]]
             _, is_new = Video.objects.get_or_create(
                 youtube_url=data["youtube_url"],
-                defaults={
-                    "title": data["title"],
-                    "category": cat,
-                    "is_live": data.get("is_live", False),
-                },
+                defaults={"title": data["title"], "category": cat, "is_live": data.get("is_live", False)},
             )
-            label = "créée" if is_new else "existante"
-            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Vidéo : {data['title'][:55]} ({label})")
+            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Vidéo : {data['title'][:55]}")
 
     # ─── News content ─────────────────────────────────────────────────────────
 
@@ -585,21 +763,29 @@ class Command(BaseCommand):
             cat, is_new = ArticleCategory.objects.get_or_create(
                 slug=data["slug"],
                 defaults={
-                    "name": data["name"],
-                    "icon": data["icon"],
-                    "color": data["color"],
-                    "display_order": data["display_order"],
-                    "is_active": True,
+                    "name": data["name"], "icon": data["icon"], "color": data["color"],
+                    "display_order": data["display_order"], "is_active": True,
                 },
             )
             cat_map[data["slug"]] = cat
-            label = "créée" if is_new else "existante"
-            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Catégorie : {data['name']} ({label})")
+            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Catégorie : {data['name']}")
 
         for data in ARTICLES:
             cat = cat_map[data["category_slug"]]
             author = users[data["author_email"]]
             slug = slugify(data["title"])
+            scope_type = data["scope_type"]
+            ref = data.get("scope_ref")
+
+            # Résolution du scope FK selon le type.
+            scope_parish = scope_diocese = scope_church = None
+            if scope_type == "parish":
+                scope_parish = self._parishes.get(ref)
+            elif scope_type == "diocese":
+                scope_diocese = self._dioceses.get(ref)
+            elif scope_type == "church":
+                scope_church = self._church_of(ref)
+
             _, is_new = Article.objects.get_or_create(
                 slug=slug,
                 defaults={
@@ -608,15 +794,17 @@ class Command(BaseCommand):
                     "content": data["content"],
                     "category": cat,
                     "author": author,
-                    "scope_type": data.get("scope_type", "global"),
+                    "scope_type": scope_type,
+                    "scope_parish": scope_parish,
+                    "scope_diocese": scope_diocese,
+                    "scope_church": scope_church,
                     "status": data.get("status", "published"),
                     "published_at": timezone.now() if data.get("status") == "published" else None,
                 },
             )
-            label = "créé" if is_new else "existant"
-            scope_tag = f"[{data['scope_type']}]"
+            scope_tag = f"[{scope_type}{(':' + ref) if ref else ''}]"
             status_tag = f"[{data.get('status', 'published')}]"
-            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Article {scope_tag}{status_tag} : {data['title'][:45]} ({label})")
+            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Article {scope_tag}{status_tag} : {data['title'][:42]}")
 
     # ─── Document requests ────────────────────────────────────────────────────
 
@@ -632,6 +820,17 @@ class Command(BaseCommand):
             if DocumentRequest.objects.filter(reference=reference).exists():
                 self.stdout.write(f"  [=] Demande {reference} (existante)")
                 continue
+
+            if data.get("orphan"):
+                # Orpheline legacy : pas de FK, texte stocké conservé.
+                target_parish = None
+                parish_name = data["legacy_parish_name"]
+                diocese = data["legacy_diocese"]
+            else:
+                target_parish = self._parishes[data["target_parish_ref"]]
+                # B5c : nom + diocèse dérivés de la FK.
+                parish_name = target_parish.name
+                diocese = target_parish.diocese.name
 
             DocumentRequest.objects.create(
                 requester=requester,
@@ -649,15 +848,17 @@ class Command(BaseCommand):
                 contact_email=requester.email,
                 father_last_name=data.get("father_last_name", ""),
                 mother_last_name=data.get("mother_last_name", ""),
-                parish_name=data["parish_name"],
-                diocese=data["diocese"],
+                parish_name=parish_name,
+                diocese=diocese,
+                target_parish=target_parish,
                 sacrament_approximate_date=data.get("sacrament_approximate_date", ""),
                 sacrament_location=data.get("sacrament_location", ""),
                 consent_given=True,
             )
 
             type_label = data["document_type"].replace("_", " ").title()
-            self.stdout.write(f"  [+] {reference} — {type_label} [{data['status']}]")
+            target_tag = "[orphelin]" if data.get("orphan") else f"→ {parish_name}"
+            self.stdout.write(f"  [+] {reference} — {type_label} [{data['status']}] {target_tag}")
 
     # ─── Conversations ────────────────────────────────────────────────────────
 
@@ -670,20 +871,14 @@ class Command(BaseCommand):
             (users[EMAIL_FIDELE1], users[EMAIL_PRETRE], CONVERSATION_MESSAGES_1),
             (users[EMAIL_FIDELE2], users[EMAIL_PRETRE], CONVERSATION_MESSAGES_2),
         ]
-
         for fidele, priest, messages in threads:
             a, b = (fidele, priest) if str(fidele.id) < str(priest.id) else (priest, fidele)
             conv, is_new = Conversation.objects.get_or_create(
                 participant_a=a,
                 participant_b=b,
-                defaults={
-                    "cgu_accepted_by_a": timezone.now(),
-                    "cgu_accepted_by_b": timezone.now(),
-                },
+                defaults={"cgu_accepted_by_a": timezone.now(), "cgu_accepted_by_b": timezone.now()},
             )
-            label = "créée" if is_new else "existante"
-            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Conversation {fidele.email} ↔ {priest.email} ({label})")
-
+            self.stdout.write(f"  {'[+]' if is_new else '[=]'} Conversation {fidele.email} ↔ {priest.email}")
             if not is_new:
                 continue
 
@@ -699,43 +894,132 @@ class Command(BaseCommand):
                 )
                 msg_time = now - datetime.timedelta(hours=len(messages) - i)
                 Message.objects.filter(pk=msg.pk).update(created_at=msg_time)
-                preview = text[:55] + "…" if len(text) > 55 else text
-                self.stdout.write(f"    [+] {sender_map[sender_key].email[:25]}: {preview}")
-
             Conversation.objects.filter(pk=conv.pk).update(last_message_at=now)
+
+    # ─── Donations ────────────────────────────────────────────────────────────
+
+    def _create_donations(self, users):
+        from apps.donations.models import Donation
+        from apps.donations.services import donation_confirm, donation_make
+
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  — Dons"))
+
+        if Donation.objects.filter(note__startswith="[demo]").exists():
+            self.stdout.write("  [=] Dons de démo déjà présents")
+            return
+
+        for data in DONATIONS:
+            donor = users[data["donor_email"]]
+            church = self._church_of(data["church_parish"])
+            donation = donation_make(
+                donor=donor,
+                amount=data["amount"],
+                payment_provider="cash",  # garde 5a : aucun provider en ligne
+                church_id=church.id,
+                is_anonymous=data.get("anonymous", False),
+                anonymous_donor_name=data.get("anonymous_name", ""),
+                note=data["note"],
+            )
+            tag = "[PENDING]"
+            if data.get("confirm"):
+                # Confirmation manuelle (autorité paroisse).
+                donation_confirm(donation=donation, payment_reference="[demo] reçu espèces")
+                tag = "[CONFIRMED]"
+            anon = " (anonyme)" if data.get("anonymous") else ""
+            self.stdout.write(
+                f"  [+] Don {data['amount']} XOF → {data['church_parish']} {tag}{anon}"
+            )
+
+    # ─── Agenda + intentions ──────────────────────────────────────────────────
+
+    def _create_agenda_and_intentions(self, users):
+        from apps.agenda.models import Event
+        from apps.agenda.services import event_create
+        from apps.mass_intentions.models import MassIntention
+        from apps.mass_intentions.services import mass_intention_submit
+
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  — Agenda & intentions"))
+
+        now = timezone.now()
+        for data in EVENTS:
+            if Event.objects.filter(title=data["title"]).exists():
+                self.stdout.write(f"  [=] Événement « {data['title'][:40]} » (existant)")
+                continue
+            organizer = users[data["organizer_email"]]
+            scope_type = data["scope_type"]
+            ref = data.get("scope_ref")
+            scope_id = None
+            scope_church_id = None
+            if scope_type == "parish":
+                scope_id = self._parishes[ref].id
+            elif scope_type == "diocese":
+                scope_id = self._dioceses[ref].id
+            elif scope_type == "church":
+                scope_church_id = self._church_of(ref).id
+
+            start = now + datetime.timedelta(days=data["in_days"])
+            event_create(
+                organizer=organizer,
+                title=data["title"],
+                event_type=data["event_type"],
+                start_at=start,
+                end_at=start + datetime.timedelta(hours=2),
+                scope_type=scope_type,
+                scope_id=scope_id,
+                scope_church_id=scope_church_id,
+            )
+            self.stdout.write(f"  [+] Événement [{scope_type}] : {data['title'][:42]}")
+
+        for data in INTENTIONS:
+            requestor = users[data["requestor_email"]]
+            if MassIntention.objects.filter(requestor=requestor, intention_text=data["intention_text"]).exists():
+                self.stdout.write(f"  [=] Intention de {requestor.email} (existante)")
+                continue
+            mass_intention_submit(
+                requestor=requestor,
+                intention_type=data["intention_type"],
+                intention_text=data["intention_text"],
+            )
+            self.stdout.write(f"  [+] Intention [{data['intention_type']}] — {requestor.email}")
 
     # ─── Reset ────────────────────────────────────────────────────────────────
 
     def _reset(self):
+        from apps.agenda.models import Event
         from apps.documents.models import DocumentRequest
+        from apps.donations.models import Donation
+        from apps.mass_intentions.models import MassIntention
         from apps.messaging.models import Conversation
         from apps.news.models import Article, ArticleCategory
         from apps.tv.models import Category as TvCategory
-        from apps.users.models import BaseUser
+        from apps.tv.models import Video
+        from apps.users.models import BaseUser, Membership, RoleAssignment
 
         self.stdout.write(self.style.WARNING("\n  Suppression des données de démo existantes..."))
 
         emails = [u["email"] for u in DEMO_USERS]
-        # Also clean up legacy seed users from earlier naming convention
         legacy_emails = [
             "admin@jangubiapp.com", "pretre@jangubiapp.com",
             "fidele1@jangubiapp.com", "fidele2@jangubiapp.com",
         ]
         users = BaseUser.objects.filter(email__in=emails + legacy_emails)
 
-        # Delete all user-linked data first (FK PROTECT prevents user deletion otherwise)
+        # Entités liées aux users d'abord (FK PROTECT empêche sinon la suppression).
+        Donation.objects.filter(donor__in=users).delete()
+        Donation.objects.filter(note__startswith="[demo]").delete()  # dons anonymes (donor NULL)
+        MassIntention.objects.filter(requestor__in=users).delete()
+        Event.objects.filter(organizer__in=users).delete()
+        Event.objects.filter(title__startswith="[demo]").delete()
         Conversation.objects.filter(participant_a__in=users).delete()
         Conversation.objects.filter(participant_b__in=users).delete()
         DocumentRequest.objects.filter(requester__in=users).delete()
         Article.objects.filter(author__in=users).delete()
+        RoleAssignment.objects.filter(user__in=users).delete()
+        Membership.objects.filter(user__in=users).delete()
 
-        # Delete demo TV categories and their videos
-        from apps.tv.models import Video
         demo_tv_slugs = [c["slug"] for c in TV_CATEGORIES]
         Video.objects.filter(category__slug__in=demo_tv_slugs).delete()
         TvCategory.objects.filter(slug__in=demo_tv_slugs).delete()
-
-        # Delete demo article categories (articles already deleted above)
         ArticleCategory.objects.filter(slug__in=[c["slug"] for c in ARTICLE_CATEGORIES]).delete()
 
         users.delete()
@@ -753,6 +1037,8 @@ class Command(BaseCommand):
         for u in DEMO_USERS:
             role_label = u["role"].replace("_", " ").title()
             pastoral = f" / {u['pastoral_role']}" if u.get("pastoral_role") else ""
-            self.stdout.write(f"  {u['email']:<42} [{role_label}{pastoral}]")
+            memb = MEMBERSHIPS.get(u["email"])
+            memb_label = ("  appartenances: " + ", ".join(p for p, _ in memb)) if memb else ""
+            self.stdout.write(f"  {u['email']:<42} [{role_label}{pastoral}]{memb_label}")
         self.stdout.write(self.style.MIGRATE_HEADING("────────────────────────────────────────────────────────"))
         self.stdout.write("")
