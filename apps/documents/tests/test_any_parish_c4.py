@@ -14,7 +14,9 @@ import pytest
 from apps.core.exceptions import ApplicationError
 from apps.documents.models import DocumentRequest
 from apps.documents.selectors import document_request_list
+from apps.documents.serializers import DocumentRequestDetailOutputSerializer
 from apps.documents.services import document_request_create
+from apps.documents.tests.factories import DocumentRequestFactory
 from apps.org.selectors import parish_list
 from apps.org.tests.factories import ChurchFactory, ParishFactory
 from apps.users.enums import RoleScope, UserRole
@@ -112,17 +114,18 @@ def test_document_diocese_derived_from_target_parish():
 
     assert req.diocese == parish.diocese.name
     assert req.diocese != "Diocèse BIDON texte"
-    # parish_name (texte legacy) reste lisible.
-    assert req.parish_name == "Saint-Pierre (texte legacy)"
+    # B5c : parish_name est désormais DÉRIVÉ de la FK (plus le texte d'entrée libre).
+    assert req.parish_name == parish.name
 
 
 @pytest.mark.django_db
-def test_document_requires_explicit_parish_when_multiple_memberships():
-    # >1 appartenance + pas de parish_id → erreur claire (pas de repli silencieux).
+def test_document_requires_parish_id_with_multiple_memberships():
+    # B5c : parish_id requis pour TOUS. >1 appartenance + pas de parish_id → erreur
+    # (le repli multi-appartenance n'existe plus).
     requester = _requester_with_memberships(ParishFactory(), ParishFactory())
 
     with patch(_NO_COMMIT):
-        with pytest.raises(ApplicationError, match="plusieurs paroisses"):
+        with pytest.raises(ApplicationError, match="parish_id"):
             document_request_create(requester=requester, data=_data())  # sans parish_id
 
 
@@ -152,15 +155,15 @@ def test_parish_search_returns_any_parish_by_name_and_city():
 
 
 @pytest.mark.django_db
-def test_legacy_single_membership_without_parish_id_still_works():
-    # 1 appartenance, pas de parish_id → défaut de transition = paroisse principale.
+def test_document_requires_parish_id_with_single_membership():
+    # B5c : même avec UNE seule appartenance, parish_id reste requis (plus de repli
+    # de transition vers la paroisse d'appartenance).
     parish = ParishFactory()
     requester = _requester_with_memberships(parish)
 
     with patch(_NO_COMMIT):
-        req = document_request_create(requester=requester, data=_data())  # sans parish_id
-
-    assert req.target_parish_id == parish.id
+        with pytest.raises(ApplicationError, match="parish_id"):
+            document_request_create(requester=requester, data=_data())  # sans parish_id
 
 
 @pytest.mark.django_db
@@ -173,8 +176,41 @@ def test_a5_invalid_parish_id_still_raises():
 
 @pytest.mark.django_db
 def test_a5_no_resolved_parish_still_rejected():
-    # 0 appartenance, pas de parish_id, pas de paroisse principale → rejet orphelin.
+    # 0 appartenance, pas de parish_id → rejet (parish_id requis, jamais d'orphelin).
     requester = BaseUserFactory()  # aucun profil/appartenance
     with patch(_NO_COMMIT):
         with pytest.raises(ApplicationError):
             document_request_create(requester=requester, data=_data())
+
+
+# ---------------------------------------------------------------------------
+# B5c — SORTIE : nom/diocèse via la FK ; orphelines legacy via texte stocké
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_output_parish_name_diocese_derived_from_fk():
+    # FK présente → la sortie affiche le nom/diocèse de la FK (même si les colonnes
+    # texte stockées divergent, ex. après renommage de la paroisse).
+    parish = ParishFactory()
+    req = DocumentRequestFactory(
+        target_parish=parish,
+        parish_name="texte obsolète",
+        diocese="diocèse obsolète",
+    )
+    data = DocumentRequestDetailOutputSerializer(req).data
+    assert data["parish_name"] == parish.name
+    assert data["diocese"] == parish.diocese.name
+
+
+@pytest.mark.django_db
+def test_legacy_orphan_displays_stored_parish_name():
+    # Demande orpheline legacy (target_parish NULL) → repli sur le texte stocké.
+    orphan = DocumentRequestFactory(
+        target_parish=None,
+        parish_name="Ancienne Paroisse (texte legacy)",
+        diocese="Ancien Diocèse (texte)",
+    )
+    data = DocumentRequestDetailOutputSerializer(orphan).data
+    assert data["parish_name"] == "Ancienne Paroisse (texte legacy)"
+    assert data["diocese"] == "Ancien Diocèse (texte)"
