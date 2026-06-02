@@ -59,6 +59,10 @@ DIOCESE_DAKAR = "Archidiocèse de Dakar"
 DIOCESE_THIES = "Diocèse de Thiès"
 PROVINCE_DAKAR = "Province de Dakar"
 
+# Église ANNEXE (is_main=False) de la Cathédrale du Souvenir Africain : rend la
+# granularité « église » visible et distincte du scope « paroisse ».
+ANNEXE_CHURCH_NAME = "Chapelle Sainte-Thérèse"
+
 DEMO_USERS = [
     {
         "email": EMAIL_SUPER_ADMIN,
@@ -161,8 +165,9 @@ MEMBERSHIPS = {
         (PARISH_CATHEDRALE_THIES, False),
     ],
     EMAIL_FIDELE2: [(PARISH_CATHEDRALE_THIES, True)],
-    # Le religieux a une appartenance pour pouvoir écrire (garde d'onboarding).
-    EMAIL_RELIGIEUX: [(PARISH_CATHEDRALE_DAKAR, True)],
+    # Marguerite : membre de l'église ANNEXE (3e élément = nom d'église précis).
+    # MÊME paroisse qu'Aminata (membre de la principale), église DIFFÉRENTE → grain église.
+    EMAIL_RELIGIEUX: [(PARISH_CATHEDRALE_DAKAR, True, ANNEXE_CHURCH_NAME)],
 }
 
 # Autorité administrative réelle (RoleAssignment). `church_parish` = on rattache
@@ -178,7 +183,9 @@ ROLE_ASSIGNMENTS = [
         "parish": PARISH_CATHEDRALE_DAKAR,
         "is_principal": True,
     },
-    {"email": EMAIL_DIACRE, "role": "church_admin", "scope": "church", "church_parish": PARISH_CATHEDRALE_DAKAR},
+    # Diacre = church_admin scopé sur l'ANNEXE (et non la principale) → autorité au
+    # grain église, distincte de la paroisse.
+    {"email": EMAIL_DIACRE, "role": "church_admin", "scope": "church", "church_name": ANNEXE_CHURCH_NAME},
 ]
 
 TV_CATEGORIES = [
@@ -297,7 +304,21 @@ ARTICLES = [
         "status": "published",
         "excerpt": "À compter de dimanche, la messe dominicale est avancée à 9h00.",
         "content": """<h2>Nouvel horaire des messes</h2>
-<p>À compter de ce dimanche, la messe dominicale de notre église est célébrée à 9h00 (au lieu de 9h30).</p>""",
+<p>À compter de ce dimanche, la messe dominicale de notre église PRINCIPALE est célébrée à 9h00 (au lieu de 9h30).</p>""",
+    },
+    {
+        # Scopé à l'ANNEXE (Chapelle Sainte-Thérèse), publié par le diacre church_admin.
+        # Visible des membres de l'annexe (Marguerite), EXCLU du fil des membres de la
+        # principale (Aminata) — alors qu'ils partagent la même paroisse.
+        "title": "Chapelle Sainte-Thérèse (annexe) — Messe de semaine à 18h30",
+        "category_slug": "vie-paroissiale",
+        "scope_type": "church",
+        "scope_ref": ANNEXE_CHURCH_NAME,
+        "author_email": EMAIL_DIACRE,
+        "status": "published",
+        "excerpt": "Horaire propre à la chapelle annexe — réservé à ses membres.",
+        "content": """<h2>Chapelle Sainte-Thérèse — annexe</h2>
+<p>La messe de semaine à la chapelle annexe est célébrée à 18h30 du lundi au vendredi.</p>""",
     },
     {
         "title": "Paroisse Saint-Joseph de Thiès — Kermesse paroissiale",
@@ -551,6 +572,7 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             self._load_org_maps()
+            self._create_annexe_church()
             users = self._create_users()
             self._create_memberships(users)
             self._create_role_assignments(users)
@@ -586,6 +608,27 @@ class Command(BaseCommand):
         if church is None:
             raise SystemExit(f"❌ Église principale introuvable pour « {parish_name} » (lancer seed_senegal).")
         return church
+
+    def _resolve_church(self, ref):
+        """Résout une église par NOM exact (annexe ou principale) ; à défaut, l'église
+        PRINCIPALE de la paroisse nommée `ref` (les principales portent le nom de la
+        paroisse)."""
+        church = self._churches_by_name.get(ref)
+        return church if church is not None else self._church_of(ref)
+
+    def _create_annexe_church(self):
+        from apps.org.models import Church
+
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  — Église annexe (grain église)"))
+        parish = self._parishes[PARISH_CATHEDRALE_DAKAR]
+        _, is_new = Church.objects.get_or_create(
+            parish=parish,
+            name=ANNEXE_CHURCH_NAME,
+            defaults={"church_type": "chapelle", "is_main": False, "city": parish.city, "address": parish.address},
+        )
+        self.stdout.write(f"  {'[+]' if is_new else '[=]'} {ANNEXE_CHURCH_NAME} (annexe de {parish.name})")
+        # Index des églises par nom (inclut désormais l'annexe).
+        self._churches_by_name = {c.name: c for c in Church.objects.all()}
 
     # ─── Users ────────────────────────────────────────────────────────────────
 
@@ -650,16 +693,20 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.MIGRATE_HEADING("\n  — Appartenances (multi-église)"))
 
-        for email, parishes in MEMBERSHIPS.items():
+        for email, entries in MEMBERSHIPS.items():
             user = users[email]
-            for parish_name, is_primary in parishes:
-                church = self._church_of(parish_name)
+            for entry in entries:
+                parish_name, is_primary = entry[0], entry[1]
+                # 3e élément optionnel = nom d'église précis (annexe) ; sinon principale.
+                church_name = entry[2] if len(entry) > 2 else None
+                church = self._resolve_church(church_name) if church_name else self._church_of(parish_name)
+                label = church_name or parish_name
                 if Membership.objects.filter(user=user, church=church).exists():
-                    self.stdout.write(f"  [=] {email} ↔ {parish_name} (existante)")
+                    self.stdout.write(f"  [=] {email} ↔ {label} (existante)")
                     continue
                 membership_create(user=user, church=church, is_primary=is_primary)
                 tag = " ★ principale" if is_primary else ""
-                self.stdout.write(f"  [+] {email} ↔ {parish_name}{tag}")
+                self.stdout.write(f"  [+] {email} ↔ {label}{tag}")
 
     # ─── Role assignments (autorité réelle) ────────────────────────────────────
 
@@ -677,7 +724,12 @@ class Command(BaseCommand):
             province = self._provinces.get(spec["province"]) if spec.get("province") else None
             diocese = self._dioceses.get(spec["diocese"]) if spec.get("diocese") else None
             parish = self._parishes.get(spec["parish"]) if spec.get("parish") else None
-            church = self._church_of(spec["church_parish"]) if spec.get("church_parish") else None
+            if spec.get("church_name"):
+                church = self._resolve_church(spec["church_name"])  # église précise (annexe)
+            elif spec.get("church_parish"):
+                church = self._church_of(spec["church_parish"])  # église principale
+            else:
+                church = None
 
             # Idempotence : une assignation (user, role, scope) suffit en démo.
             if RoleAssignment.objects.filter(
@@ -697,8 +749,8 @@ class Command(BaseCommand):
                 is_principal=spec.get("is_principal", False),
             )
             target = (
-                spec.get("province") or spec.get("diocese")
-                or spec.get("parish") or spec.get("church_parish") or "—"
+                spec.get("province") or spec.get("diocese") or spec.get("parish")
+                or spec.get("church_name") or spec.get("church_parish") or "—"
             )
             self.stdout.write(f"  [+] {spec['email']} [{spec['role']}/{scope}] → {target}")
 
@@ -784,7 +836,7 @@ class Command(BaseCommand):
             elif scope_type == "diocese":
                 scope_diocese = self._dioceses.get(ref)
             elif scope_type == "church":
-                scope_church = self._church_of(ref)
+                scope_church = self._resolve_church(ref)
 
             _, is_new = Article.objects.get_or_create(
                 slug=slug,
@@ -1017,6 +1069,10 @@ class Command(BaseCommand):
         RoleAssignment.objects.filter(user__in=users).delete()
         Membership.objects.filter(user__in=users).delete()
 
+        # Église annexe de démo (créée par seed_demo, pas seed_senegal).
+        from apps.org.models import Church
+        Church.objects.filter(name=ANNEXE_CHURCH_NAME, is_main=False).delete()
+
         demo_tv_slugs = [c["slug"] for c in TV_CATEGORIES]
         Video.objects.filter(category__slug__in=demo_tv_slugs).delete()
         TvCategory.objects.filter(slug__in=demo_tv_slugs).delete()
@@ -1038,7 +1094,9 @@ class Command(BaseCommand):
             role_label = u["role"].replace("_", " ").title()
             pastoral = f" / {u['pastoral_role']}" if u.get("pastoral_role") else ""
             memb = MEMBERSHIPS.get(u["email"])
-            memb_label = ("  appartenances: " + ", ".join(p for p, _ in memb)) if memb else ""
+            memb_label = (
+                "  appartenances: " + ", ".join((e[2] if len(e) > 2 else e[0]) for e in memb)
+            ) if memb else ""
             self.stdout.write(f"  {u['email']:<42} [{role_label}{pastoral}]{memb_label}")
         self.stdout.write(self.style.MIGRATE_HEADING("────────────────────────────────────────────────────────"))
         self.stdout.write("")
