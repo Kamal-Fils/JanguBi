@@ -2,7 +2,12 @@ import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from apps.org.tests.factories import DioceseFactory, ParishFactory, ProvinceFactory
+from apps.org.tests.factories import (
+    ChurchFactory,
+    DioceseFactory,
+    ParishFactory,
+    ProvinceFactory,
+)
 from apps.users.tests.factories import BaseUserFactory, SuperAdminFactory
 
 
@@ -66,7 +71,33 @@ def test_diocese_list_filtered_by_province(auth_client):
     DioceseFactory()  # autre province
     response = auth_client.get(f"/api/v1/org/dioceses/?province={province.id}")
     assert response.status_code == 200
-    assert len(response.data) == 1
+    # Réponse paginée {count, results} (cohérence avec parishes) — PAS une liste nue.
+    assert response.data["count"] == 1
+    assert len(response.data["results"]) == 1
+
+
+@pytest.mark.django_db
+def test_diocese_list_returns_paginated_envelope(auth_client):
+    # Anti-régression Flux 1 : le front (get-dioceses.ts) déballe `.results` et lit
+    # la FK sous la clé `province`. Une liste nue casserait la cascade.
+    DioceseFactory.create_batch(2)
+    response = auth_client.get("/api/v1/org/dioceses/")
+    assert response.status_code == 200
+    assert {"count", "results"}.issubset(response.data.keys())
+    assert response.data["count"] == 2
+    assert "province" in response.data["results"][0]
+
+
+@pytest.mark.django_db
+def test_church_list_returns_paginated_envelope(auth_client):
+    # Anti-régression Flux 1 : idem côté églises (get-churches.ts déballe `.results`).
+    parish = ParishFactory()
+    ChurchFactory.create_batch(2, parish=parish)
+    response = auth_client.get(f"/api/v1/org/churches/?parish={parish.id}")
+    assert response.status_code == 200
+    assert {"count", "results"}.issubset(response.data.keys())
+    assert response.data["count"] == 2
+    assert "parish" in response.data["results"][0]
 
 
 @pytest.mark.django_db

@@ -77,7 +77,7 @@ class EventDetailApi(ApiAuthMixin, APIView):
         from apps.agenda.selectors import event_get
 
         try:
-            event = event_get(event_id=event_id)
+            event = event_get(event_id=event_id, user=request.user)
         except ApplicationError as e:
             return _error(e)
         return Response(EventOutputSerializer(event).data)
@@ -101,6 +101,22 @@ class EventRegisterApi(ApiAuthMixin, APIView):
         except ApplicationError as e:
             return _error(e)
         return Response(status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        responses={204: None},
+        tags=["Agenda"],
+        summary="Annuler son inscription à un événement",
+    )
+    def delete(self, request, event_id: int):
+        from apps.agenda.selectors import event_get
+        from apps.agenda.services import event_unregister
+
+        try:
+            event = event_get(event_id=event_id)
+            event_unregister(event=event, user=request.user)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def _can_view_event_registrations(user, event) -> bool:

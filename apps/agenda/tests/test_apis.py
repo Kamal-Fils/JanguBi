@@ -169,3 +169,69 @@ def test_event_register_pending_parish_blocked_returns_403():
     resp = client.post(url)
 
     assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+
+def _make_global_event(organizer, title="Évènement"):
+    now = timezone.now()
+    return Event.objects.create(
+        organizer=organizer,
+        title=title,
+        event_type="mass",
+        start_at=now + datetime.timedelta(hours=1),
+        end_at=now + datetime.timedelta(hours=2),
+        scope_type="global",
+    )
+
+
+@pytest.mark.django_db
+def test_event_list_includes_is_registered(fidele_client, pretre_client):
+    # Anti-régression Flux 2 : le back DOIT exposer is_registered pour le user courant,
+    # sinon le front (event-card) ne bascule jamais le bouton et re-poste → 400.
+    registered = _make_global_event(pretre_client._user, "Inscrit")
+    _make_global_event(pretre_client._user, "Pas inscrit")
+    reg_url = reverse("api:agenda:event-register", kwargs={"event_id": registered.pk})
+    assert fidele_client.post(reg_url).status_code == status.HTTP_201_CREATED
+
+    resp = fidele_client.get(reverse("api:agenda:event-list-create"))
+
+    assert resp.status_code == status.HTTP_200_OK
+    by_title = {e["title"]: e for e in resp.data["results"]}
+    assert by_title["Inscrit"]["is_registered"] is True
+    assert by_title["Pas inscrit"]["is_registered"] is False
+
+
+@pytest.mark.django_db
+def test_event_detail_includes_is_registered(fidele_client, pretre_client):
+    event = _make_global_event(pretre_client._user)
+    reg_url = reverse("api:agenda:event-register", kwargs={"event_id": event.pk})
+    fidele_client.post(reg_url)
+
+    resp = fidele_client.get(
+        reverse("api:agenda:event-detail", kwargs={"event_id": event.pk})
+    )
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["is_registered"] is True
+
+
+@pytest.mark.django_db
+def test_event_unregister_204(fidele_client, pretre_client):
+    # Anti-régression Flux 2 : l'annulation (DELETE) renvoyait 405 (méthode absente).
+    event = _make_global_event(pretre_client._user)
+    url = reverse("api:agenda:event-register", kwargs={"event_id": event.pk})
+    assert fidele_client.post(url).status_code == status.HTTP_201_CREATED
+
+    resp = fidele_client.delete(url)
+
+    assert resp.status_code == status.HTTP_204_NO_CONTENT
+    assert event.registrations.count() == 0
+
+
+@pytest.mark.django_db
+def test_event_unregister_not_registered_returns_400(fidele_client, pretre_client):
+    event = _make_global_event(pretre_client._user)
+    url = reverse("api:agenda:event-register", kwargs={"event_id": event.pk})
+
+    resp = fidele_client.delete(url)
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST

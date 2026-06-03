@@ -81,9 +81,15 @@ class ProvinceListApi(ApiAuthMixin, APIView):
 # ---------------------------------------------------------------------------
 
 class DioceseListApi(ApiAuthMixin, APIView):
+    class Pagination(LimitOffsetPagination):
+        default_limit = 100
+        max_limit = 200
+
     @extend_schema(
         parameters=[
             OpenApiParameter("province", OpenApiTypes.INT, description="Filtrer par province ID"),
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
         ],
         responses={200: DioceseOutputSerializer(many=True)},
         tags=["org"],
@@ -92,7 +98,15 @@ class DioceseListApi(ApiAuthMixin, APIView):
     def get(self, request):
         province_id = request.query_params.get("province")
         dioceses = diocese_list(province_id=int(province_id) if province_id else None)
-        return Response(DioceseOutputSerializer(dioceses, many=True).data)
+        # Enveloppe paginée {count, results} — cohérence avec ParishListApi ; le
+        # front (get-dioceses.ts) déballe `.results`.
+        return get_paginated_response(
+            pagination_class=self.Pagination,
+            serializer_class=DioceseOutputSerializer,
+            queryset=dioceses,
+            request=request,
+            view=self,
+        )
 
     @extend_schema(
         request=DioceseCreateInputSerializer,
@@ -205,8 +219,16 @@ class ParishDetailApi(ApiAuthMixin, APIView):
 # ---------------------------------------------------------------------------
 
 class ChurchListApi(ApiAuthMixin, APIView):
+    class Pagination(LimitOffsetPagination):
+        default_limit = 100
+        max_limit = 200
+
     @extend_schema(
-        parameters=[OpenApiParameter("parish", OpenApiTypes.INT, description="Filtrer par paroisse ID")],
+        parameters=[
+            OpenApiParameter("parish", OpenApiTypes.INT, description="Filtrer par paroisse ID"),
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
+        ],
         responses={200: ChurchOutputSerializer(many=True)},
         tags=["org"],
         summary="Lister les églises (filtrable par paroisse)",
@@ -214,7 +236,15 @@ class ChurchListApi(ApiAuthMixin, APIView):
     def get(self, request):
         parish_id = request.query_params.get("parish")
         churches = church_list(parish_id=int(parish_id) if parish_id else None)
-        return Response(ChurchOutputSerializer(churches, many=True).data)
+        # Enveloppe paginée {count, results} — cohérence avec ParishListApi ; le
+        # front (get-churches.ts) déballe `.results`.
+        return get_paginated_response(
+            pagination_class=self.Pagination,
+            serializer_class=ChurchOutputSerializer,
+            queryset=churches,
+            request=request,
+            view=self,
+        )
 
     @extend_schema(
         request=ChurchCreateInputSerializer,
