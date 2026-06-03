@@ -160,13 +160,31 @@ class ArticleFeedApi(ApiAuthMixin, APIView):
             OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+            OpenApiParameter(
+                "scope_type",
+                OpenApiTypes.STR,
+                enum=["global", "diocese", "parish", "church"],
+                description="Filtrer le fil par portée (borné aux appartenances de l'utilisateur)",
+            ),
+            OpenApiParameter(
+                "scope_id",
+                OpenApiTypes.INT,
+                description="ID de l'entité de portée (requis pour diocese/parish/church)",
+            ),
         ],
         responses={200: ArticleListOutputSerializer(many=True)},
         tags=["news"],
-        summary="Fil d'actualités agrégé (toutes mes portées)",
+        summary="Fil d'actualités agrégé (toutes mes portées, filtrable par portée)",
     )
     def get(self, request):
-        qs = article_list_for_user(user=request.user)
+        scope_type = request.query_params.get("scope_type")
+        scope_id = self._validate_scope_filter(request, scope_type)
+        if isinstance(scope_id, Response):  # erreur de validation (400/403)
+            return scope_id
+
+        qs = article_list_for_user(
+            user=request.user, scope_type=scope_type, scope_id=scope_id
+        )
         if category := request.query_params.get("category"):
             qs = qs.filter(category__slug=category)
         if search := request.query_params.get("search"):
@@ -178,6 +196,48 @@ class ArticleFeedApi(ApiAuthMixin, APIView):
             request=request,
             view=self,
         )
+
+    @staticmethod
+    def _validate_scope_filter(request, scope_type):
+        """Valide ?scope_type=&scope_id= et BORNE aux appartenances de l'utilisateur.
+
+        Retourne le scope_id résolu (int|None), ou une Response d'erreur :
+        - 400 si scope_type inconnu, ou scope_id manquant/non numérique pour une
+          portée territoriale ;
+        - 403 si la portée demandée n'est PAS dans les appartenances (ne rouvre pas
+          le cloisonnement).
+        """
+        if not scope_type:
+            return None
+        if scope_type == Article.ScopeType.GLOBAL:
+            return None  # scope_id ignoré pour global
+        if scope_type not in {
+            Article.ScopeType.DIOCESE,
+            Article.ScopeType.PARISH,
+            Article.ScopeType.CHURCH,
+        }:
+            return Response({"detail": "Portée invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw = request.query_params.get("scope_id")
+        if not raw or not raw.lstrip("-").isdigit():
+            return Response(
+                {"detail": "scope_id requis pour cette portée."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        scope_id = int(raw)
+
+        ids = request.user.get_scope_ids()
+        allowed = {
+            Article.ScopeType.CHURCH: ids["church_ids"],
+            Article.ScopeType.PARISH: ids["parish_ids"],
+            Article.ScopeType.DIOCESE: ids["diocese_ids"],
+        }[scope_type]
+        if scope_id not in allowed:
+            return Response(
+                {"detail": "Portée hors de vos appartenances."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return scope_id
 
 
 class ArticleMyParishListApi(ApiAuthMixin, APIView):
