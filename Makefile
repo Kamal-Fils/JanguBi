@@ -6,6 +6,7 @@ export
        init-data create-admin init-all createsuperuser import-aelf clear-cache \
 	   down-v rebuild \
        flush-redis flush-db check-embeddings seed-embeddings \
+       seed seed-senegal seed-demo seed-reset \
 	celery-logs celery-restart rabbitmq-stats clean-audio collectstatic reinit-bible reinit-bible-aelf import-bible-aelf init-tv-categories
 
 # ==============================================================================
@@ -153,6 +154,22 @@ create-admin:
 	@echo "   Creation du Super Administrateur"
 	@echo "==========================================================="
 	docker compose exec django python manage.py init_admin
+
+# ── Seed (structure territoriale + donnees de demo) ──────────────────────────
+seed-senegal:
+	docker compose exec django python manage.py seed_senegal
+
+seed-demo:
+	docker compose exec django python manage.py seed_demo
+
+seed-reset:
+	docker compose exec django python manage.py seed_demo --reset
+
+# Une seule commande : seed_senegal (prerequis) PUIS seed_demo. Idempotent.
+seed: seed-senegal seed-demo
+	@echo "==========================================================="
+	@echo "   Seed termine (seed_senegal + seed_demo) — multi-appartenance"
+	@echo "==========================================================="
 
 init-all: init-data
 
