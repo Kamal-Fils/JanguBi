@@ -36,10 +36,16 @@ class EventOutputSerializer(serializers.Serializer):
     max_participants = serializers.IntegerField(allow_null=True)
     organizer_email = serializers.SerializerMethodField()
     registration_count = serializers.SerializerMethodField()
+    # Inscription de l'utilisateur courant : pilote le toggle du bouton côté front.
+    # Vient de l'annotation `is_registered` posée par le selector (False si non annoté).
+    is_registered = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField()
 
     def get_scope_id(self, obj):
         return obj.scope_parish_id or obj.scope_diocese_id or obj.scope_church_id
+
+    def get_is_registered(self, obj) -> bool:
+        return bool(getattr(obj, "is_registered", False))
 
     def get_organizer_email(self, obj):
         return obj.organizer.email if obj.organizer_id else None

@@ -148,3 +148,12 @@ def event_register(*, event, user):
     if not created:
         raise ApplicationError("Vous êtes déjà inscrit à cet événement.")
     return registration
+
+
+@transaction.atomic
+def event_unregister(*, event, user) -> None:
+    from apps.agenda.models import EventRegistration
+
+    deleted, _ = EventRegistration.objects.filter(event=event, user=user).delete()
+    if not deleted:
+        raise ApplicationError("Vous n'êtes pas inscrit à cet événement.")

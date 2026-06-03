@@ -1,5 +1,22 @@
-from django.db.models import QuerySet
+from django.db.models import BooleanField, Exists, OuterRef, QuerySet, Value
 from django.utils import timezone
+
+
+def _annotate_is_registered(qs: QuerySet, user) -> QuerySet:
+    """Annote chaque événement avec `is_registered` pour l'utilisateur donné.
+
+    Évite le N+1 (un seul EXISTS corrélé). Si l'utilisateur est anonyme/absent,
+    annote False pour que le serializer dispose toujours du champ.
+    """
+    from apps.agenda.models import EventRegistration
+
+    if user is not None and getattr(user, "is_authenticated", False):
+        return qs.annotate(
+            is_registered=Exists(
+                EventRegistration.objects.filter(event=OuterRef("pk"), user=user)
+            )
+        )
+    return qs.annotate(is_registered=Value(False, output_field=BooleanField()))
 
 
 def event_list(*, scope_type: str | None = None, event_type: str | None = None, upcoming_only: bool = True) -> QuerySet:
@@ -26,15 +43,19 @@ def event_list_for_user(*, user, event_type: str | None = None, upcoming_only: b
         qs = qs.filter(start_at__gte=timezone.now())
     if event_type:
         qs = qs.filter(event_type=event_type)
-    return get_scoped_queryset(qs, user).order_by("start_at")
+    qs = get_scoped_queryset(qs, user)
+    qs = _annotate_is_registered(qs, user)
+    return qs.order_by("start_at")
 
 
-def event_get(*, event_id: int):
+def event_get(*, event_id: int, user=None):
     from apps.agenda.models import Event
     from apps.core.exceptions import ApplicationError
 
+    qs = Event.objects.prefetch_related("registrations__user").select_related("organizer")
+    qs = _annotate_is_registered(qs, user)
     try:
-        return Event.objects.prefetch_related("registrations__user").select_related("organizer").get(pk=event_id)
+        return qs.get(pk=event_id)
     except Event.DoesNotExist:
         raise ApplicationError("Événement introuvable.")
 
