@@ -9,7 +9,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
-from apps.api.pagination import LimitOffsetPagination, get_paginated_response
+from apps.api.pagination import (
+    LimitOffsetPagination,
+    get_paginated_response,
+    paginated_response_serializer,
+)
 from apps.core.exceptions import ApplicationError
 from apps.news.models import Article
 from apps.news.permissions import CanUnpublishArticle, IsArticleEditor
@@ -172,7 +176,7 @@ class ArticleFeedApi(ApiAuthMixin, APIView):
                 description="ID de l'entité de portée (requis pour diocese/parish/church)",
             ),
         ],
-        responses={200: ArticleListOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
         summary="Fil d'actualités agrégé (toutes mes portées, filtrable par portée)",
     )

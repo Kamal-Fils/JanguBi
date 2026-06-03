@@ -5,7 +5,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
-from apps.api.pagination import LimitOffsetPagination, get_paginated_response
+from apps.api.pagination import (
+    LimitOffsetPagination,
+    get_paginated_response,
+    paginated_response_serializer,
+)
 from apps.core.exceptions import ApplicationError
 from apps.org.selectors import (
     church_get_by_id,
@@ -91,7 +95,7 @@ class DioceseListApi(ApiAuthMixin, APIView):
             OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
             OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
         ],
-        responses={200: DioceseOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(DioceseOutputSerializer)},
         tags=["org"],
         summary="Lister les diocèses",
     )
@@ -150,7 +154,7 @@ class ParishListApi(ApiAuthMixin, APIView):
             OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
             OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
         ],
-        responses={200: ParishOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(ParishOutputSerializer)},
         tags=["org"],
         summary="Lister/rechercher les paroisses (toutes paroisses) — picker documents",
     )
@@ -229,7 +233,7 @@ class ChurchListApi(ApiAuthMixin, APIView):
             OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
             OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
         ],
-        responses={200: ChurchOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(ChurchOutputSerializer)},
         tags=["org"],
         summary="Lister les églises (filtrable par paroisse)",
     )

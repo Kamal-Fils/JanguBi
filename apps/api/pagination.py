@@ -1,7 +1,33 @@
 from collections import OrderedDict
 
+from drf_spectacular.utils import inline_serializer
+from rest_framework import serializers
 from rest_framework.pagination import LimitOffsetPagination as _LimitOffsetPagination
 from rest_framework.response import Response
+
+
+def paginated_response_serializer(serializer_class):
+    """Sérialiseur de réponse paginée {limit, offset, count, next, previous, results}
+    pour ``@extend_schema(responses=...)``.
+
+    Les APIView appellent ``get_paginated_response`` manuellement — drf-spectacular ne
+    sait pas l'introspecter et documente sinon une LISTE NUE. Sans ce wrapper, une
+    régénération d'``api.ts`` reproduit le bug d'enveloppe (front attend ``{results}``,
+    schéma annonce un tableau)."""
+    base = serializer_class.__name__
+    if base.endswith("Serializer"):
+        base = base[: -len("Serializer")]
+    return inline_serializer(
+        name=f"Paginated{base}List",
+        fields={
+            "limit": serializers.IntegerField(),
+            "offset": serializers.IntegerField(),
+            "count": serializers.IntegerField(),
+            "next": serializers.CharField(allow_null=True),
+            "previous": serializers.CharField(allow_null=True),
+            "results": serializer_class(many=True),
+        },
+    )
 
 
 def get_paginated_response(*, pagination_class, serializer_class, queryset, request, view):
