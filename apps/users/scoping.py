@@ -20,6 +20,35 @@ from apps.users.models import BaseUser, RoleAssignment
 
 
 # ---------------------------------------------------------------------------
+# Scoping de contenu (multi-appartenance) — générique, réutilisable
+# ---------------------------------------------------------------------------
+
+# Vocabulaire de portée partagé par les contenus scopés (Article, Event, …).
+# Doit rester aligné avec les ScopeType de chaque modèle (mêmes valeurs).
+SCOPE_GLOBAL = "global"
+SCOPE_DIOCESE = "diocese"
+SCOPE_PARISH = "parish"
+SCOPE_CHURCH = "church"
+
+
+def get_scoped_queryset(qs: QuerySet, user) -> QuerySet:
+    """Restreint ``qs`` (modèle scopé : ``scope_type`` + FK
+    ``scope_church``/``scope_parish``/``scope_diocese``) à ce que ``user`` peut voir,
+    d'après ses appartenances : global ∪ église∈church_ids ∪ paroisse∈parish_ids ∪
+    diocèse∈diocese_ids. Helper générique consommé par les feeds (Article ici,
+    Event au Chantier 3b)."""
+    scope = user.get_scope_ids()
+    filters = Q(scope_type=SCOPE_GLOBAL)
+    if scope["church_ids"]:
+        filters |= Q(scope_type=SCOPE_CHURCH, scope_church_id__in=scope["church_ids"])
+    if scope["parish_ids"]:
+        filters |= Q(scope_type=SCOPE_PARISH, scope_parish_id__in=scope["parish_ids"])
+    if scope["diocese_ids"]:
+        filters |= Q(scope_type=SCOPE_DIOCESE, scope_diocese_id__in=scope["diocese_ids"])
+    return qs.filter(filters)
+
+
+# ---------------------------------------------------------------------------
 # Affectations actives
 # ---------------------------------------------------------------------------
 
@@ -141,6 +170,24 @@ def user_can_admin_parish(user, parish_id: int) -> bool:
     if ras.filter(scope=RoleScope.PROVINCE, province_id=parish.diocese.province_id).exists():
         return True
     return False
+
+
+def user_can_admin_church(user, church_id: int) -> bool:
+    """Autorité sur une église X (RG-CONT Chantier 3b). Vrai si :
+    admin global, OU RoleAssignment scope=church sur X, OU autorité sur la PAROISSE
+    de X (parish/diocese/province au-dessus). → un church_admin scopé sur X PEUT
+    publier sur X, sans exiger l'autorité paroisse."""
+    if is_global_admin(user):
+        return True
+    try:
+        church = Church.objects.select_related("parish").get(id=church_id)
+    except Church.DoesNotExist:
+        return False
+    if active_role_assignments(user).filter(
+        scope=RoleScope.CHURCH, church_id=church_id
+    ).exists():
+        return True
+    return user_can_admin_parish(user, church.parish_id)
 
 
 def user_can_admin_diocese(user, diocese_id: int) -> bool:

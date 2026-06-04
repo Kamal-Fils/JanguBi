@@ -1,6 +1,6 @@
 from rest_framework.permissions import BasePermission
 
-from apps.users.enums import UserRole
+from apps.users.enums import PastoralRole, UserOnboardingState, UserRole
 
 _ADMIN_ROLES = {
     UserRole.SUPER_ADMIN,
@@ -8,6 +8,13 @@ _ADMIN_ROLES = {
     UserRole.DIOCESE_ADMIN,
     UserRole.PARISH_ADMIN,
     UserRole.CHURCH_ADMIN,
+}
+
+_CLERGY_PASTORAL_ROLES = {
+    PastoralRole.DIACRE,
+    PastoralRole.PRETRE,
+    PastoralRole.EVEQUE,
+    PastoralRole.ARCHEVEQUE,
 }
 
 
@@ -64,6 +71,33 @@ class IsOwnerOrAdmin(BasePermission):
         if hasattr(obj, "user"):
             return obj.user == request.user
         return obj == request.user
+
+
+class IsOnboardingCompleted(BasePermission):
+    """Garde canonique des écritures territoriales du fidèle.
+
+    Autorise si l'onboarding est terminé (le fidèle a choisi sa/ses paroisse(s)),
+    OU si l'utilisateur est admin (RoleAssignment — source de vérité), OU s'il est
+    clergé (pastoral_role) : le clergé écrit via sa RoleAssignment, pas via
+    l'onboarding fidèle — ``invitation_accept`` ne pose jamais ``completed``.
+    """
+
+    message = (
+        "Veuillez finaliser votre inscription (choisir votre paroisse) "
+        "avant d'effectuer cette action."
+    )
+
+    def has_permission(self, request, view) -> bool:
+        from apps.users.scoping import is_any_admin
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.onboarding_state == UserOnboardingState.COMPLETED:
+            return True
+        if is_any_admin(user):
+            return True
+        return user.pastoral_role in _CLERGY_PASTORAL_ROLES
 
 
 # Alias de compatibilité : IsAdminUser = super admin uniquement (pas tous les admins).

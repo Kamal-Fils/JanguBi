@@ -13,6 +13,25 @@ def mass_intention_submit(
     intention_text: str,
     parish=None,
 ) -> MassIntention:
+    # B6b : défaut = paroisse PRINCIPALE du demandeur (appartenance is_primary),
+    # repli legacy sur primary_parish ; jamais None.
+    if parish is None:
+        from apps.users.models import Membership
+
+        primary = (
+            Membership.objects.filter(user=requestor, is_primary=True)
+            .select_related("church__parish")
+            .first()
+        )
+        if primary is not None:
+            parish = primary.church.parish
+        else:
+            parish = getattr(getattr(requestor, "profile", None), "primary_parish", None)
+    if parish is None:
+        raise ApplicationError(
+            "Aucune paroisse : précisez la paroisse ou définissez votre paroisse principale."
+        )
+
     intention = MassIntention.objects.create(
         requestor=requestor,
         intention_type=intention_type,

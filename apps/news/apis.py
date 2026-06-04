@@ -9,7 +9,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
-from apps.api.pagination import LimitOffsetPagination, get_paginated_response
+from apps.api.pagination import (
+    LimitOffsetPagination,
+    get_paginated_response,
+    paginated_response_serializer,
+)
 from apps.core.exceptions import ApplicationError
 from apps.news.models import Article
 from apps.news.permissions import CanUnpublishArticle, IsArticleEditor
@@ -18,6 +22,7 @@ from apps.news.selectors import (
     article_list,
     article_list_for_diocese,
     article_list_for_parish,
+    article_list_for_user,
     article_list_global,
     category_list,
 )
@@ -118,6 +123,20 @@ class ArticleParishListApi(ApiAuthMixin, APIView):
         summary="Articles publiés d'une paroisse",
     )
     def get(self, request, parish_id: int):
+        # A2 — borner la lecture à l'appartenance/autorité : un fidèle ne lit que
+        # le fil des paroisses dont il est membre ; le clergé/admin, celles qu'il
+        # administre. Pas de lecture d'une paroisse arbitraire par id.
+        from apps.users.scoping import user_can_admin_parish
+
+        scope = request.user.get_scope_ids()
+        if parish_id not in scope["parish_ids"] and not user_can_admin_parish(
+            request.user, parish_id
+        ):
+            return Response(
+                {"detail": "Vous n'êtes pas membre de cette paroisse."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         qs = article_list_for_parish(
             parish_id=parish_id,
             category_slug=request.query_params.get("category"),
@@ -130,6 +149,99 @@ class ArticleParishListApi(ApiAuthMixin, APIView):
             request=request,
             view=self,
         )
+
+
+class ArticleFeedApi(ApiAuthMixin, APIView):
+    """Fil d'actualités AGRÉGÉ de l'utilisateur connecté (Chantier 7b) :
+    global ∪ église ∪ paroisse ∪ diocèse de toutes ses appartenances (C3a)."""
+
+    class Pagination(LimitOffsetPagination):
+        default_limit = 20
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
+            OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+            OpenApiParameter(
+                "scope_type",
+                OpenApiTypes.STR,
+                enum=["global", "diocese", "parish", "church"],
+                description="Filtrer le fil par portée (borné aux appartenances de l'utilisateur)",
+            ),
+            OpenApiParameter(
+                "scope_id",
+                OpenApiTypes.INT,
+                description="ID de l'entité de portée (requis pour diocese/parish/church)",
+            ),
+        ],
+        responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
+        tags=["news"],
+        summary="Fil d'actualités agrégé (toutes mes portées, filtrable par portée)",
+    )
+    def get(self, request):
+        scope_type = request.query_params.get("scope_type")
+        scope_id = self._validate_scope_filter(request, scope_type)
+        if isinstance(scope_id, Response):  # erreur de validation (400/403)
+            return scope_id
+
+        qs = article_list_for_user(
+            user=request.user, scope_type=scope_type, scope_id=scope_id
+        )
+        if category := request.query_params.get("category"):
+            qs = qs.filter(category__slug=category)
+        if search := request.query_params.get("search"):
+            qs = qs.filter(title__icontains=search)
+        return get_paginated_response(
+            pagination_class=self.Pagination,
+            serializer_class=ArticleListOutputSerializer,
+            queryset=qs,
+            request=request,
+            view=self,
+        )
+
+    @staticmethod
+    def _validate_scope_filter(request, scope_type):
+        """Valide ?scope_type=&scope_id= et BORNE aux appartenances de l'utilisateur.
+
+        Retourne le scope_id résolu (int|None), ou une Response d'erreur :
+        - 400 si scope_type inconnu, ou scope_id manquant/non numérique pour une
+          portée territoriale ;
+        - 403 si la portée demandée n'est PAS dans les appartenances (ne rouvre pas
+          le cloisonnement).
+        """
+        if not scope_type:
+            return None
+        if scope_type == Article.ScopeType.GLOBAL:
+            return None  # scope_id ignoré pour global
+        if scope_type not in {
+            Article.ScopeType.DIOCESE,
+            Article.ScopeType.PARISH,
+            Article.ScopeType.CHURCH,
+        }:
+            return Response({"detail": "Portée invalide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw = request.query_params.get("scope_id")
+        if not raw or not raw.lstrip("-").isdigit():
+            return Response(
+                {"detail": "scope_id requis pour cette portée."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        scope_id = int(raw)
+
+        ids = request.user.get_scope_ids()
+        allowed = {
+            Article.ScopeType.CHURCH: ids["church_ids"],
+            Article.ScopeType.PARISH: ids["parish_ids"],
+            Article.ScopeType.DIOCESE: ids["diocese_ids"],
+        }[scope_type]
+        if scope_id not in allowed:
+            return Response(
+                {"detail": "Portée hors de vos appartenances."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return scope_id
 
 
 class ArticleMyParishListApi(ApiAuthMixin, APIView):
@@ -193,6 +305,18 @@ class ArticleDioceseListApi(ApiAuthMixin, APIView):
         summary="Articles publiés d'un diocèse",
     )
     def get(self, request, diocese_id: int):
+        # A2 — borner à l'appartenance/autorité diocésaine (cf. ArticleParishListApi).
+        from apps.users.scoping import user_can_admin_diocese
+
+        scope = request.user.get_scope_ids()
+        if diocese_id not in scope["diocese_ids"] and not user_can_admin_diocese(
+            request.user, diocese_id
+        ):
+            return Response(
+                {"detail": "Vous n'êtes pas membre de ce diocèse."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         qs = article_list_for_diocese(
             diocese_id=diocese_id,
             category_slug=request.query_params.get("category"),
@@ -244,7 +368,7 @@ class AdminArticleListApi(ApiAuthMixin, APIView):
             OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
             OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
             OpenApiParameter("status", OpenApiTypes.STR, enum=["draft", "published", "unpublished"], description="Filtrer par statut"),
-            OpenApiParameter("scope_type", OpenApiTypes.STR, enum=["global", "diocese", "parish"], description="Filtrer par portée"),
+            OpenApiParameter("scope_type", OpenApiTypes.STR, enum=["global", "diocese", "parish", "church"], description="Filtrer par portée"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
         ],

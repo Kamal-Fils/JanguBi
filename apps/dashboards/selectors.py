@@ -7,7 +7,7 @@ territorial est appliqué par les vues via ``apps.users.scoping``.
 
 from __future__ import annotations
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.documents.models import DocumentRequest
@@ -15,7 +15,7 @@ from apps.donations.models import Donation
 from apps.donations.selectors import donation_flow_for_parish
 from apps.mass_intentions.models import MassIntention
 from apps.org.models import Church, Diocese, Parish
-from apps.users.models import Profile, RoleAssignment
+from apps.users.models import Membership, Profile, RoleAssignment
 from apps.users.enums import RoleScope
 from apps.users.scoping import clergy_of_parish, parish_principal_cure
 
@@ -33,8 +33,15 @@ def _start_of_month():
 
 
 def _parish_pending_documents(parish_id: int) -> int:
+    # Cohérent avec la visibilité (confidentialité) : on compte les demandes dont la
+    # paroisse CIBLE est celle-ci ; repli sur la paroisse principale du demandeur
+    # seulement pour les demandes orphelines (target_parish NULL).
     return DocumentRequest.objects.filter(
-        requester__profile__primary_parish_id=parish_id,
+        Q(target_parish_id=parish_id)
+        | Q(
+            target_parish_id__isnull=True,
+            requester__profile__primary_parish_id=parish_id,
+        ),
         status__in=_ACTIVE_DOC_STATUSES,
     ).count()
 
@@ -65,7 +72,14 @@ def cure_dashboard(*, parish_id: int) -> dict | None:
             "diocese": parish.diocese.name,
         },
         "total_fideles": Profile.objects.filter(primary_parish_id=parish_id).count(),
-        "followers": parish.followers.count(),
+        # Membres de la paroisse via appartenance (ex-followed_parishes retiré au 3a) :
+        # fidèles distincts rattachés à une église de cette paroisse.
+        "followers": (
+            Membership.objects.filter(church__parish_id=parish_id)
+            .values("user")
+            .distinct()
+            .count()
+        ),
         "donation_flow_year": donation_flow_for_parish(parish_id=parish_id, since=_start_of_year()),
         "donation_flow_month": donation_flow_for_parish(parish_id=parish_id, since=_start_of_month()),
         "pending_documents": _parish_pending_documents(parish_id),
@@ -130,7 +144,11 @@ def diocese_dashboard(*, diocese_id: int) -> dict | None:
         # Alerte qualité de données : paroisses sans église principale.
         "parishes_without_main_church": parishes.exclude(churches__is_main=True).count(),
         "pending_documents": DocumentRequest.objects.filter(
-            requester__profile__primary_parish__diocese_id=diocese_id,
+            Q(target_parish__diocese_id=diocese_id)
+            | Q(
+                target_parish_id__isnull=True,
+                requester__profile__primary_parish__diocese_id=diocese_id,
+            ),
             status__in=_ACTIVE_DOC_STATUSES,
         ).count(),
     }

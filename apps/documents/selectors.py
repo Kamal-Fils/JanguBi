@@ -24,7 +24,10 @@ _ADMIN_ROLES = {
 
 def document_request_list(*, user: BaseUser, filters: Optional[dict] = None) -> QuerySet[DocumentRequest]:
     filters = filters or {}
-    qs = DocumentRequest.objects.select_related("requester", "assigned_to", "target_parish")
+    # target_parish__diocese : sortie B5c (nom/diocèse via la FK) sans N+1.
+    qs = DocumentRequest.objects.select_related(
+        "requester", "assigned_to", "target_parish__diocese"
+    )
 
     # Source de vérité d'autorité = RoleAssignment (is_any_admin / accessible_parish_ids),
     # plus user.role seul. Fail-CLOSED : un admin sans affectation territoriale ne voit
@@ -35,9 +38,16 @@ def document_request_list(*, user: BaseUser, filters: Optional[dict] = None) -> 
         qs = qs.filter(requester=user)
     elif not is_global_admin(user):
         parish_ids = accessible_parish_ids(user)  # set (jamais None ici)
+        # Visibilité = admins de la paroisse CIBLE uniquement (confidentialité PII
+        # inter-paroisse). Le repli sur la paroisse principale du demandeur ne vaut
+        # QUE pour les demandes orphelines (target_parish NULL) — sinon le curé de la
+        # paroisse home verrait une demande adressée à une AUTRE paroisse.
         qs = qs.filter(
             Q(target_parish_id__in=parish_ids)
-            | Q(requester__profile__primary_parish_id__in=parish_ids)
+            | Q(
+                target_parish_id__isnull=True,
+                requester__profile__primary_parish_id__in=parish_ids,
+            )
         )
     # is_global_admin → aucune restriction
 
@@ -58,7 +68,9 @@ def document_request_list(*, user: BaseUser, filters: Optional[dict] = None) -> 
 def document_request_get(*, request_id: UUID, user: BaseUser) -> DocumentRequest:
     from apps.users.scoping import is_any_admin
 
-    qs = DocumentRequest.objects.select_related("requester", "assigned_to").prefetch_related(
+    qs = DocumentRequest.objects.select_related(
+        "requester", "assigned_to", "target_parish__diocese"
+    ).prefetch_related(
         "status_logs__changed_by",
         "attachments__file",
     )
@@ -94,7 +106,9 @@ def document_request_get_for_admin(*, request_id: UUID, user: BaseUser) -> Docum
     from apps.users.scoping import accessible_parish_ids, is_global_admin
 
     obj = (
-        DocumentRequest.objects.select_related("requester", "assigned_to", "target_parish")
+        DocumentRequest.objects.select_related(
+            "requester", "assigned_to", "target_parish__diocese"
+        )
         .prefetch_related("status_logs__changed_by", "attachments__file")
         .filter(pk=request_id)
         .first()

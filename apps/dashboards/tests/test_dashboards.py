@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from apps.dashboards.selectors import cure_dashboard, diocese_dashboard, fidele_dashboard
-from apps.donations.services import campaign_create, donation_make
+from apps.donations.services import campaign_create, donation_confirm, donation_make
 from apps.org.tests.factories import DioceseFactory, ParishFactory
 from apps.users.enums import PastoralRole, RoleScope, UserRole
 from apps.users.services_roles import role_assignment_create
@@ -26,10 +26,12 @@ def test_cure_dashboard_counts_fideles_and_donation_flow():
         created_by=cure, title="Quête du dimanche",
         donation_type="sunday_collection", parish_id=parish.id,
     )
-    donation_make(
+    # Le don est créé PENDING (RG-PAY-04) puis confirmé (espèces) pour entrer au flux.
+    donation = donation_make(
         donor=BaseUserFactory(role=UserRole.FIDELE),
-        campaign_id=campaign.id, amount=Decimal("5000"), payment_provider="wave",
+        campaign_id=campaign.id, amount=Decimal("5000"), payment_provider="cash",
     )
+    donation_confirm(donation=donation)
 
     # Act
     data = cure_dashboard(parish_id=parish.id)

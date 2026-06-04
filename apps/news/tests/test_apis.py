@@ -8,12 +8,14 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.news.models import Article
-from apps.org.tests.factories import ParishFactory
+from apps.org.tests.factories import ChurchFactory, DioceseFactory, ParishFactory
 from apps.users.enums import PastoralRole, RoleScope, UserRole
 from apps.users.models import RoleAssignment
+from apps.users.services_memberships import membership_create
 from apps.users.tests.factories import (
     AdminUserFactory,
     BaseUserFactory,
+    ProfileFactory,
     StaffUserFactory,
 )
 
@@ -25,6 +27,16 @@ def _make_cure(parish):
         user=user, role=UserRole.PARISH_ADMIN, scope=RoleScope.PARISH,
         parish=parish, is_active=True,
     )
+    return user
+
+
+def _member_of(parish):
+    """Fidèle membre d'une paroisse via une appartenance (Chantier 3a : get_scope_ids
+    dérive des memberships, plus de primary_parish/followed_parishes)."""
+    user = BaseUserFactory()
+    church = ChurchFactory(parish=parish, is_main=True, church_type="paroissiale")
+    membership_create(user=user, church=church, is_primary=True)
+    user.refresh_from_db()
     return user
 
 from .factories import (
@@ -177,15 +189,31 @@ def test_parish_list_requires_auth(anon_client):
 
 
 @pytest.mark.django_db
-def test_parish_list_returns_200_for_authenticated(auth_client):
-    # Arrange
-    url = reverse("api:news:parish-list", kwargs={"parish_id": 1})
+def test_parish_list_returns_200_for_member():
+    # Membre de la paroisse → 200.
+    parish = ParishFactory()
+    user = _member_of(parish)
+    client = APIClient()
+    client.force_authenticate(user=user)
+    url = reverse("api:news:parish-list", kwargs={"parish_id": parish.id})
 
-    # Act
-    response = auth_client.get(url)
+    response = client.get(url)
 
-    # Assert
     assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_parish_news_returns_403_for_non_member():
+    # EXPLOIT A2 : un fidèle NON membre lit le fil d'une autre paroisse → refusé.
+    target = ParishFactory()
+    user = _member_of(ParishFactory())  # membre d'une AUTRE paroisse
+    client = APIClient()
+    client.force_authenticate(user=user)
+    url = reverse("api:news:parish-list", kwargs={"parish_id": target.id})
+
+    response = client.get(url)
+
+    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -206,15 +234,31 @@ def test_diocese_list_requires_auth(anon_client):
 
 
 @pytest.mark.django_db
-def test_diocese_list_returns_200_for_authenticated(auth_client):
-    # Arrange
-    url = reverse("api:news:diocese-list", kwargs={"diocese_id": 1})
+def test_diocese_list_returns_200_for_member():
+    # Membre du diocèse (via sa paroisse) → 200.
+    parish = ParishFactory()
+    user = _member_of(parish)
+    client = APIClient()
+    client.force_authenticate(user=user)
+    url = reverse("api:news:diocese-list", kwargs={"diocese_id": parish.diocese_id})
 
-    # Act
-    response = auth_client.get(url)
+    response = client.get(url)
 
-    # Assert
     assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_diocese_news_returns_403_for_non_member():
+    # EXPLOIT A2 : un fidèle lit le fil d'un diocèse dont il n'est pas membre → refusé.
+    user = _member_of(ParishFactory())
+    foreign_diocese = DioceseFactory()
+    client = APIClient()
+    client.force_authenticate(user=user)
+    url = reverse("api:news:diocese-list", kwargs={"diocese_id": foreign_diocese.id})
+
+    response = client.get(url)
+
+    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------

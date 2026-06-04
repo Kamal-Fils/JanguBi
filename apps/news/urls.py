@@ -6,6 +6,7 @@ urlpatterns = [
     # Publique
     path("categories/", apis.CategoryListApi.as_view(), name="category-list"),
     path("", apis.ArticleGlobalListApi.as_view(), name="global-list"),
+    path("feed/", apis.ArticleFeedApi.as_view(), name="feed"),
     path("my-parish/", apis.ArticleMyParishListApi.as_view(), name="my-parish-list"),
     path("parish/<int:parish_id>/", apis.ArticleParishListApi.as_view(), name="parish-list"),
     path("diocese/<int:diocese_id>/", apis.ArticleDioceseListApi.as_view(), name="diocese-list"),

@@ -201,15 +201,25 @@ def document_request_create(*, requester: BaseUser, data: dict) -> DocumentReque
 
     attachment_file_id = data.get("attachment_file_id")
 
-    # Rattachement territorial : paroisse cible explicite, sinon paroisse principale du demandeur.
-    target_parish = None
+    # Rattachement territorial. La paroisse du REGISTRE peut être N'IMPORTE QUELLE
+    # paroisse active (Chantier 4) : un fidèle demande un document À une paroisse sans
+    # y être membre ni admin → AUCUN contrôle d'autorité côté demandeur.
+    # B5c — parish_id est REQUIS (le front l'émet via le picker). A5 préservé : parish_id
+    # absent ou invalide → erreur (jamais de repli silencieux ni de demande orpheline).
     parish_id = data.get("parish_id")
-    if parish_id:
-        from apps.org.models import Parish
+    if not parish_id:
+        raise ApplicationError("La paroisse du registre est requise (parish_id).")
 
-        target_parish = Parish.objects.filter(id=parish_id).first()
+    from apps.org.models import Parish
+
+    target_parish = Parish.objects.filter(id=parish_id).select_related("diocese").first()
     if target_parish is None:
-        target_parish = getattr(getattr(requester, "profile", None), "primary_parish", None)
+        raise ApplicationError("Paroisse cible introuvable.")
+
+    # Nom de paroisse + diocèse DÉRIVÉS du FK (plus de texte libre en entrée). Les
+    # anciennes demandes orphelines (FK NULL) conservent leur parish_name/diocese stockés.
+    parish_name_value = target_parish.name
+    diocese_value = target_parish.diocese.name
 
     request_obj = DocumentRequest.objects.create(
         reference=_generate_reference(),
@@ -227,8 +237,8 @@ def document_request_create(*, requester: BaseUser, data: dict) -> DocumentReque
         registered_first_names=data.get("registered_first_names", ""),
         father_last_name=data["father_last_name"],
         mother_last_name=data["mother_last_name"],
-        parish_name=data["parish_name"],
-        diocese=data["diocese"],
+        parish_name=parish_name_value,
+        diocese=diocese_value,
         target_parish=target_parish,
         sacrament_approximate_date=data["sacrament_approximate_date"],
         sacrament_location=data["sacrament_location"],

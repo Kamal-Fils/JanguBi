@@ -14,11 +14,23 @@ from rest_framework.test import APIClient
 
 from apps.documents.models import DocumentRequest, DocumentRequestStatusLog
 from apps.org.tests.factories import ParishFactory
-from apps.users.enums import RoleScope, UserRole
+from apps.users.enums import PastoralRole, RoleScope, UserOnboardingState, UserRole
 from apps.users.models import RoleAssignment
-from apps.users.tests.factories import AdminUserFactory, BaseUserFactory, StaffUserFactory
+from apps.users.tests.factories import (
+    AdminUserFactory,
+    BaseUserFactory,
+    ProfileFactory,
+    StaffUserFactory,
+)
 
 from .factories import DocumentRequestFactory, InternalNoteFactory, ValidFileFactory
+
+
+def _completed_fidele(parish=None):
+    """Fidèle ayant terminé l'onboarding (paroisse principale choisie)."""
+    user = BaseUserFactory(onboarding_state=UserOnboardingState.COMPLETED)
+    ProfileFactory(user=user, primary_parish=parish or ParishFactory())
+    return user
 
 
 def _make_cure(parish):
@@ -42,8 +54,10 @@ def _make_cure(parish):
 
 @pytest.fixture
 def fidele_client():
+    # Fidèle onboardé (paroisse principale) — peut écrire (passe IsOnboardingCompleted
+    # et la résolution target_parish).
     client = APIClient()
-    user = BaseUserFactory()
+    user = _completed_fidele()
     client.force_authenticate(user=user)
     client._user = user
     return client
@@ -139,16 +153,128 @@ def test_document_request_list_fidele_sees_only_own_requests(fidele_client):
 def test_document_request_create_returns_201(fidele_client):
     # Arrange
     url = reverse("api:documents:document-request-list-create")
+    payload = {**VALID_CREATE_PAYLOAD, "parish_id": ParishFactory().id}
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):
-        response = fidele_client.post(url, VALID_CREATE_PAYLOAD, format="json")
+        response = fidele_client.post(url, payload, format="json")
 
     # Assert
     assert response.status_code == 201
     assert response.data["status"] == DocumentRequest.Status.SUBMITTED
     assert response.data["document_type"] == "baptism"
     assert "reference" in response.data
+
+
+@pytest.mark.django_db
+def test_document_parish_id_now_required(fidele_client):
+    # B5c : parish_id est obligatoire — sans lui → 400 (jamais de repli silencieux).
+    url = reverse("api:documents:document-request-list-create")
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = fidele_client.post(url, VALID_CREATE_PAYLOAD, format="json")
+
+    assert response.status_code == 400
+    assert "parish_id" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_document_parish_name_diocese_no_longer_required(fidele_client):
+    # B5c : parish_name/diocese ne sont plus dans l'input. Omis → OK ; envoyés → ignorés.
+    # La sortie affiche le nom/diocèse DÉRIVÉS de la FK parish_id.
+    parish = ParishFactory()
+    url = reverse("api:documents:document-request-list-create")
+
+    # 1) Omis (pas de parish_name/diocese), seulement parish_id → 201.
+    payload = {
+        k: v for k, v in VALID_CREATE_PAYLOAD.items() if k not in ("parish_name", "diocese")
+    }
+    payload["parish_id"] = parish.id
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = fidele_client.post(url, payload, format="json")
+    assert response.status_code == 201
+    assert response.data["parish_name"] == parish.name
+    assert response.data["diocese"] == parish.diocese.name
+
+    # 2) Envoyés malgré tout → ignorés (sortie = FK, pas le texte libre).
+    payload2 = {
+        **VALID_CREATE_PAYLOAD,
+        "parish_id": parish.id,
+        "parish_name": "TEXTE IGNORÉ",
+        "diocese": "DIOCÈSE IGNORÉ",
+    }
+    with patch("apps.documents.services.transaction.on_commit"):
+        response2 = fidele_client.post(url, payload2, format="json")
+    assert response2.status_code == 201
+    assert response2.data["parish_name"] == parish.name
+    assert response2.data["diocese"] == parish.diocese.name
+
+
+# ---------------------------------------------------------------------------
+# A1 — Garde d'onboarding serveur (IsOnboardingCompleted) + exemption clergé/admin
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_pure_fidele_pending_parish_blocked_returns_403():
+    # EXPLOIT : un fidèle pur en pending_parish (sans paroisse) ne peut PAS écrire.
+    parish = ParishFactory()
+    user = BaseUserFactory(onboarding_state=UserOnboardingState.PENDING_PARISH_SELECTION)
+    client = APIClient()
+    client.force_authenticate(user=user)
+    url = reverse("api:documents:document-request-list-create")
+    payload = {**VALID_CREATE_PAYLOAD, "parish_id": parish.id}
+
+    response = client.post(url, payload, format="json")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_completed_fidele_can_write(fidele_client):
+    # Fidèle completed (paroisse principale) → autorisé.
+    url = reverse("api:documents:document-request-list-create")
+    payload = {**VALID_CREATE_PAYLOAD, "parish_id": ParishFactory().id}
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = fidele_client.post(url, payload, format="json")
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_clergy_without_completed_onboarding_can_still_write():
+    # Curé (pastoral_role=pretre, onboarding pending_parish) → EXEMPTÉ ; il fournit
+    # la paroisse cible (il n'a pas de primary_parish).
+    parish = ParishFactory()
+    pretre = BaseUserFactory(
+        role=UserRole.FIDELE,
+        pastoral_role=PastoralRole.PRETRE,
+        onboarding_state=UserOnboardingState.PENDING_PARISH_SELECTION,
+    )
+    client = APIClient()
+    client.force_authenticate(user=pretre)
+    url = reverse("api:documents:document-request-list-create")
+    payload = {**VALID_CREATE_PAYLOAD, "parish_id": parish.id}
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = client.post(url, payload, format="json")
+
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_admin_can_write():
+    # Admin (super_admin), onboarding non completed → EXEMPTÉ.
+    parish = ParishFactory()
+    admin = AdminUserFactory()
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    url = reverse("api:documents:document-request-list-create")
+    payload = {**VALID_CREATE_PAYLOAD, "parish_id": parish.id}
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = client.post(url, payload, format="json")
+
+    assert response.status_code == 201
 
 
 @pytest.mark.django_db
@@ -167,7 +293,7 @@ def test_document_request_create_returns_401_for_anonymous(anon_client):
 def test_document_request_create_returns_400_when_consent_not_given(fidele_client):
     # Arrange
     url = reverse("api:documents:document-request-list-create")
-    payload = {**VALID_CREATE_PAYLOAD, "consent_given": False}
+    payload = {**VALID_CREATE_PAYLOAD, "parish_id": ParishFactory().id, "consent_given": False}
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):
@@ -196,6 +322,7 @@ def test_document_request_create_returns_400_when_religious_marriage_missing_det
     url = reverse("api:documents:document-request-list-create")
     payload = {
         **VALID_CREATE_PAYLOAD,
+        "parish_id": ParishFactory().id,
         "document_type": "religious_marriage",
         "document_details": {},
     }

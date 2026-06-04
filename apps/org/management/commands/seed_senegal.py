@@ -107,6 +107,7 @@ class Command(BaseCommand):
 
         # Paroisses
         parish_count = 0
+        parishes = []
         for p_data in SENEGAL_DATA["parishes"]:
             diocese = diocese_map[p_data["diocese"]]
             parish, created = Parish.objects.get_or_create(
@@ -114,13 +115,37 @@ class Command(BaseCommand):
                 diocese=diocese,
                 defaults={"city": p_data["city"]},
             )
+            parishes.append(parish)
             if created:
                 parish_count += 1
 
         self.stdout.write(f"  ✅ {parish_count} paroisses créées")
+
+        # Église principale par paroisse (RG-ORG-04) — prérequis des appartenances.
+        # `get_or_create` direct (et non Parish.objects.create) ne déclenche pas
+        # parish_create : on garantit donc ici l'église is_main, idempotente.
+        from apps.org.models import Church
+
+        church_count = 0
+        for parish in parishes:
+            _, created = Church.objects.get_or_create(
+                parish=parish,
+                is_main=True,
+                defaults={
+                    "name": parish.name,
+                    "church_type": "paroissiale",
+                    "city": parish.city,
+                    "address": parish.address,
+                },
+            )
+            if created:
+                church_count += 1
+
+        self.stdout.write(f"  ✅ {church_count} églises principales créées")
         self.stdout.write(self.style.SUCCESS(
             f"\n✅ Structure territoriale initialisée : "
             f"{Province.objects.count()} provinces, "
             f"{Diocese.objects.count()} diocèses, "
-            f"{Parish.objects.count()} paroisses"
+            f"{Parish.objects.count()} paroisses, "
+            f"{Church.objects.count()} églises"
         ))
