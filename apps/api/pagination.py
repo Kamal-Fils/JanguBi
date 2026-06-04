@@ -6,6 +6,14 @@ from rest_framework.pagination import LimitOffsetPagination as _LimitOffsetPagin
 from rest_framework.response import Response
 
 
+# Mémoïsation par nom : inline_serializer crée une CLASSE distincte à chaque appel.
+# Si le même serializer est wrappé par plusieurs endpoints (ex. ArticleListOutput sur
+# global/parish/feed/…), on obtiendrait N classes « PaginatedArticleListOutputList »
+# d'identités différentes → drf-spectacular : « identical names, different identities »
+# → schéma incorrect. On réutilise donc une seule instance par nom.
+_PAGINATED_SERIALIZER_CACHE: dict = {}
+
+
 def paginated_response_serializer(serializer_class):
     """Sérialiseur de réponse paginée {limit, offset, count, next, previous, results}
     pour ``@extend_schema(responses=...)``.
@@ -17,17 +25,21 @@ def paginated_response_serializer(serializer_class):
     base = serializer_class.__name__
     if base.endswith("Serializer"):
         base = base[: -len("Serializer")]
-    return inline_serializer(
-        name=f"Paginated{base}List",
-        fields={
-            "limit": serializers.IntegerField(),
-            "offset": serializers.IntegerField(),
-            "count": serializers.IntegerField(),
-            "next": serializers.CharField(allow_null=True),
-            "previous": serializers.CharField(allow_null=True),
-            "results": serializer_class(many=True),
-        },
-    )
+    name = f"Paginated{base}List"
+
+    if name not in _PAGINATED_SERIALIZER_CACHE:
+        _PAGINATED_SERIALIZER_CACHE[name] = inline_serializer(
+            name=name,
+            fields={
+                "limit": serializers.IntegerField(),
+                "offset": serializers.IntegerField(),
+                "count": serializers.IntegerField(),
+                "next": serializers.CharField(allow_null=True),
+                "previous": serializers.CharField(allow_null=True),
+                "results": serializer_class(many=True),
+            },
+        )
+    return _PAGINATED_SERIALIZER_CACHE[name]
 
 
 def get_paginated_response(*, pagination_class, serializer_class, queryset, request, view):

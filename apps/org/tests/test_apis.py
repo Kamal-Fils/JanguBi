@@ -32,7 +32,9 @@ def test_province_list_authenticated(auth_client):
     ProvinceFactory.create_batch(3)
     response = auth_client.get("/api/v1/org/provinces/")
     assert response.status_code == 200
-    assert len(response.data) == 3
+    # Enveloppe paginée {count, results} (le front get-provinces.ts déballe .results).
+    assert response.data["count"] == 3
+    assert len(response.data["results"]) == 3
 
 
 @pytest.mark.django_db

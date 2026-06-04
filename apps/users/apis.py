@@ -115,7 +115,12 @@ class UserListItemSerializer(serializers.Serializer):
             "last_name": p.last_name,
             "title": p.title,
             "phone": str(p.phone) if p.phone else None,
-            "primary_parish": p.primary_parish,
+            # FK Parish → {id, name} (objet brut = non sérialisable JSON, BUG-B1).
+            "primary_parish": (
+                {"id": p.primary_parish_id, "name": p.primary_parish.name}
+                if p.primary_parish_id
+                else None
+            ),
             "avatar": p.avatar.url if p.avatar else None,
         }
 

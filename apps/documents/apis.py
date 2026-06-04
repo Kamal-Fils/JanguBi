@@ -9,7 +9,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
-from apps.api.pagination import LimitOffsetPagination, get_paginated_response
+from apps.api.pagination import (
+    LimitOffsetPagination,
+    get_paginated_response,
+    paginated_response_serializer,
+)
 from apps.core.exceptions import ApplicationError
 from apps.documents.models import DocumentRequest
 from apps.documents.permissions import IsDocumentRequester, IsDocumentRequesterOrAdmin
@@ -74,7 +78,7 @@ class DocumentRequestListCreateApi(ApiAuthMixin, APIView):
             OpenApiParameter("parish_name", OpenApiTypes.STR, description="Filtrer par nom de paroisse"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche textuelle"),
         ],
-        responses={200: DocumentRequestListOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(DocumentRequestListOutputSerializer)},
         tags=["documents"],
         summary="Lister mes demandes de document",
     )
@@ -184,7 +188,7 @@ class AdminDocumentRequestListApi(ApiAuthMixin, APIView):
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche textuelle"),
             OpenApiParameter("assigned_to_id", OpenApiTypes.INT, description="Filtrer par agent assigné"),
         ],
-        responses={200: DocumentRequestListOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(DocumentRequestListOutputSerializer)},
         tags=["documents"],
         summary="Lister toutes les demandes (admin)",
     )

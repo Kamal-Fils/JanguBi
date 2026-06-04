@@ -52,14 +52,30 @@ def _error(exc: ApplicationError) -> Response:
 # ---------------------------------------------------------------------------
 
 class ProvinceListApi(ApiAuthMixin, APIView):
+    class Pagination(LimitOffsetPagination):
+        default_limit = 100
+        max_limit = 200
+
     @extend_schema(
-        responses={200: ProvinceOutputSerializer(many=True)},
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
+        ],
+        responses={200: paginated_response_serializer(ProvinceOutputSerializer)},
         tags=["org"],
         summary="Lister les provinces",
     )
     def get(self, request):
         provinces = province_list()
-        return Response(ProvinceOutputSerializer(provinces, many=True).data)
+        # Enveloppe paginée {count, results} — cohérence dioceses/parishes/churches ;
+        # le front (get-provinces.ts) déballe `.results` (BUG-B3 : liste nue → Zod throw).
+        return get_paginated_response(
+            pagination_class=self.Pagination,
+            serializer_class=ProvinceOutputSerializer,
+            queryset=provinces,
+            request=request,
+            view=self,
+        )
 
     @extend_schema(
         request=ProvinceCreateInputSerializer,
