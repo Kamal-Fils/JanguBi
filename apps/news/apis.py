@@ -84,7 +84,7 @@ class ArticleGlobalListApi(APIView):
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
         ],
-        responses={200: ArticleListOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
         summary="Feed global — articles publiés pour toute l'Église du Sénégal",
     )
@@ -118,7 +118,7 @@ class ArticleParishListApi(ApiAuthMixin, APIView):
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
         ],
-        responses={200: ArticleListOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
         summary="Articles publiés d'une paroisse",
     )
@@ -257,7 +257,7 @@ class ArticleMyParishListApi(ApiAuthMixin, APIView):
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
         ],
-        responses={200: ArticleListOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
         summary="Articles de ma paroisse (paroisse principale du profil)",
     )
@@ -300,7 +300,7 @@ class ArticleDioceseListApi(ApiAuthMixin, APIView):
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
         ],
-        responses={200: ArticleListOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
         summary="Articles publiés d'un diocèse",
     )
@@ -372,7 +372,7 @@ class AdminArticleListApi(ApiAuthMixin, APIView):
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
         ],
-        responses={200: ArticleListOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news-admin"],
         summary="[Admin] Lister tous les articles (tous statuts)",
     )
