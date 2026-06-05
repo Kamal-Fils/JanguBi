@@ -5,7 +5,7 @@ from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
 from django.db import models
 from django.utils.text import slugify
-from pgvector.django import VectorField
+from pgvector.django import HnswIndex, VectorField
 
 from apps.common.models import BaseModel
 
@@ -89,8 +89,9 @@ class Verse(models.Model):
     # Postgres full-text search vector
     tsv = SearchVectorField(null=True)
 
-    # pgvector embedding
-    # We use 768 dimensions for Gemini Flash embeddings
+    # pgvector embedding — 768 dims (modèle local mpnet-base-v2, recherche
+    # sémantique cosine). Vecteurs non normalisés => on interroge en cosine
+    # (<=> / vector_cosine_ops), invariant à l'échelle.
     embedding = VectorField(dimensions=768, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -100,6 +101,14 @@ class Verse(models.Model):
         ordering = ["number"]
         indexes = [
             GinIndex(fields=["tsv"], name="idx_verse_tsv"),
+            # Index ANN cosine pour la recherche vectorielle (top-k via <=>).
+            HnswIndex(
+                name="idx_verse_embedding_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            ),
         ]
 
     def __str__(self) -> str:
