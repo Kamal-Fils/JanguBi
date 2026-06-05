@@ -18,15 +18,15 @@ class BibleEngine:
         """
         topic = entities.get("topic")
         if not topic:
-            return "Aucun sujet biblique identifié."
-        
+            return ""  # rien à chercher -> ignoré par le routeur/context_builder
+
         try:
-            # Reusing the existing Bible SearchService
+            # Réutilise le SearchService Bible (hybride cosine+lexical si pgvector ON).
             service = SearchService()
             grouped_results = service.search(topic, limit=5, use_hybrid=True)
-            
+
             if not grouped_results:
-                return f"Aucun verset biblique trouvé pour le sujet : {topic}"
+                return ""  # aucun résultat -> ignoré (pas de faux contenu)
 
             context_lines = []
             for group in grouped_results:
@@ -36,11 +36,9 @@ class BibleEngine:
                     verse_nb = match["verse"]["number"]
                     text = match["verse"]["text"]
                     context_lines.append(f"Livre: {book_name} {chapter_nb}:{verse_nb}\nTexte: {text}")
-            
+
             return "\n\n".join(context_lines)
 
         except Exception as e:
-            logger.error(f"BibleEngine error: {e}")
-            import traceback
-            traceback.print_exc()
-            return "Erreur lors de la récupération du contexte biblique."
+            logger.error(f"BibleEngine error: {e}", exc_info=True)
+            return ""  # erreur -> ignoré (le routeur gère le repli)

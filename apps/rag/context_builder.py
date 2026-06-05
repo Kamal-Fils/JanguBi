@@ -23,6 +23,6 @@ class ContextBuilder:
             final_context.append("")
 
         if not final_context:
-            return "Aucun contexte pertinent trouvé dans la base de données."
+            return ""  # aucun contexte -> le service renvoie le message d'absence
 
         return "\n".join(final_context)

@@ -84,9 +84,27 @@ class RAGService:
         model_name = getattr(settings, 'GEMINI_MODEL_NAME', 'gemini-2.5-flash')
         self.final_llm = final_llm or AsyncGeminiClient(model_name=model_name)
 
+    @staticmethod
+    def _generation_enabled() -> bool:
+        """La génération LLM n'est active que si explicitement demandée ET une clé
+        est présente. Par défaut : extractif (gratuit)."""
+        return bool(getattr(settings, "RAG_GENERATION_ENABLED", False)) and bool(
+            getattr(settings, "GEMINI_API_KEY", "")
+        )
+
+    @staticmethod
+    def _extractive_answer(context_string: str) -> str:
+        """Réponse extractive : restitue les passages réels (aucune génération,
+        aucune hallucination, fidèle au texte). Idéal pour un usage catholique."""
+        return (
+            "Voici les passages les plus pertinents trouvés dans nos textes de "
+            "référence :\n\n" + context_string
+        )
+
     async def process_query(self, query: str) -> RAGResponse:
         """
-        Executes the async RAG flow: Extract -> Route/Retrieve -> Build Context -> Final LLM
+        Pipeline RAG : Extract (règles) -> Route/Retrieve -> Build Context ->
+        Réponse extractive (par défaut) ou génération LLM (optionnelle).
         """
         # 4. Validation des entrées (Sécurité)
         if not query or not query.strip():
@@ -124,7 +142,7 @@ class RAGService:
             # Étape 3 : Build Context
             context_string = self.context_builder.build(engine_results)
 
-            # 6. Économie de tokens (Performance) : Ne pas appeler le LLM vide
+            # Pas de contexte -> message d'absence (aucun appel LLM).
             if not context_string or not context_string.strip():
                 return RAGResponse(
                     answer="Je ne trouve malheureusement pas cette information dans mes documents de référence actuels.",
@@ -132,13 +150,17 @@ class RAGService:
                     intent=intent_data
                 )
 
-            # Étape 4 : Final Generation Context
-            system_prompt = RAG_SYSTEM_PROMPT_TEMPLATE.format(context=context_string)
-
-            final_answer = await self.final_llm.generate_text(
-                system_prompt=system_prompt,
-                user_prompt=query
-            )
+            # Étape 4 : Réponse.
+            # Par défaut EXTRACTIF (zéro coût LLM) : on restitue les passages réels
+            # récupérés. La génération LLM est OPTIONNELLE (flag + clé présents).
+            if self._generation_enabled():
+                system_prompt = RAG_SYSTEM_PROMPT_TEMPLATE.format(context=context_string)
+                final_answer = await self.final_llm.generate_text(
+                    system_prompt=system_prompt,
+                    user_prompt=query,
+                )
+            else:
+                final_answer = self._extractive_answer(context_string)
 
             return RAGResponse(
                 answer=final_answer,
