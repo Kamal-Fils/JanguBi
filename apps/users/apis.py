@@ -97,6 +97,9 @@ class UserListItemSerializer(serializers.Serializer):
     email = serializers.EmailField()
     phone_number = serializers.CharField()
     role = serializers.CharField()
+    # Identité pastorale (dimension orthogonale au rôle admin) : permet à la liste
+    # admin d'afficher « Prêtre/Évêque » pour le clergé (dont role reste 'fidele').
+    pastoral_role = serializers.CharField(allow_null=True, allow_blank=True)
     is_active = serializers.BooleanField()
     is_verified = serializers.BooleanField()
     is_admin = serializers.BooleanField()
@@ -538,6 +541,7 @@ class UserListApi(ApiAuthMixin, APIView):
         id = serializers.UUIDField(required=False)
         email = serializers.EmailField(required=False)
         role = serializers.CharField(required=False)
+        pastoral_role = serializers.CharField(required=False)
         is_active = serializers.BooleanField(required=False, allow_null=True, default=None)
         is_verified = serializers.BooleanField(required=False, allow_null=True, default=None)
 
