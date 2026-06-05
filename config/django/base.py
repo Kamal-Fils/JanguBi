@@ -86,6 +86,7 @@ LOCAL_APPS = [
     "apps.mass_intentions.apps.MassIntentionsConfig",
     "apps.donations.apps.DonationsConfig",
     "apps.dashboards.apps.DashboardsConfig",
+    "apps.spiritual.apps.SpiritualConfig",
     #"apps.blog_examples.apps.BlogExamplesConfig",
 ]
 
