@@ -1,5 +1,5 @@
 import datetime
-from django.db.models import Prefetch, Q, F
+from django.db.models import Prefetch
 from django.contrib.postgres.search import SearchQuery, SearchVector, SearchRank
 from django.utils import timezone
 from apps.rosary.models import MysteryGroup, Mystery, Prayer, MysteryPrayer, RosaryDay
@@ -54,24 +54,30 @@ class RosaryService:
 
     @staticmethod
     def search_text(query: str):
+        """Recherche plein-texte sur les prières.
+
+        Le SearchVector est calculé À LA VOLÉE (le corpus de prières est très
+        petit : inutile de maintenir une colonne tsv pré-calculée ni un index).
+        Auparavant la recherche dépendait de `tsv` jamais peuplé => toujours vide.
         """
-        Full-text search on prayers. Uses the `tsv` column if it's populated.
-        Since we might not have the DB triggers set up for auto-tsv population yet,
-        we'll build the SearchVector dynamically or fall back to it.
-        """
+        if not query or not query.strip():
+            return Prayer.objects.none()
+        query = query.strip()[:200]  # borne de longueur (anti-abus)
+
+        vector = SearchVector("text", config="french")
         search_query = SearchQuery(query, config="french")
-        search_query = SearchQuery(query, config="french")
-        
-        return Prayer.objects.filter(tsv=search_query).annotate(
-            rank=SearchRank(F("tsv"), search_query)
-        ).order_by("-rank")
+        return (
+            Prayer.objects.annotate(rank=SearchRank(vector, search_query))
+            .filter(rank__gt=0)
+            .order_by("-rank")
+        )
 
     @staticmethod
     def vector_search(query: str, embedding: list = None):
+        """Recherche « sémantique » des prières.
+
+        Le rosaire ne porte pas d'embeddings (corpus minuscule) : on délègue à la
+        recherche plein-texte française, fonctionnelle et suffisante ici, plutôt
+        que de renvoyer un QuerySet vide (l'ancien stub).
         """
-        Placeholder/Stub for future RAG / pgvector integration.
-        Currently returns an empty QuerySet of Prayers.
-        """
-        # When pgvector is fully enabled:
-        # return Prayer.objects.filter(embedding__cosine_distance=embedding).order_by("embedding__cosine_distance")
-        return Prayer.objects.none()
+        return RosaryService.search_text(query)
