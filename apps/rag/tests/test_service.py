@@ -64,9 +64,16 @@ async def test_blank_query_short_circuits():
 
 
 @pytest.mark.django_db
-def test_rag_endpoint_returns_200_with_empty_context():
+@pytest.mark.usefixtures("db")
+def test_rag_endpoint_returns_200_with_empty_context(settings):
     """Bout-en-bout (pipeline réel, DB vide) : 200 même si le contexte est vide.
-    Valide le fix serializer (context allow_blank) — avant : 400."""
+    Valide le fix serializer (context allow_blank) — avant : 400.
+
+    On force stub/pgvector-off pour que ce test ne charge JAMAIS de modèle ML,
+    quelle que soit la config .env active (la suite tourne sous base)."""
+    settings.EMBEDDING_PROVIDER = "stub"
+    settings.PGVECTOR_ENABLED = False
+
     from rest_framework.test import APIClient
 
     from apps.users.tests.factories import BaseUserFactory
