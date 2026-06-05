@@ -3,6 +3,7 @@ from rest_framework import serializers
 class RagQuerySerializer(serializers.Serializer):
     query = serializers.CharField(
         required=True,
+        max_length=1000,  # défense en profondeur (borne aussi vérifiée côté service)
         help_text="The question or prompt to ask the assistant (e.g., 'Quel mystère aujourd'hui et as-tu un prêtre dispo à Mbour ?')"
     )
 

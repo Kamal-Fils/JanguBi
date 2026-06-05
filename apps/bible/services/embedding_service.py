@@ -6,6 +6,7 @@ from django.conf import settings
 from django.db import transaction
 
 from apps.bible.models import Verse
+from apps.core.exceptions import ApplicationError
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +190,7 @@ class EmbeddingService:
 
         vectors = self.provider.embed_texts(texts)
         if len(vectors) != len(verses):
-            raise ValueError(
+            raise ApplicationError(
                 f"Embedding provider returned {len(vectors)} vectors for {len(verses)} verses."
             )
 

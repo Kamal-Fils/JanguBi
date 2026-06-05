@@ -113,6 +113,11 @@ class SearchService:
         `1 - (embedding <=> qv)` = similarité cosine ∈ [-1, 1]. On filtre les
         embeddings NULL (sinon score NULL + l'index ne sert pas) et on ordonne
         par distance cosine pour bénéficier de l'index ANN.
+
+        NB perf : en présence de filtres WHERE (source_file/testament/...), le
+        planner PostgreSQL peut ne pas utiliser l'index HNSW et faire un scan.
+        Acceptable au volume actuel (~petit corpus) ; pour un très grand corpus,
+        envisager un index partiel par source ou un post-filtrage des candidats.
         """
         query_vector = self.embedding_service.compute_query_embedding(query)
         if not query_vector:
@@ -150,7 +155,7 @@ class SearchService:
         l'embedding de requête échoue (modèle indispo, etc.), on retombe sur le
         lexical seul (pas de 500).
         """
-        candidate_k = max(limit * 3, limit)
+        candidate_k = limit * 3  # sur-échantillonnage avant fusion/rang final
         try:
             vector_rows = self._vector_search(
                 query, testament_slug, book_slug, chapter_number, candidate_k, source_file=source_file

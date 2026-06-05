@@ -7,7 +7,6 @@ ici (RAG_GENERATION_ENABLED par défaut False)."""
 from unittest.mock import AsyncMock
 
 import pytest
-from asgiref.sync import sync_to_async
 
 from apps.rag.context_builder import ContextBuilder
 from apps.rag.extractor import IntentExtractor

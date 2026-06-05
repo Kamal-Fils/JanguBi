@@ -219,7 +219,8 @@ class SearchApi(APIView):
     """Search endpoint using lexical/hybrid search."""
 
     class InputSerializer(serializers.Serializer):
-        q = serializers.CharField(min_length=3)
+        # max_length borne le coût (recherche hybride -> embedding du modèle local).
+        q = serializers.CharField(min_length=3, max_length=300)
         testament = serializers.CharField(required=False, allow_blank=True, allow_null=True)
         book_slug = serializers.CharField(required=False, allow_blank=True, allow_null=True)
         chapter_number = serializers.IntegerField(required=False, allow_null=True)

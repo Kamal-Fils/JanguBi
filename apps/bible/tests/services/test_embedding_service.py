@@ -68,3 +68,16 @@ def test_compute_bulk_force_recomputes_all(book):
 def test_compute_query_embedding_empty_query_returns_empty():
     service = EmbeddingService(provider=StubEmbedder())
     assert service.compute_query_embedding("   ") == []
+
+
+@pytest.mark.django_db
+def test_compute_bulk_raises_application_error_on_count_mismatch(book):
+    from apps.core.exceptions import ApplicationError
+
+    class _BadProvider:
+        def embed_texts(self, texts):
+            return []  # nombre de vecteurs != nombre de versets
+
+    service = EmbeddingService(provider=_BadProvider())
+    with pytest.raises(ApplicationError):
+        service.compute_bulk_embeddings(book.id)

@@ -79,10 +79,16 @@ class RAGService:
         self.extractor = extractor or IntentExtractor()
         self.router = router or QueryRouter()
         self.context_builder = context_builder or ContextBuilder()
-        
-        # Le nom du modèle devient dynamique
-        model_name = getattr(settings, 'GEMINI_MODEL_NAME', 'gemini-2.5-flash')
-        self.final_llm = final_llm or AsyncGeminiClient(model_name=model_name)
+
+        # Le client LLM n'est créé QUE si la génération est activée (sinon extractif
+        # pur : pas de client, pas de warning de clé manquante à chaque requête).
+        if final_llm is not None:
+            self.final_llm = final_llm
+        elif self._generation_enabled():
+            model_name = getattr(settings, "GEMINI_MODEL_NAME", "gemini-2.5-flash")
+            self.final_llm = AsyncGeminiClient(model_name=model_name)
+        else:
+            self.final_llm = None
 
     @staticmethod
     def _generation_enabled() -> bool:
@@ -126,9 +132,16 @@ class RAGService:
         try:
             # Étape 1 : Extract
             intent_data = await self.extractor.extract(query)
-            logger.info(f"Extracted Intent: {intent_data}")
+            # On ne logge PAS entities.topic (= requête brute, PII potentiel) :
+            # seulement intent + domains.
+            logger.info(
+                "Extracted intent=%s domains=%s",
+                intent_data.get("intent"), intent_data.get("domains"),
+            )
 
-            # Fallback out of scope
+            # Garde défensive : requête hors périmètre (l'extracteur par règles
+            # route par défaut vers BIBLE, donc rarement atteint ; AVAILABILITY
+            # n'est pas câblé dans les engines -> dégradé via "aucun contexte").
             if intent_data.get("intent") == "UNKNOWN" and not intent_data.get("domains"):
                 return RAGResponse(
                     answer="Désolé, je suis uniquement formé pour répondre aux questions concernant la Bible et le Rosaire. Pouvez-vous reformuler votre question ?",
