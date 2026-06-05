@@ -245,7 +245,17 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.JSONParser',
         'rest_framework.parsers.MultiPartParser',
         'rest_framework.parsers.FormParser',
-    ]
+    ],
+    # Quotas de débit. Pas de DEFAULT_THROTTLE_CLASSES global (éviterait de
+    # throttler aveuglément tous les endpoints) ; ces rates sont consommés par
+    # les throttles déclarés explicitement sur les vues sensibles. Le scope
+    # 'rag' borne l'endpoint LLM/recherche sémantique (BUG : était inopérant —
+    # UserRateThrottle sans rate => throttle silencieusement désactivé).
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min',
+        'user': '240/min',
+        'rag': '20/min',
+    },
 }
 
 YOUTUBE_API_KEY = env.str("YOUTUBE_API_KEY", default="")

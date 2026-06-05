@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.throttling import UserRateThrottle
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 
@@ -14,7 +14,10 @@ from apps.rag.service import RAGService
 
 @method_decorator(transaction.non_atomic_requests, name="dispatch")
 class RagChatApi(ApiAuthMixin, APIView):
-    throttle_classes = [UserRateThrottle]
+    # Throttle effectif (scope 'rag' => rate défini dans REST_FRAMEWORK).
+    # Auparavant UserRateThrottle sans rate 'user' => throttle inopérant.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "rag"
 
     # Shared service instance — avoid recreating on every request.
     rag_service = RAGService()
