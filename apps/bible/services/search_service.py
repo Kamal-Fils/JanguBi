@@ -46,21 +46,23 @@ class SearchService:
         book_slug: Optional[str], chapter_number: Optional[int], limit: int, source_file: Optional[str] = "bible_fr"
     ) -> List[Dict]:
         """Full-text TSV search blended with pg_trgm trigram similarity (no external API required)."""
-        sql = f"""
+        # ts_config passé en PARAMÈTRE (%s::regconfig) — plus d'interpolation
+        # f-string dans le SQL.
+        sql = """
             SELECT
                 v.id, v.chapter_id, v.number as verse_number, v.text,
                 c.number as chapter_number,
                 b.id as book_id, b.name as book_name, b.slug as book_slug, b.order as book_order,
                 t.slug as testament_slug,
-                (0.6 * ts_rank(v.tsv, plainto_tsquery('{self.ts_config}', %s))
+                (0.6 * ts_rank(v.tsv, plainto_tsquery(%s::regconfig, %s))
                  + 0.4 * similarity(v.text, %s)) as score
             FROM bible_verse v
             JOIN bible_chapter c ON v.chapter_id = c.id
             JOIN bible_book b ON c.book_id = b.id
             JOIN bible_testament t ON b.testament_id = t.id
-            WHERE v.tsv @@ plainto_tsquery('{self.ts_config}', %s)
+            WHERE v.tsv @@ plainto_tsquery(%s::regconfig, %s)
         """
-        params = [query, query, query]
+        params = [self.ts_config, query, query, self.ts_config, query]
 
         sql, params = self._apply_filters(sql, params, testament_slug, book_slug, chapter_number, source_file)
 
@@ -102,54 +104,86 @@ class SearchService:
 
         return self._execute_search_query(sql, params)
 
-    def _hybrid_search(
-        self, query: str, testament_slug: Optional[str], 
-        book_slug: Optional[str], chapter_number: Optional[int], limit: int, alpha: float = 0.7, source_file: Optional[str] = "bible_fr"
+    def _vector_search(
+        self, query: str, testament_slug: Optional[str],
+        book_slug: Optional[str], chapter_number: Optional[int], limit: int, source_file: Optional[str] = "bible_fr"
     ) -> List[Dict]:
-        """Combines pgvector HNSW distance with full-text search rank."""
+        """Recherche sémantique pure : top-k cosine via l'index HNSW (<=>).
+
+        `1 - (embedding <=> qv)` = similarité cosine ∈ [-1, 1]. On filtre les
+        embeddings NULL (sinon score NULL + l'index ne sert pas) et on ordonne
+        par distance cosine pour bénéficier de l'index ANN.
+        """
         query_vector = self.embedding_service.compute_query_embedding(query)
         if not query_vector:
-            return self._lexical_search(query, testament_slug, book_slug, chapter_number, limit, source_file=source_file)
+            return []
 
         vector_str = "[" + ",".join(str(f) for f in query_vector) + "]"
 
-        sql = f"""
-            WITH vector_matches AS (
-                SELECT 
-                    v.id,
-                    1.0 / (1.0 + (v.embedding <-> %s::vector)) as vector_score,
-                    ts_rank(v.tsv, plainto_tsquery('{self.ts_config}', %s)) as ft_score
-                FROM bible_verse v
-                JOIN bible_chapter c ON v.chapter_id = c.id
-                JOIN bible_book b ON c.book_id = b.id
-                JOIN bible_testament t ON b.testament_id = t.id
-                WHERE 1=1
-        """
-        
-        params = [vector_str, query]
-        
-        sql, params = self._apply_filters(sql, params, testament_slug, book_slug, chapter_number, source_file)
-            
-        sql += f"""
-            )
-            SELECT 
+        sql = """
+            SELECT
                 v.id, v.chapter_id, v.number as verse_number, v.text,
                 c.number as chapter_number,
                 b.id as book_id, b.name as book_name, b.slug as book_slug, b.order as book_order,
                 t.slug as testament_slug,
-                (%s * m.vector_score + (1.0 - %s) * m.ft_score) as score
-            FROM vector_matches m
-            JOIN bible_verse v ON m.id = v.id
+                (1.0 - (v.embedding <=> %s::vector)) as score
+            FROM bible_verse v
             JOIN bible_chapter c ON v.chapter_id = c.id
             JOIN bible_book b ON c.book_id = b.id
             JOIN bible_testament t ON b.testament_id = t.id
-            ORDER BY score DESC, b.order, c.number, v.number
-            LIMIT %s
+            WHERE v.embedding IS NOT NULL
         """
-        
-        params.extend([alpha, alpha, limit])
+        params = [vector_str]
+        sql, params = self._apply_filters(sql, params, testament_slug, book_slug, chapter_number, source_file)
+        sql += " ORDER BY v.embedding <=> %s::vector LIMIT %s"
+        params.extend([vector_str, limit])
 
         return self._execute_search_query(sql, params)
+
+    def _hybrid_search(
+        self, query: str, testament_slug: Optional[str],
+        book_slug: Optional[str], chapter_number: Optional[int], limit: int, alpha: float = 0.6, source_file: Optional[str] = "bible_fr"
+    ) -> List[Dict]:
+        """Fusionne la recherche vectorielle (cosine/HNSW) et le lexical (TSV+trgm).
+
+        Score combiné = alpha * cosine + (1-alpha) * score_lexical. Robuste : si
+        l'embedding de requête échoue (modèle indispo, etc.), on retombe sur le
+        lexical seul (pas de 500).
+        """
+        candidate_k = max(limit * 3, limit)
+        try:
+            vector_rows = self._vector_search(
+                query, testament_slug, book_slug, chapter_number, candidate_k, source_file=source_file
+            )
+        except Exception as e:  # provider/DB vectoriel KO -> dégradation gracieuse
+            logger.warning("Vector search failed, falling back to lexical only: %s", e)
+            vector_rows = []
+
+        lexical_rows = self._lexical_search(
+            query, testament_slug, book_slug, chapter_number, candidate_k, source_file=source_file
+        )
+
+        if not vector_rows:
+            return lexical_rows[:limit]
+
+        merged: Dict[int, Dict] = {}
+        for row in lexical_rows:
+            merged[row["id"]] = {**row, "_lex": row["score"], "_vec": 0.0}
+        for row in vector_rows:
+            if row["id"] in merged:
+                merged[row["id"]]["_vec"] = row["score"]
+            else:
+                merged[row["id"]] = {**row, "_lex": 0.0, "_vec": row["score"]}
+
+        rows = list(merged.values())
+        for row in rows:
+            row["score"] = alpha * row["_vec"] + (1.0 - alpha) * row["_lex"]
+            row["no_internal_source"] = row["score"] < 0.15
+            row.pop("_lex", None)
+            row.pop("_vec", None)
+
+        rows.sort(key=lambda r: (-r["score"], r["book_order"], r["chapter_number"], r["verse_number"]))
+        return rows[:limit]
 
     def _apply_filters(self, sql: str, params: list, testament_slug: Optional[str], book_slug: Optional[str], chapter_number: Optional[int], source_file: Optional[str] = "bible_fr"):
         """Évite d'écrire la même logique d'ajout de paramètres WHERE pour chaque méthode de recherche."""
