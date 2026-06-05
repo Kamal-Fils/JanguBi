@@ -27,8 +27,17 @@ def test_get_daily_rosary(rosary_data):
 @pytest.mark.django_db
 def test_search_text(rosary_data):
     group, mystery, prayer, day = rosary_data
+    # FTS calculée à la volée : doit RÉELLEMENT trouver "Our Father..." sur "Father"
+    # (avant : tsv jamais peuplé => toujours vide).
     results = RosaryService.search_text("Father")
-    # Postgres FTS works with exact setup, this might be empty if triggers/configs are not mocking properly in sqlite/test db, 
-    # but theoretically it will return our prayer.
-    # Asserting length without raising errors for now to validate query logic.
-    assert hasattr(results, "count")
+    assert prayer in list(results)
+
+
+@pytest.mark.django_db
+def test_search_text_empty_query_returns_none(rosary_data):
+    assert RosaryService.search_text("   ").count() == 0
+
+
+@pytest.mark.django_db
+def test_search_text_no_match_returns_empty(rosary_data):
+    assert list(RosaryService.search_text("zzzinexistant")) == []

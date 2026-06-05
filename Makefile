@@ -4,8 +4,8 @@ export
 
 .PHONY: up down restart build logs shell dbshell makemigrations migrate check test \
        init-data create-admin init-all createsuperuser import-aelf clear-cache \
-	   down-v rebuild \
-       flush-redis flush-db check-embeddings seed-embeddings \
+	   down-v rebuild dev-deps \
+       flush-redis flush-db check-embeddings seed-embeddings seed-embeddings-force seed-embeddings-async \
        seed seed-senegal seed-demo seed-reset \
 	celery-logs celery-restart rabbitmq-stats clean-audio collectstatic reinit-bible reinit-bible-aelf import-bible-aelf init-tv-categories
 
@@ -38,6 +38,14 @@ restart:
 
 build:
 	docker compose build
+
+# Installe les deps de DÉVELOPPEMENT (pytest, debug_toolbar, ...) dans les
+# conteneurs en cours. À relancer après un `recreate`/`up` qui repart de l'image
+# (laquelle n'embarque que requirements/base.txt). NB : après tout changement de
+# code des tâches Celery, faire `make restart` pour recharger le worker.
+dev-deps:
+	docker compose exec django pip install -q -r requirements/local.txt
+	docker compose exec celery pip install -q -r requirements/local.txt
 
 logs:
 	docker compose logs -f django
@@ -91,15 +99,26 @@ init-tv-categories:
 check-embeddings:
 	docker compose exec django python manage.py check_embeddings
 
+# Génère les embeddings MANQUANTS (synchrone). Prérequis : EMBEDDING_PROVIDER=local
+# + PGVECTOR_ENABLED=True dans .env, puis `make restart`. 1er usage : télécharge
+# le modèle local (~1 Go) dans FASTEMBED_CACHE_DIR.
 seed-embeddings:
-	docker compose exec django python manage.py shell -c "from apps.bible.models import Book; from apps.bible.tasks import compute_embeddings_task; [compute_embeddings_task.delay(b.id) for b in Book.objects.all()]; print('Dispatched embedding tasks for all books.')"
+	docker compose exec django python manage.py seed_embeddings
+
+# Recalcule TOUS les embeddings (écrase d'éventuels vecteurs stub/zéro).
+seed-embeddings-force:
+	docker compose exec django python manage.py seed_embeddings --force
+
+# Dispatche le calcul en arrière-plan via Celery (gros corpus / prod).
+seed-embeddings-async:
+	docker compose exec django python manage.py seed_embeddings --async
 
 import-bible-aelf:
 	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr-aelf.json --source AELF
 
 reinit-bible:
 	docker compose exec django python manage.py shell -c "from apps.bible.models import Verse, Chapter, Book, DailyText; Verse.objects.all().delete(); Chapter.objects.all().delete(); Book.objects.all().delete(); DailyText.objects.all().delete(); print('Bible data cleared.')"
-	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr.json --source bible_fr
+	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr-aelf.json --source bible_fr
 	docker compose exec django python manage.py import_aelf --start "$$(date +%Y-%m-%d)" --end "$$(python3 -c 'from datetime import datetime, timedelta; print((datetime.now() + timedelta(days=(6 - datetime.now().weekday()))).date())')"
 	docker compose exec django python manage.py shell -c "from django.core.cache import cache; cache.clear(); print('Cache cleared.')"
 
@@ -134,16 +153,14 @@ init-data:
 	@echo "1. Application des migrations Django..."
 	docker compose exec django python manage.py migrate
 	@echo "2. Importation du format A (bible-fr.json)..."
-	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr.json --source bible_fr
-	@echo "3. Importation du format B (FreSynodale1921.json) [desactivee par defaut pour eviter le melange de sources]..."
-	# docker compose exec django python manage.py import_bible init/bibles/format/json/FreSynodale1921.json --source FreSynodale1921
-	@echo "4. Execution du script conditionnel pgvector..."
+	docker compose exec django python manage.py import_bible init/bibles/format/json/bible-fr-aelf.json --source bible_fr
+	@echo "3. Execution du script conditionnel pgvector..."
 	docker compose exec -T db psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < init/postgresql/pgvector_conditional.sql
-	@echo "5. Creation et configuration du bucket MinIO..."
+	@echo "4. Creation et configuration du bucket MinIO..."
 	docker compose exec minio sh -c "mc alias set local $(AWS_S3_ENDPOINT_URL) $(MINIO_ROOT_USER) $(MINIO_ROOT_PASSWORD) && mc mb local/rosary-audio || true && mc anonymous set public local/rosary-audio"
-	@echo "6. Importation des donnees du Rosaire..."
+	@echo "5. Importation des donnees du Rosaire..."
 	docker compose exec django python manage.py seed_rosary
-	@echo "7. Importation de la liturgie du jour (AELF)..."
+	@echo "6. Importation de la liturgie du jour (AELF)..."
 	docker compose exec django python manage.py import_aelf --start "$$(date +%Y-%m-%d)" --end "$$(python3 -c 'from datetime import datetime, timedelta; print((datetime.now() + timedelta(days=(6 - datetime.now().weekday()))).date())')"
 	@echo "==========================================================="
 	@echo "   Importation et Indexation terminees !"

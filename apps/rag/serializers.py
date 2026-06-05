@@ -3,10 +3,13 @@ from rest_framework import serializers
 class RagQuerySerializer(serializers.Serializer):
     query = serializers.CharField(
         required=True,
+        max_length=1000,  # défense en profondeur (borne aussi vérifiée côté service)
         help_text="The question or prompt to ask the assistant (e.g., 'Quel mystère aujourd'hui et as-tu un prêtre dispo à Mbour ?')"
     )
 
 class RagResponseSerializer(serializers.Serializer):
-    answer = serializers.CharField(help_text="The generated response from the LLM.")
-    context = serializers.CharField(help_text="The raw context retrieved from the database.")
-    intent = serializers.DictField(help_text="The metadata showing how the LLM routed the question.")
+    # allow_blank : sur les branches "aucun contexte"/"erreur", context="" est
+    # légitime (sinon le endpoint renvoyait un 400 — bug latent).
+    answer = serializers.CharField(allow_blank=True, help_text="La réponse (extractive par défaut, ou générée si activé).")
+    context = serializers.CharField(allow_blank=True, help_text="Le contexte brut récupéré en base (peut être vide).")
+    intent = serializers.DictField(help_text="Métadonnée de routage (intent/domains/entities).")

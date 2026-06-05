@@ -13,16 +13,27 @@ class Command(BaseCommand):
         self.stdout.write("=" * 40)
 
         total_verses = Verse.objects.count()
-        
-        # We count any non-null embedding as 'vectorized' for the high-level summary.
-        # Note: In post-seeding, all verses have [0,0...] vectors, so they are not NULL.
-        # To find 'true' embeddings, we'd need to check magnitude, but isnull is the fastest first check.
-        vectorized_q = Q(embedding__isnull=False)
-        vectorized_count = Verse.objects.filter(vectorized_q).count()
-        
-        self.stdout.write(f"Total Verses: {total_verses}")
-        self.stdout.write(f"Has Vector:   {vectorized_count} ({round(vectorized_count/total_verses*100, 2) if total_verses else 0}%)")
-        self.stdout.write(f"Missing:      {total_verses - vectorized_count}")
+
+        # On compte les vecteurs RÉELS (non nuls), pas seulement non-NULL : un
+        # embedding stub vaut [0,0,...] (non-NULL) et donnerait un faux 100 %.
+        # On compare au vecteur nul (l2_norm est ambigu selon la build pgvector).
+        from apps.bible.services.embedding_service import EMBEDDING_DIM
+        from django.db import connection
+
+        zero_vec = "[" + ",".join(["0"] * EMBEDDING_DIM) + "]"
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM bible_verse "
+                "WHERE embedding IS NOT NULL AND embedding <> %s::vector",
+                [zero_vec],
+            )
+            real_count = cursor.fetchone()[0]
+        present_count = Verse.objects.filter(embedding__isnull=False).count()
+
+        self.stdout.write(f"Total Verses:   {total_verses}")
+        self.stdout.write(f"Real vectors:   {real_count} ({round(real_count/total_verses*100, 2) if total_verses else 0}%)")
+        self.stdout.write(f"Present (>=0):   {present_count} (inclut d'éventuels vecteurs nuls/stub)")
+        self.stdout.write(f"Missing/zero:   {total_verses - real_count}")
         self.stdout.write("-" * 40)
 
         # Breakdown by Book
@@ -49,5 +60,5 @@ class Command(BaseCommand):
             self.stdout.write(color(f"{book.name:<25} | {status_bar:<15} | {percentage:>4}%"))
 
         self.stdout.write("=" * 40)
-        self.stdout.write(self.style.SUCCESS("Note: Status 100% means vectors are PRESENT (even if they are still zero-vectors from initial seeding)."))
+        self.stdout.write(self.style.SUCCESS("Note: 'Real vectors' = norme L2 > 0 (vrais embeddings) ; 'Present' inclut les vecteurs nuls (stub)."))
         self.stdout.write(self.style.SUCCESS("Done."))

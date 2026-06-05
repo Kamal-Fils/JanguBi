@@ -33,7 +33,10 @@ class TaskTests(TestCase):
         self.assertIsNotNone(self.verse.tsv)
         self.assertIn("dieu", str(self.verse.tsv).lower())
 
-    @override_settings(EMBEDDING_PROVIDER="stub")
+    # PGVECTOR_ENABLED=True : le garde de compute_embeddings_task court-circuite
+    # le calcul quand pgvector est off (cas par défaut). On l'active + stub
+    # explicitement ici (la suite tourne sous config.django.base, pas .test).
+    @override_settings(EMBEDDING_PROVIDER="stub", PGVECTOR_ENABLED=True)
     def test_compute_embeddings_task_with_stub(self):
         # Run the task synchronously. It should use the stub embedder.
         compute_embeddings_task(self.book.id)

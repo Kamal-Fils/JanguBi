@@ -1,154 +1,209 @@
 import logging
-from typing import List, Protocol
+from functools import lru_cache
+from typing import List, Optional, Protocol
 
 from django.conf import settings
+from django.db import transaction
 
 from apps.bible.models import Verse
+from apps.core.exceptions import ApplicationError
 
 logger = logging.getLogger(__name__)
+
+# Dimension des embeddings (doit correspondre à Verse.embedding = VectorField(768)
+# et au modèle local par défaut paraphrase-multilingual-mpnet-base-v2 = 768).
+EMBEDDING_DIM = 768
+
+# Modèle local par défaut : multilingue (FR), normalisé L2 (=> cosine direct),
+# sans préfixe query/passage. ~1 Go, ONNX (pas de torch).
+DEFAULT_LOCAL_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 
 
 class EmbedderProvider(Protocol):
     """Protocol for embedding providers."""
-    
+
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         ...
 
 
 class StubEmbedder:
-    """A stub provider that returns zero-vectors when no real provider is configured."""
-    
+    """Provider de secours : renvoie des vecteurs zéro (CI/tests, ou aucun provider
+    réel configuré). Ne fait aucun appel réseau ni chargement de modèle."""
+
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         logger.warning(
-            f"Using StubEmbedder for {len(texts)} texts. "
-            "Set EMBEDDING_PROVIDER in settings to use a real model."
+            "Using StubEmbedder for %d texts. Set EMBEDDING_PROVIDER=local "
+            "(fastembed) for real semantic search.",
+            len(texts),
         )
-        # Using 768 dim vector (Gemini default)
-        return [[0.0] * 768 for _ in texts]
+        return [[0.0] * EMBEDDING_DIM for _ in texts]
+
+
+@lru_cache(maxsize=1)
+def _get_fastembed_model(model_name: str, cache_dir: Optional[str]):
+    """Singleton paresseux du modèle fastembed (chargement ONNX coûteux ~1 Go).
+    Import local pour ne pas tirer onnxruntime au démarrage de Django."""
+    from fastembed import TextEmbedding  # import paresseux volontaire
+
+    logger.info("Loading fastembed model '%s' (cache_dir=%s)...", model_name, cache_dir)
+    return TextEmbedding(model_name=model_name, cache_dir=cache_dir)
+
+
+class FastEmbedEmbedder:
+    """Embeddings LOCAUX gratuits via fastembed (ONNX, CPU). Aucun coût API.
+
+    mpnet-base-v2 est normalisé L2 et n'exige pas de préfixe — on passe le texte
+    brut. Le modèle est chargé paresseusement et mémoïsé (un seul par worker)."""
+
+    def __init__(self, model_name: Optional[str] = None, cache_dir: Optional[str] = None):
+        self.model_name = model_name or getattr(settings, "FASTEMBED_MODEL", DEFAULT_LOCAL_MODEL)
+        self.cache_dir = cache_dir or getattr(settings, "FASTEMBED_CACHE_DIR", None)
+
+    def embed_texts(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+        model = _get_fastembed_model(self.model_name, self.cache_dir)
+        # .embed() renvoie un générateur de np.ndarray (float32) -> list[float].
+        return [vector.tolist() for vector in model.embed(texts)]
 
 
 class GeminiEmbedder:
-    """Uses Google Gemini API for embeddings."""
-    
+    """Provider payant optionnel (Google Gemini). Conservé pour compatibilité ;
+    non utilisé par défaut (EMBEDDING_PROVIDER=local)."""
+
     def __init__(self, api_key: str = None):
         self.api_key = api_key or getattr(settings, "GEMINI_API_KEY", None)
         self.model = "gemini-embedding-001"
-        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:batchEmbedContents?key={self.api_key}"
+        # Clé via header (pas dans l'URL : évite la fuite en logs/traces réseau).
+        self.url = (
+            "https://generativelanguage.googleapis.com/v1beta/"
+            f"models/{self.model}:batchEmbedContents"
+        )
 
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
         if not self.api_key:
             logger.warning("GEMINI_API_KEY is not set. Falling back to zeros.")
-            return [[0.0] * 768 for _ in texts]
-            
-        import httpx
-        import time
-        from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+            return [[0.0] * EMBEDDING_DIM for _ in texts]
 
-        # Inner function for the actual API call, decorated with tenacity
+        import time
+
+        import httpx
+        from tenacity import (
+            retry,
+            retry_if_exception,
+            stop_after_attempt,
+            wait_exponential,
+        )
+
+        def _is_retryable(exc: Exception) -> bool:
+            # Ne retenter QUE le réseau et les 5xx ; pas les 4xx (clé invalide,
+            # quota mal formé, requête invalide) — déterministes, inutile d'insister.
+            if isinstance(exc, httpx.RequestError):
+                return True
+            if isinstance(exc, httpx.HTTPStatusError):
+                return exc.response.status_code >= 500
+            return False
+
         @retry(
             wait=wait_exponential(multiplier=1, min=2, max=10),
             stop=stop_after_attempt(5),
-            retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
-            reraise=True
+            retry=retry_if_exception(_is_retryable),
+            reraise=True,
         )
-        def _make_request(client, url, payload):
-            response = client.post(url, json=payload, timeout=30.0)
+        def _make_request(client, payload):
+            response = client.post(
+                self.url,
+                json=payload,
+                headers={"x-goog-api-key": self.api_key},
+                timeout=30.0,
+            )
             response.raise_for_status()
             return response.json()
-        
-        all_embeddings = []
-        # Chunk texts to avoid API limits (Gemini allows ~100 per batch)
+
+        all_embeddings: List[List[float]] = []
         chunk_size = 100
         for i in range(0, len(texts), chunk_size):
             chunk = texts[i:i + chunk_size]
             requests = [
                 {
-                    "model": f"models/{self.model}", 
+                    "model": f"models/{self.model}",
                     "content": {"parts": [{"text": txt}]},
-                    "outputDimensionality": 768
+                    "outputDimensionality": EMBEDDING_DIM,
                 }
                 for txt in chunk
             ]
             payload = {"requests": requests}
-            
-            # We use sync httpx client because Celery workers run synchronously
+
             with httpx.Client() as client:
-                try:
-                    data = _make_request(client, self.url, payload)
-                except httpx.HTTPStatusError as e:
-                    logger.error(f"HTTP Error fetching Gemini embeddings: {e.response.text}")
-                    raise e
-                except httpx.RequestError as e:
-                    logger.error(f"Network error fetching Gemini embeddings: {str(e)}")
-                    raise e
-                    
+                data = _make_request(client, payload)
                 for emb in data.get("embeddings", []):
                     all_embeddings.append(emb["values"])
-            
-            # Anti-rate-limiting pause between chunks (Stay under 15 RPM)
+
             if i + chunk_size < len(texts):
-                time.sleep(5.0)
-                
+                time.sleep(5.0)  # rester sous ~15 RPM
+
         return all_embeddings
 
 
+def _build_provider(provider_name: str) -> EmbedderProvider:
+    name = (provider_name or "stub").lower()
+    if name == "stub":
+        return StubEmbedder()
+    if name == "gemini":
+        return GeminiEmbedder()
+    if name in ("local", "fastembed", "mpnet"):
+        return FastEmbedEmbedder()
+    logger.error("Unknown embedding provider '%s'. Falling back to stub.", provider_name)
+    return StubEmbedder()
+
+
 class EmbeddingService:
-    """Service to handle vector embeddings generation and storage."""
+    """Génération et stockage des embeddings de versets."""
 
     def __init__(self, provider: EmbedderProvider = None):
-        if provider:
-            self.provider = provider
-        else:
-            # Check settings logic for provider instantiation
-            provider_name = getattr(settings, "EMBEDDING_PROVIDER", "stub")
-            if provider_name == "stub":
-                self.provider = StubEmbedder()
-            elif provider_name == "gemini":
-                self.provider = GeminiEmbedder()
-            else:
-                self.provider = StubEmbedder()
-                logger.error(f"Unknown embedding provider '{provider_name}'. Falling back to stub.")
+        self.provider = provider or _build_provider(getattr(settings, "EMBEDDING_PROVIDER", "stub"))
 
-    def compute_bulk_embeddings(self, book_id: int) -> int:
+    @transaction.atomic
+    def compute_bulk_embeddings(self, book_id: int, *, force: bool = False) -> int:
+        """Calcule et stocke les embeddings des versets d'un livre.
+
+        Par défaut, idempotent : ne (re)calcule que les versets dont l'embedding
+        est NULL (filtrage SQL, pas d'heuristique fragile). `force=True` recalcule
+        tout le livre. Retourne le nombre de versets embeddés.
         """
-        Computes formatting and embeddings for all verses in a book, and saves them.
-        Returns the number of verses embedded.
-        """
-        verses = list(Verse.objects.filter(chapter__book_id=book_id).order_by("chapter__number", "number"))
+        qs = Verse.objects.filter(chapter__book_id=book_id)
+        if not force:
+            qs = qs.filter(embedding__isnull=True)
+        # select_related anti-N+1 : on lit chapter.book.name pour construire le texte.
+        verses = list(
+            qs.select_related("chapter__book").order_by("chapter__number", "number")
+        )
         if not verses:
-            return 0
-
-        verses_to_update = []
-        for v in verses:
-            # Skip if embedding exists and is non-zero
-            if v.embedding is not None and sum(abs(float(val)) for val in list(v.embedding)[:10]) > 0.001:
-                continue
-            verses_to_update.append(v)
-            
-        if not verses_to_update:
-            logger.info(f"All {len(verses)} verses already have non-zero embeddings in book_id {book_id}. Skipping computation.")
+            logger.info("No verses to embed for book_id %s (force=%s).", book_id, force)
             return 0
 
         # "Genèse 1:1 - Au commencement Dieu créa le ciel et la terre."
-        texts = [f"{v.chapter.book.name} {v.chapter.number}:{v.number} - {v.text}" for v in verses_to_update]
-        
-        try:
-            vectors = self.provider.embed_texts(texts)
-            
-            # Batch update in memory, then bulk_update
-            for v, vec in zip(verses_to_update, vectors):
-                v.embedding = vec
-                
-            Verse.objects.bulk_update(verses_to_update, ["embedding"], batch_size=500)
-            logger.info(f"Computed embeddings for {len(verses_to_update)} verses in book_id {book_id}")
-            return len(verses_to_update)
-        except Exception as e:
-            logger.error(f"Failed to bulk compute embeddings for book_id {book_id}: {str(e)}")
-            raise
+        texts = [
+            f"{v.chapter.book.name} {v.chapter.number}:{v.number} - {v.text}"
+            for v in verses
+        ]
+
+        vectors = self.provider.embed_texts(texts)
+        if len(vectors) != len(verses):
+            raise ApplicationError(
+                f"Embedding provider returned {len(vectors)} vectors for {len(verses)} verses."
+            )
+
+        for verse, vector in zip(verses, vectors):
+            verse.embedding = vector
+
+        Verse.objects.bulk_update(verses, ["embedding"], batch_size=500)
+        logger.info("Computed embeddings for %d verses in book_id %s.", len(verses), book_id)
+        return len(verses)
 
     def compute_query_embedding(self, text: str) -> List[float]:
-        """Computes embedding for a single search query."""
-        if not text:
+        """Embedding d'une requête de recherche (1 vecteur)."""
+        if not text or not text.strip():
             return []
         vectors = self.provider.embed_texts([text])
         return vectors[0] if vectors else []

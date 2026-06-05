@@ -20,16 +20,18 @@ class QueryRouter:
         self.bible_engine = BibleEngine()
         self.rosary_engine = RosaryEngine()
 
-    async def _safe_execute(self, engine_name: str, coroutine) -> str:
-        """Enveloppe l'exécution d'un moteur avec un délai d'attente strict et gestion de crash."""
+    async def _safe_execute(self, engine_name: str, coroutine):
+        """Exécute un moteur avec timeout strict. En cas de timeout/crash, renvoie
+        None (et NON une chaîne placeholder) pour ne pas polluer le contexte avec
+        un faux contenu : le contexte vide déclenche alors le bon repli."""
         try:
             return await asyncio.wait_for(coroutine, timeout=self.ENGINE_TIMEOUT)
         except asyncio.TimeoutError:
             logger.warning(f"Timeout ({self.ENGINE_TIMEOUT}s) reached for {engine_name} engine.")
-            return f"[{engine_name}] Le module a mis trop de temps à répondre."
+            return None
         except Exception as e:
             logger.error(f"Crash in {engine_name} engine: {e}", exc_info=True)
-            return f"[{engine_name}] Erreur interne lors de la recherche."
+            return None
 
     async def route_to_engines(self, intent_data: ExtractedIntentSchema) -> Dict[str, str]:
         """
@@ -53,14 +55,16 @@ class QueryRouter:
             coroutines = list(tasks.values())
             
             try:
-                # gather with return_exceptions=True is still safe, though _safe_execute catches everything
                 completed = await asyncio.gather(*coroutines, return_exceptions=True)
                 for idx, key in enumerate(keys):
                     res = completed[idx]
-                    if isinstance(res, Exception):
-                        results[key] = f"Erreur critique inattendue avec le module {key}."
-                    else:
-                        results[key] = res
+                    # On ignore les échecs (None/Exception) ET les résultats vides :
+                    # seul un contexte réel est transmis au context_builder.
+                    if isinstance(res, Exception) or res is None:
+                        continue
+                    if isinstance(res, str) and not res.strip():
+                        continue
+                    results[key] = res
             except Exception as e:
                 logger.error(f"Asyncio gather error during routing: {e}")
 
