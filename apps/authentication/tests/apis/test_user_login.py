@@ -66,6 +66,27 @@ class UserJwtLoginTests(TestCase):
         auth_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
         self.assertEqual(200, auth_client.get(self.me_url).status_code)
 
+    def test_login_response_includes_pastoral_role(self):
+        # Non-régression : le user de la réponse login DOIT porter pastoral_role.
+        # Sinon le front (qui met ce user en cache) calcule isClergy=faux et route
+        # un curé/évêque (role admin) vers /app/admin au lieu de son dashboard
+        # pastoral. Cf. bug « le prêtre atterrit sur l'admin ».
+        BaseUserFactory(
+            email="cure@example.com",
+            password="TestPassw0rd!",
+            role="parish_admin",
+            pastoral_role="pretre",
+        )
+
+        response = self.client.post(
+            self.jwt_login_url,
+            {"email": "cure@example.com", "password": "TestPassw0rd!"},
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("pretre", response.data["user"]["pastoral_role"])
+        self.assertIn("onboarding_state", response.data["user"])
+
     def test_inactive_user_cannot_login(self):
         # Arrange — is_active=False ET is_verified=False
         InactiveUserFactory(email="inactive@example.com", password="TestPassw0rd!")
