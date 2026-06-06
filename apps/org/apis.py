@@ -29,6 +29,7 @@ from apps.org.serializers import (
     DioceseOutputSerializer,
     ParishCreateInputSerializer,
     ParishOutputSerializer,
+    ParishUpdateInputSerializer,
     ProvinceCreateInputSerializer,
     ProvinceOutputSerializer,
 )
@@ -37,6 +38,8 @@ from apps.org.services import (
     deanery_create,
     diocese_create,
     parish_create,
+    parish_delete,
+    parish_update,
     province_create,
 )
 from apps.users.permissions import IsSuperAdmin
@@ -232,6 +235,51 @@ class ParishDetailApi(ApiAuthMixin, APIView):
         except ApplicationError as e:
             return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
         return Response(ParishOutputSerializer(parish).data)
+
+    @extend_schema(
+        request=ParishUpdateInputSerializer,
+        responses={200: ParishOutputSerializer},
+        tags=["org"],
+        summary="Modifier une paroisse (super_admin)",
+    )
+    def patch(self, request, parish_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            parish = parish_get_by_id(parish_id=parish_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ParishUpdateInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            parish = parish_update(parish=parish, **serializer.validated_data)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(ParishOutputSerializer(parish).data)
+
+    @extend_schema(
+        responses={204: None},
+        tags=["org"],
+        summary="Supprimer une paroisse (super_admin)",
+    )
+    def delete(self, request, parish_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            parish = parish_get_by_id(parish_id=parish_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            parish_delete(parish=parish)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------

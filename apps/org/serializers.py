@@ -47,6 +47,15 @@ class ParishCreateInputSerializer(serializers.Serializer):
     address = serializers.CharField(default="", allow_blank=True)
 
 
+class ParishUpdateInputSerializer(serializers.Serializer):
+    # Mise à jour partielle : tous les champs optionnels (le service ne touche
+    # que ceux fournis). Le diocèse n'est PAS modifiable ici (déplacement de
+    # paroisse = opération distincte, hors périmètre CRUD de base).
+    name = serializers.CharField(max_length=200, required=False)
+    city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+
+
 class ChurchOutputSerializer(serializers.ModelSerializer):
     parish_name = serializers.CharField(source="parish.name", read_only=True)
     church_type_label = serializers.CharField(source="get_church_type_display", read_only=True)
