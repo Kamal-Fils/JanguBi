@@ -37,6 +37,8 @@ class UserJwtLoginUserSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     email = serializers.EmailField()
     role = serializers.CharField()
+    pastoral_role = serializers.CharField(allow_null=True)
+    onboarding_state = serializers.CharField()
     is_admin = serializers.BooleanField()
 
 
