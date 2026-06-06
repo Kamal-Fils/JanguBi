@@ -1,6 +1,7 @@
 from django.urls import path
 
 from apps.dashboards.apis import (
+    AnalyticsActivityApi,
     AnalyticsApi,
     DioceseDashboardApi,
     FideleDashboardApi,
@@ -16,4 +17,5 @@ urlpatterns = [
     path("parish/<int:parish_id>/", ParishDashboardApi.as_view(), name="parish"),
     path("diocese/<int:diocese_id>/", DioceseDashboardApi.as_view(), name="diocese"),
     path("analytics/", AnalyticsApi.as_view(), name="analytics"),
+    path("analytics/activity/", AnalyticsActivityApi.as_view(), name="analytics-activity"),
 ]
