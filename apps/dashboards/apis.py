@@ -8,7 +8,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
-from apps.dashboards.analytics import donation_analytics, resolve_analytics_context
+from apps.dashboards.analytics import (
+    activity_matrix,
+    donation_analytics,
+    resolve_analytics_context,
+)
 from apps.dashboards.selectors import (
     cure_dashboard,
     diocese_dashboard,
@@ -216,3 +220,31 @@ class AnalyticsApi(ApiAuthMixin, APIView):
             provider=request.query_params.get("provider") or None,
         )
         return Response(data)
+
+
+class AnalyticsActivityApi(ApiAuthMixin, APIView):
+    """Matrice d'activité par sous-entité (paroisse/diocèse/église) + files en
+    souffrance (documents/intentions). Même résolution de périmètre que /analytics/."""
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("period", OpenApiTypes.STR, description="today|week|month|quarter|year"),
+            OpenApiParameter("from", OpenApiTypes.DATETIME, description="Début (ISO)"),
+            OpenApiParameter("to", OpenApiTypes.DATETIME, description="Fin (ISO)"),
+            OpenApiParameter("diocese", OpenApiTypes.INT, description="Drill-down diocèse"),
+            OpenApiParameter("parish", OpenApiTypes.INT, description="Drill-down paroisse"),
+        ],
+        responses={200: OpenApiTypes.OBJECT},
+        tags=["dashboards"],
+        summary="Matrice d'activité + files en souffrance (par périmètre)",
+    )
+    def get(self, request):
+        context = resolve_analytics_context(request.user)
+        if context is None:
+            return Response(
+                {"detail": "Analytique réservée au clergé/administrateur scopé."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        context = _maybe_narrow(context, request)
+        since, until, _granularity = _parse_period(request)
+        return Response(activity_matrix(context=context, since=since, until=until))

@@ -96,3 +96,33 @@ def test_analytics_api_forbidden_for_fidele():
     client.force_authenticate(user=BaseUserFactory(role=UserRole.FIDELE))
     resp = client.get("/api/v1/dashboards/analytics/")
     assert resp.status_code == 403
+
+
+@pytest.mark.django_db
+def test_activity_matrix_per_parish_for_eveque():
+    from apps.documents.tests.factories import DocumentRequestFactory
+
+    province = ProvinceFactory()
+    diocese = DioceseFactory(province=province)
+    parish_a = ParishFactory(diocese=diocese, name="Paroisse A")
+    ParishFactory(diocese=diocese, name="Paroisse B")  # dormante
+    # Un document EN SOUFFRANCE ciblant la paroisse A.
+    DocumentRequestFactory(target_parish=parish_a, status="submitted")
+
+    eveque = BaseUserFactory(role=UserRole.DIOCESE_ADMIN, pastoral_role=PastoralRole.EVEQUE)
+    role_assignment_create(
+        user=eveque, role=UserRole.DIOCESE_ADMIN, scope=RoleScope.DIOCESE, diocese=diocese,
+    )
+    client = APIClient()
+    client.force_authenticate(user=eveque)
+
+    resp = client.get("/api/v1/dashboards/analytics/activity/")
+
+    assert resp.status_code == 200
+    assert resp.data["grain"] == "parish"
+    names = {r["name"] for r in resp.data["rows"]}
+    assert {"Paroisse A", "Paroisse B"} <= names  # les 2, même la dormante
+    row_a = next(r for r in resp.data["rows"] if r["name"] == "Paroisse A")
+    assert row_a["documents_pending"] >= 1
+    assert resp.data["documents"]["pending"] >= 1
+    assert "intentions" in resp.data

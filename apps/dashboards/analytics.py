@@ -17,11 +17,17 @@ from __future__ import annotations
 from django.db.models import Count, Q, QuerySet, Sum
 from django.db.models.functions import TruncDay, TruncMonth, TruncWeek
 
+from apps.documents.models import DocumentRequest
 from apps.donations.models import Donation, DonationType, PaymentProvider
+from apps.mass_intentions.models import MassIntention, MassIntentionStatus
 from apps.org.models import Church, Diocese, Parish, Province
 from apps.users.enums import RoleScope
 from apps.users.models import Membership, RoleAssignment
 from apps.users.scoping import is_global_admin
+
+_PENDING_DOC_STATUSES = ["submitted", "under_verification", "info_requested"]
+_DOC_STATUS_LABELS = dict(DocumentRequest.Status.choices)
+_INTENTION_STATUS_LABELS = dict(MassIntentionStatus.choices)
 
 _TRUNC = {"day": TruncDay, "week": TruncWeek, "month": TruncMonth}
 _TYPE_LABELS = dict(DonationType.choices)
@@ -290,4 +296,149 @@ def donation_analytics(
         "by_type": by_type,
         "by_provider": by_provider,
         "ranking": ranking,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Matrice d'activité + files en souffrance (documents / intentions)
+# ---------------------------------------------------------------------------
+
+def _scope_docs(qs: QuerySet, scope: dict) -> QuerySet:
+    if scope.get("province_ids"):
+        return qs.filter(target_parish__diocese__province_id__in=scope["province_ids"])
+    if scope.get("diocese_ids"):
+        return qs.filter(target_parish__diocese_id__in=scope["diocese_ids"])
+    if scope.get("parish_ids"):
+        return qs.filter(target_parish_id__in=scope["parish_ids"])
+    return qs
+
+
+def _scope_intentions(qs: QuerySet, scope: dict) -> QuerySet:
+    if scope.get("province_ids"):
+        return qs.filter(parish__diocese__province_id__in=scope["province_ids"])
+    if scope.get("diocese_ids"):
+        return qs.filter(parish__diocese_id__in=scope["diocese_ids"])
+    if scope.get("parish_ids"):
+        return qs.filter(parish_id__in=scope["parish_ids"])
+    return qs
+
+
+def _scope_units(level: str, scope: dict) -> list[dict]:
+    """Entités {id, name} du grain de classement présentes dans le périmètre
+    (incluses même sans activité → on voit les unités « dormantes »)."""
+    if level == "parish":
+        qs = Church.objects.all()
+        if scope.get("parish_ids"):
+            qs = qs.filter(parish_id__in=scope["parish_ids"])
+        return [{"id": c.id, "name": c.name} for c in qs.order_by("name")]
+    if level == "diocese":
+        qs = Parish.objects.all()
+        if scope.get("diocese_ids"):
+            qs = qs.filter(diocese_id__in=scope["diocese_ids"])
+        return [{"id": p.id, "name": p.name} for p in qs.order_by("name")]
+    qs = Diocese.objects.all()
+    if scope.get("province_ids"):
+        qs = qs.filter(province_id__in=scope["province_ids"])
+    return [{"id": d.id, "name": d.name} for d in qs.order_by("name")]
+
+
+def _by_status(qs: QuerySet, status_field: str, labels: dict) -> list[dict]:
+    return [
+        {
+            "status": row[status_field],
+            "label": labels.get(row[status_field], row[status_field]),
+            "count": row["c"],
+        }
+        for row in qs.values(status_field).annotate(c=Count("id")).order_by("-c")
+    ]
+
+
+def activity_matrix(*, context: dict, since, until) -> dict:
+    """Matrice d'activité par sous-entité du périmètre (paroisse pour l'évêque,
+    diocèse pour l'archevêque, église pour le curé) + files EN SOUFFRANCE
+    (documents/intentions courants, indépendants de la période). Croise tous les
+    flux par unité → repérer la paroisse « rouge » qui décroche partout."""
+    level = context["level"]
+    scope = context["scope"]
+    id_field, _name_field, grain = _ranking_fields(level)
+    units = _scope_units(level, scope)
+
+    don_qs = _scope_donations(
+        Donation.objects.filter(status="confirmed"), scope
+    ).filter(created_at__gte=since, created_at__lt=until)
+    don_by = {
+        r[id_field]: r["total"] or 0
+        for r in don_qs.values(id_field).annotate(total=Sum("amount"))
+        if r[id_field] is not None
+    }
+
+    memb_group = {
+        "church": "church_id",
+        "parish": "church__parish_id",
+        "diocese": "church__parish__diocese_id",
+    }[grain]
+    memb_by = {
+        r[memb_group]: r["c"]
+        for r in Membership.objects.filter(_membership_scope_filter(scope))
+        .values(memb_group)
+        .annotate(c=Count("user", distinct=True))
+        if r[memb_group] is not None
+    }
+
+    # Documents / intentions n'ont pas de dimension « église » → seulement aux
+    # grains paroisse/diocèse (au grain église, ces colonnes restent à None).
+    docs_by: dict = {}
+    inten_by: dict = {}
+    if grain in ("parish", "diocese"):
+        doc_group = {"parish": "target_parish_id", "diocese": "target_parish__diocese_id"}[grain]
+        docs_by = {
+            r[doc_group]: r["c"]
+            for r in _scope_docs(
+                DocumentRequest.objects.filter(status__in=_PENDING_DOC_STATUSES), scope
+            )
+            .values(doc_group)
+            .annotate(c=Count("id"))
+            if r[doc_group] is not None
+        }
+        inten_group = {"parish": "parish_id", "diocese": "parish__diocese_id"}[grain]
+        inten_by = {
+            r[inten_group]: r["c"]
+            for r in _scope_intentions(
+                MassIntention.objects.filter(status=MassIntentionStatus.PENDING), scope
+            )
+            .values(inten_group)
+            .annotate(c=Count("id"))
+            if r[inten_group] is not None
+        }
+
+    rows = [
+        {
+            "id": u["id"],
+            "name": u["name"],
+            "donations_total": don_by.get(u["id"], 0),
+            "fideles": memb_by.get(u["id"], 0),
+            "documents_pending": docs_by.get(u["id"], 0) if grain != "church" else None,
+            "intentions_pending": inten_by.get(u["id"], 0) if grain != "church" else None,
+        }
+        for u in units
+    ]
+    rows.sort(key=lambda r: r["donations_total"], reverse=True)
+
+    docs_qs = _scope_docs(DocumentRequest.objects.all(), scope)
+    inten_qs = _scope_intentions(MassIntention.objects.all(), scope)
+
+    return {
+        "level": level,
+        "grain": grain,
+        "rows": rows,
+        "documents": {
+            "by_status": _by_status(docs_qs, "status", _DOC_STATUS_LABELS),
+            "pending": docs_qs.filter(status__in=_PENDING_DOC_STATUSES).count(),
+            "total": docs_qs.count(),
+        },
+        "intentions": {
+            "by_status": _by_status(inten_qs, "status", _INTENTION_STATUS_LABELS),
+            "pending": inten_qs.filter(status=MassIntentionStatus.PENDING).count(),
+            "total": inten_qs.count(),
+        },
     }
