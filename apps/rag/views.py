@@ -3,7 +3,7 @@ from django.db import transaction
 from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.throttling import UserRateThrottle
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 
@@ -14,10 +14,10 @@ from apps.rag.service import RAGService
 
 @method_decorator(transaction.non_atomic_requests, name="dispatch")
 class RagChatApi(ApiAuthMixin, APIView):
-    throttle_classes = [UserRateThrottle]
-
-    # Shared service instance — avoid recreating on every request.
-    rag_service = RAGService()
+    # Throttle effectif (scope 'rag' => rate défini dans REST_FRAMEWORK).
+    # Auparavant UserRateThrottle sans rate 'user' => throttle inopérant.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "rag"
 
     @extend_schema(
         request=RagQuerySerializer,
@@ -31,9 +31,14 @@ class RagChatApi(ApiAuthMixin, APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         query = serializer.validated_data["query"]
-        
+
+        # Instance par requête : reflète la config courante (settings/overrides) et
+        # évite un état partagé figé à l'import. L'init est légère (le modèle
+        # d'embeddings est, lui, mémoïsé globalement via lru_cache).
+        rag_service = RAGService()
+
         # DRF regular APIView does not support async methods properly, so we bridge to sync
-        result = async_to_sync(self.rag_service.process_query)(query)
+        result = async_to_sync(rag_service.process_query)(query)
         
         resp_serializer = RagResponseSerializer(data=result)
         resp_serializer.is_valid(raise_exception=True)

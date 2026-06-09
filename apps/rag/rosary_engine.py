@@ -65,6 +65,6 @@ class RosaryEngine:
                 logger.error(f"RosaryEngine Daily logic error: {e}")
         
         if not contexts:
-            return "Aucun contexte lié au Rosaire disponible."
+            return ""  # rien -> ignoré par le routeur/context_builder
 
         return "\n".join(contexts)

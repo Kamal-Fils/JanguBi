@@ -70,8 +70,11 @@ class AELFService:
 
         for lecture in lectures:
             category = lecture.get("type", "lecture")
-            title = lecture.get("titre", "")
-            raw_content = lecture.get("contenu", "")
+            # AELF renvoie parfois « titre »/« contenu » à null (clé présente, valeur
+            # null) — ex. psaume sans titre. `.get(k, "")` rendrait None → colonnes
+            # NOT NULL → IntegrityError (BUG-B2). On coalesce vers "".
+            title = lecture.get("titre") or ""
+            raw_content = lecture.get("contenu") or ""
             
             # Clean HTML and formatting
             clean_content = CleaningService.clean_text(raw_content)

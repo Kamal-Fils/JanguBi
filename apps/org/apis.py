@@ -29,6 +29,7 @@ from apps.org.serializers import (
     DioceseOutputSerializer,
     ParishCreateInputSerializer,
     ParishOutputSerializer,
+    ParishUpdateInputSerializer,
     ProvinceCreateInputSerializer,
     ProvinceOutputSerializer,
 )
@@ -37,6 +38,8 @@ from apps.org.services import (
     deanery_create,
     diocese_create,
     parish_create,
+    parish_delete,
+    parish_update,
     province_create,
 )
 from apps.users.permissions import IsSuperAdmin
@@ -52,14 +55,30 @@ def _error(exc: ApplicationError) -> Response:
 # ---------------------------------------------------------------------------
 
 class ProvinceListApi(ApiAuthMixin, APIView):
+    class Pagination(LimitOffsetPagination):
+        default_limit = 100
+        max_limit = 200
+
     @extend_schema(
-        responses={200: ProvinceOutputSerializer(many=True)},
+        parameters=[
+            OpenApiParameter("limit", OpenApiTypes.INT, description="Nombre de résultats"),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Offset de pagination"),
+        ],
+        responses={200: paginated_response_serializer(ProvinceOutputSerializer)},
         tags=["org"],
         summary="Lister les provinces",
     )
     def get(self, request):
         provinces = province_list()
-        return Response(ProvinceOutputSerializer(provinces, many=True).data)
+        # Enveloppe paginée {count, results} — cohérence dioceses/parishes/churches ;
+        # le front (get-provinces.ts) déballe `.results` (BUG-B3 : liste nue → Zod throw).
+        return get_paginated_response(
+            pagination_class=self.Pagination,
+            serializer_class=ProvinceOutputSerializer,
+            queryset=provinces,
+            request=request,
+            view=self,
+        )
 
     @extend_schema(
         request=ProvinceCreateInputSerializer,
@@ -216,6 +235,51 @@ class ParishDetailApi(ApiAuthMixin, APIView):
         except ApplicationError as e:
             return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
         return Response(ParishOutputSerializer(parish).data)
+
+    @extend_schema(
+        request=ParishUpdateInputSerializer,
+        responses={200: ParishOutputSerializer},
+        tags=["org"],
+        summary="Modifier une paroisse (super_admin)",
+    )
+    def patch(self, request, parish_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            parish = parish_get_by_id(parish_id=parish_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ParishUpdateInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            parish = parish_update(parish=parish, **serializer.validated_data)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(ParishOutputSerializer(parish).data)
+
+    @extend_schema(
+        responses={204: None},
+        tags=["org"],
+        summary="Supprimer une paroisse (super_admin)",
+    )
+    def delete(self, request, parish_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            parish = parish_get_by_id(parish_id=parish_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            parish_delete(parish=parish)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------

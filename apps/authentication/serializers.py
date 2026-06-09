@@ -35,11 +35,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 code="email_not_verified",
             )
 
-        # Enrichit la réponse avec les données utilisateur
+        # Enrichit la réponse avec les données utilisateur. `pastoral_role` est
+        # INDISPENSABLE : le front met ce user en cache et l'utilise pour la
+        # redirection post-login (getRoleHomePath/home-router). Sans lui, isClergy
+        # est faux → un curé/évêque/archevêque (role admin) est envoyé sur /app/admin
+        # au lieu de son dashboard pastoral. `onboarding_state` pour parité avec /me
+        # (sinon le guard d'onboarding peut rediriger à tort le temps du refetch).
         data["user"] = {
             "id": self.user.id,
             "email": self.user.email,
             "role": self.user.role,
+            "pastoral_role": self.user.pastoral_role or None,
+            "onboarding_state": self.user.onboarding_state,
             "is_admin": self.user.is_admin,
         }
 

@@ -10,6 +10,8 @@ django-celery-beat==2.8.1
 whitenoise==6.11.0
 
 pgvector==0.4.2
+# Embeddings locaux gratuits (ONNX, sans torch) pour la recherche sémantique.
+fastembed==0.8.0
 
 django-filter==25.2
 django-extensions==4.1

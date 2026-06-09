@@ -117,7 +117,9 @@ def user_get_with_profile(user_id: int) -> Optional[BaseUser]:
 
 def user_list(*, filters: dict | None = None, for_user: BaseUser | None = None) -> QuerySet[BaseUser]:
     filters = filters or {}
-    qs = BaseUser.objects.select_related("profile").all()
+    # profile__primary_parish : la sortie users sérialise la paroisse principale en
+    # {id, name} → select_related évite un N+1 (BUG-B1).
+    qs = BaseUser.objects.select_related("profile", "profile__primary_parish").all()
     qs = BaseUserFilter(filters, qs).qs
     if for_user is not None:
         # Cloisonnement territorial : un admin scopé ne gère que les utilisateurs de

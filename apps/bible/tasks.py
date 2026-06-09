@@ -19,9 +19,11 @@ def populate_tsv_task(book_id: int):
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_backoff_max=600, max_retries=5)
-def compute_embeddings_task(self, book_id: int):
+def compute_embeddings_task(self, book_id: int, force: bool = False):
     """
     Computes vector embeddings for a given book's verses.
+
+    force=True recalcule tous les versets (écrase les vecteurs existants, ex. stub).
     """
     from django.conf import settings
     if not getattr(settings, "PGVECTOR_ENABLED", False):
@@ -32,7 +34,7 @@ def compute_embeddings_task(self, book_id: int):
 
     try:
         service = EmbeddingService()
-        service.compute_bulk_embeddings(book_id)
+        service.compute_bulk_embeddings(book_id, force=force)
     except Exception as e:
         logger.error(f"Failed to compute embeddings for book_id {book_id}: {e}")
         raise

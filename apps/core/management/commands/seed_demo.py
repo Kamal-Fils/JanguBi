@@ -43,7 +43,12 @@ DEMO_PASSWORD = "Jangu2024!"
 EMAIL_SUPER_ADMIN = "admin@jangubidev.sn"
 EMAIL_ARCHEVEQUE = "archeveque.dakar@jangubidev.sn"
 EMAIL_EVEQUE = "eveque.thies@jangubidev.sn"
+# Curé : prêtre ET administrateur de paroisse (role=parish_admin + RoleAssignment).
 EMAIL_PRETRE = "pere.senghor@jangubidev.sn"
+# Vicaire : prêtre « pur » — role=fidele (PAS admin digital), identité clergé dans
+# pastoral_role. Cas canonique du modèle 2-dimensions et test du routage pastoral
+# (un prêtre dont role='fidele' doit atteindre le dashboard prêtre, pas fidèle).
+EMAIL_VICAIRE = "pere.diatta@jangubidev.sn"
 EMAIL_DIACRE = "diacre.diop@jangubidev.sn"
 EMAIL_FIDELE1 = "aminata.fall@jangubidev.sn"
 EMAIL_FIDELE2 = "moussa.ndiaye@jangubidev.sn"
@@ -106,6 +111,20 @@ DEMO_USERS = [
         "is_admin": True,
         "first_name": "Pierre",
         "last_name": "Senghor",
+        "title": "MR",
+    },
+    {
+        # Vicaire — prêtre SANS rôle admin : role='fidele', pastoral_role='pretre'.
+        # Frontend : isAdmin=false (lit role), isClergy=true (lit pastoral_role) →
+        # dashboard prêtre + nav clergé SANS passerelle Administration.
+        "email": EMAIL_VICAIRE,
+        "phone_number": "+221770000009",
+        "role": "fidele",
+        "pastoral_role": "pretre",
+        "is_staff": False,
+        "is_admin": False,
+        "first_name": "Antoine",
+        "last_name": "Diatta",
         "title": "MR",
     },
     {
@@ -765,6 +784,9 @@ class Command(BaseCommand):
             (users[EMAIL_PRETRE], 2010,
              "Père Pierre Senghor, ordonné en 2010 pour l'Archidiocèse de Dakar. "
              "Accompagnement spirituel des familles et des jeunes."),
+            (users[EMAIL_VICAIRE], 2019,
+             "Père Antoine Diatta, vicaire, ordonné en 2019. Aumônerie des jeunes "
+             "et préparation aux sacrements."),
             (users[EMAIL_DIACRE], 2018,
              "Diacre Joseph Diop, ordonné en 2018. Catéchèse des adultes et accompagnement des familles."),
         ]

@@ -236,13 +236,13 @@ You can find the `UserListApi` in [`styleguide_example/users/apis.py`](https://g
 
 List API is located at:
 
-<http://localhost:8000/api/users/>
+<http://localhost:8001/api/users/>
 
 The API can be filtered:
 
-- <http://localhost:8000/api/users/?is_admin=True>
-- <http://localhost:8000/api/users/?id=1>
-- <http://localhost:8000/api/users/?email=radorado@hacksoft.io>
+- <http://localhost:8001/api/users/?is_admin=True>
+- <http://localhost:8001/api/users/?id=1>
+- <http://localhost:8001/api/users/?email=radorado@hacksoft.io>
 
 Example data structure:
 
@@ -251,7 +251,7 @@ Example data structure:
     "limit": 1,
     "offset": 0,
     "count": 4,
-    "next": "http://localhost:8000/api/users/?limit=1&offset=1",
+    "next": "http://localhost:8001/api/users/?limit=1&offset=1",
     "previous": null,
     "results": [
         {

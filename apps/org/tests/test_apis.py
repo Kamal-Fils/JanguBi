@@ -32,7 +32,9 @@ def test_province_list_authenticated(auth_client):
     ProvinceFactory.create_batch(3)
     response = auth_client.get("/api/v1/org/provinces/")
     assert response.status_code == 200
-    assert len(response.data) == 3
+    # Enveloppe paginée {count, results} (le front get-provinces.ts déballe .results).
+    assert response.data["count"] == 3
+    assert len(response.data["results"]) == 3
 
 
 @pytest.mark.django_db
@@ -116,3 +118,54 @@ def test_parish_detail(auth_client):
     response = auth_client.get(f"/api/v1/org/parishes/{parish.id}/")
     assert response.status_code == 200
     assert response.data["id"] == parish.id
+
+
+@pytest.mark.django_db
+def test_parish_update_super_admin(admin_client):
+    parish = ParishFactory(name="Ancien nom", city="Dakar")
+    response = admin_client.patch(
+        f"/api/v1/org/parishes/{parish.id}/",
+        {"name": "Nouveau nom", "city": "Thiès"},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.data["name"] == "Nouveau nom"
+    assert response.data["city"] == "Thiès"
+    parish.refresh_from_db()
+    assert parish.name == "Nouveau nom"
+
+
+@pytest.mark.django_db
+def test_parish_update_forbidden_for_fidele(auth_client):
+    parish = ParishFactory()
+    response = auth_client.patch(
+        f"/api/v1/org/parishes/{parish.id}/", {"name": "X"}, format="json"
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_parish_delete_super_admin(admin_client):
+    parish = ParishFactory()  # paroisse vide (la factory ne crée pas d'église)
+    response = admin_client.delete(f"/api/v1/org/parishes/{parish.id}/")
+    assert response.status_code == 204
+    from apps.org.models import Parish
+
+    assert not Parish.objects.filter(id=parish.id).exists()
+
+
+@pytest.mark.django_db
+def test_parish_delete_blocked_by_membership(admin_client):
+    # Une paroisse avec une appartenance ne peut pas être supprimée (intégrité).
+    parish = ParishFactory()
+    church = ChurchFactory(parish=parish)
+    from apps.users.models import Membership
+
+    Membership.objects.create(user=BaseUserFactory(), church=church, is_primary=True)
+
+    response = admin_client.delete(f"/api/v1/org/parishes/{parish.id}/")
+
+    assert response.status_code == 400
+    from apps.org.models import Parish
+
+    assert Parish.objects.filter(id=parish.id).exists()

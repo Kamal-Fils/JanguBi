@@ -126,11 +126,11 @@ class RosarySearchApi(APIView):
         summary="Search within rosary prayers using text match"
     )
     def get(self, request):
-        query = request.query_params.get("q", "")
-        if not query:
+        query = request.query_params.get("q", "").strip()
+        if len(query) < 2:  # validation minimale (endpoint public)
             return Response([])
-        
-        prayers = RosaryService.search_text(query)
+
+        prayers = RosaryService.search_text(query)[:50]  # borne défensive
         serializer = SearchPrayerSerializer(prayers, many=True)
         return Response(serializer.data)
 
@@ -148,13 +148,11 @@ class RosaryVectorSearchApi(APIView):
         summary="Search within rosary prayers using vector embeddings"
     )
     def get(self, request):
-        query = request.query_params.get("q", "")
-        if not query:
+        query = request.query_params.get("q", "").strip()
+        if len(query) < 2:
             return Response([])
-        
-        # In a real implementation this would embed the query first
-        # embedding = fetch_embedding(query)
-        prayers = RosaryService.vector_search(query)
+
+        prayers = RosaryService.vector_search(query)[:50]
         serializer = SearchPrayerSerializer(prayers, many=True)
         return Response(serializer.data)
 

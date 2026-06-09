@@ -6,7 +6,11 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.openapi import OpenApiTypes
 
 from apps.api.mixins import ApiAuthMixin
-from apps.api.pagination import LimitOffsetPagination, get_paginated_response
+from apps.api.pagination import (
+    LimitOffsetPagination,
+    get_paginated_response,
+    paginated_response_serializer,
+)
 from apps.core.exceptions import ApplicationError
 from apps.users.permissions import IsOnboardingCompleted
 
@@ -29,7 +33,7 @@ class EventListCreateApi(ApiAuthMixin, APIView):
             OpenApiParameter("limit", OpenApiTypes.INT),
             OpenApiParameter("offset", OpenApiTypes.INT),
         ],
-        responses={200: EventOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(EventOutputSerializer)},
         tags=["Agenda"],
         summary="Liste des événements (scopée aux appartenances de l'utilisateur)",
     )
@@ -146,7 +150,7 @@ def _can_view_event_registrations(user, event) -> bool:
 
 class EventRegistrationsApi(ApiAuthMixin, APIView):
     @extend_schema(
-        responses={200: RegistrationOutputSerializer(many=True)},
+        responses={200: paginated_response_serializer(RegistrationOutputSerializer)},
         tags=["Agenda"],
         summary="Liste des inscrits (autorité sur la portée de l'événement)",
     )

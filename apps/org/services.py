@@ -87,6 +87,37 @@ def parish_update(
     return parish
 
 
+@transaction.atomic
+def parish_delete(*, parish: Parish) -> None:
+    """Supprime une paroisse — refusée si des données « vivantes » la référencent.
+
+    Garde-fous d'intégrité (aucune suppression en cascade de données utilisateur) :
+    appartenances et affectations actives bloquent. Sinon on retire les églises de
+    la paroisse (dont la principale auto-créée) puis la paroisse ; toute FK PROTECT
+    résiduelle (dons, événements, documents…) est convertie en erreur métier claire.
+    """
+    from django.db.models import ProtectedError
+
+    from apps.users.models import Membership, RoleAssignment
+
+    if Membership.objects.filter(church__parish=parish).exists():
+        raise ApplicationError(
+            "Impossible de supprimer une paroisse ayant des appartenances."
+        )
+    if RoleAssignment.objects.filter(parish=parish, is_active=True).exists():
+        raise ApplicationError(
+            "Impossible de supprimer une paroisse ayant des affectations actives."
+        )
+    try:
+        Church.objects.filter(parish=parish).delete()
+        parish.delete()
+    except ProtectedError:
+        raise ApplicationError(
+            "Impossible de supprimer cette paroisse : des données la référencent "
+            "(dons, événements, documents…)."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Églises
 # ---------------------------------------------------------------------------
