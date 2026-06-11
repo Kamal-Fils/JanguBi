@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from apps.blog_examples.models import TimestampsOpinionated  # type: ignore[import-not-found]  # app démo supprimée, test conservé
+from apps.blog_examples.models import TimestampsOpinionated
 from apps.common.factories import RandomModelFactory, SimpleModelFactory
 from apps.common.services import model_update
 
