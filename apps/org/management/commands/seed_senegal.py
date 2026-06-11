@@ -4,10 +4,9 @@ Insère la structure territoriale catholique du Sénégal.
 Usage : python manage.py seed_senegal
 """
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 
 from apps.org.models import Diocese, Parish, Province
-
 
 SENEGAL_DATA = {
     "provinces": [

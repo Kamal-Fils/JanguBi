@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import MassIntention, MassIntentionStatus, MassIntentionType
+from .models import MassIntention, MassIntentionType
 
 
 class MassIntentionSubmitInputSerializer(serializers.Serializer):

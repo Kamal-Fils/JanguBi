@@ -1,11 +1,9 @@
-from django.db import models
 from django.contrib.postgres.search import SearchVectorField
-from django.db.models import F, Q
+from django.db import models
+
 from apps.common.models import BaseModel
 
 # Import removed since we fallback to JSON like the Bible module
-
-
 from apps.rosary.storage import RosaryAudioStorage
 
 

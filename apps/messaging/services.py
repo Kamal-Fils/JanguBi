@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -20,6 +20,8 @@ from apps.messaging.models import (
 )
 from apps.users.models import BaseUser
 
+if TYPE_CHECKING:  # annotations seules ; l'import runtime reste local (anti-circulaire)
+    from apps.messaging.models import ClergicalMessage
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -404,7 +406,6 @@ def conversation_purge_messages(*, conversation: Conversation) -> None:
 
 @transaction.atomic
 def conversation_export_generate(*, export_id=None, conversation_id=None) -> ConversationExport:
-    import io
     import json
     import uuid
 
@@ -499,8 +500,8 @@ def clerical_message_send(
     individual_recipient_id: int | None = None,
 ) -> "ClergicalMessage":
     from apps.core.exceptions import ApplicationError
-    from apps.users.enums import PastoralRole
     from apps.messaging.models import ClergicalMessage
+    from apps.users.enums import PastoralRole
 
     clergy_roles = {
         PastoralRole.PRETRE,

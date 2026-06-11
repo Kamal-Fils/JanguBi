@@ -22,7 +22,7 @@ from apps.org.tests.factories import ChurchFactory, ParishFactory
 from apps.users.enums import RoleScope, UserRole
 from apps.users.models import RoleAssignment
 from apps.users.services_memberships import membership_create
-from apps.users.tests.factories import BaseUserFactory, ProfileFactory
+from apps.users.tests.factories import BaseUserFactory
 
 _NO_COMMIT = "apps.documents.services.transaction.on_commit"
 

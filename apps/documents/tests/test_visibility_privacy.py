@@ -13,8 +13,8 @@ from unittest.mock import patch
 import pytest
 from django.http import Http404
 
-from apps.documents.selectors import document_request_get_for_admin, document_request_list
 from apps.documents.models import DocumentRequest
+from apps.documents.selectors import document_request_get_for_admin, document_request_list
 from apps.documents.services import document_request_create
 from apps.org.tests.factories import ParishFactory
 from apps.users.enums import RoleScope, UserRole

@@ -25,7 +25,6 @@ from apps.users.services_memberships import (
 )
 from apps.users.tests.factories import BaseUserFactory, ProfileFactory
 
-
 # ---------------------------------------------------------------------------
 # Modèle + contraintes
 # ---------------------------------------------------------------------------

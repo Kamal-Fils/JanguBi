@@ -8,10 +8,10 @@ from apps.liturgy.apis import (
     LiturgyLecturesApi,
     LiturgyMessesApi,
     LiturgyNoneApi,
+    LiturgySexteApi,
     LiturgyTierceApi,
     LiturgyTodayApi,
     LiturgyVepresApi,
-    LiturgySexteApi,
     OfficeDetailApi,
     ReadingDetailApi,
 )

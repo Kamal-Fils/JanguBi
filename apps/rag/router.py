@@ -1,8 +1,9 @@
 import asyncio
 import logging
 from typing import Dict
-from apps.rag.extractor import ExtractedIntentSchema
+
 from apps.rag.bible_engine import BibleEngine
+from apps.rag.extractor import ExtractedIntentSchema
 from apps.rag.rosary_engine import RosaryEngine
 
 logger = logging.getLogger(__name__)

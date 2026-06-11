@@ -1,6 +1,12 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from django.db.models import QuerySet
 
-
+if TYPE_CHECKING:  # seulement pour l'IDE/mypy
+    from apps.bible.models import HomilieNote, ReadingPlan
+    
 def homilenote_list(*, author) -> QuerySet:
     from apps.bible.models import HomilieNote
 

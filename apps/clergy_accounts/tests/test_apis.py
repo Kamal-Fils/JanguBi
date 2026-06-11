@@ -2,7 +2,6 @@ import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from apps.clergy_accounts.models import ClergicalInvitation
 from apps.users.enums import PastoralRole, UserRole
 from apps.users.tests.factories import BaseUserFactory, SuperAdminFactory
 

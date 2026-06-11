@@ -14,7 +14,6 @@ from apps.emails.services import email_failed, email_send, email_send_all, send_
 
 from .factories import EmailFactory, FailedEmailFactory, SendingEmailFactory, SentEmailFactory
 
-
 # ---------------------------------------------------------------------------
 # email_failed
 # ---------------------------------------------------------------------------

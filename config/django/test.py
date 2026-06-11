@@ -38,3 +38,12 @@ REST_FRAMEWORK = {
     **REST_FRAMEWORK,  # noqa: F405
     "DEFAULT_THROTTLE_RATES": {"anon": None, "user": None, "rag": None},
 }
+
+# Mot de passe plus rapide à hasher en test
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.MD5PasswordHasher",
+]
+
+
+# Email → en mémoire, pas de vrai serveur
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"

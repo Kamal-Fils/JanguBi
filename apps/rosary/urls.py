@@ -12,7 +12,6 @@ from apps.rosary.views import (
     MysteryDetailApi,
     PrayerListApi,
     RosarySearchApi,
-    RosaryVectorSearchApi,
     RosaryWeekdayApi,
     TodayRosaryApi,
 )

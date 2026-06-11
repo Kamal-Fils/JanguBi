@@ -259,7 +259,7 @@ def test_conversation_delete_soft_deletes_messages_and_schedules_purge():
 
     # Act — suppress on_commit side-effects
     with patch(_ON_COMMIT, lambda fn: None):
-        updated = conversation_delete(conversation=conv, user=conv.participant_a)
+        conversation_delete(conversation=conv, user=conv.participant_a)
 
     # Assert — all messages soft-deleted
     messages = Message.objects.filter(conversation=conv)

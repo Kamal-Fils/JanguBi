@@ -116,10 +116,10 @@ def invitation_create(
 
 
 def _send_invitation_email(*, invitation: ClergicalInvitation) -> None:
+    from django.conf import settings
+
     from apps.emails.models import Email
     from apps.emails.tasks import email_send as email_send_task
-
-    from django.conf import settings
 
     frontend_url = getattr(settings, "BASE_FRONTEND_URL", "http://localhost:3000")
     invitation_url = f"{frontend_url}/accept-invitation?token={invitation.token}"

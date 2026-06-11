@@ -1,6 +1,8 @@
 import pytest
-from apps.rosary.models import MysteryGroup, Mystery, Prayer, RosaryDay
+
+from apps.rosary.models import Mystery, MysteryGroup, Prayer, RosaryDay
 from apps.rosary.services import RosaryService
+
 
 @pytest.fixture
 def rosary_data():

@@ -1,4 +1,6 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
 from django.db import models
@@ -15,6 +17,8 @@ from apps.messaging.models import (
 )
 from apps.users.models import BaseUser
 
+if TYPE_CHECKING:
+    from apps.users.models import BaseUser
 
 def conversation_list(*, user: BaseUser) -> QuerySet[Conversation]:
     unread_subquery = (

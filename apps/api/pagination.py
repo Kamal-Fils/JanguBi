@@ -5,7 +5,6 @@ from rest_framework import serializers
 from rest_framework.pagination import LimitOffsetPagination as _LimitOffsetPagination
 from rest_framework.response import Response
 
-
 # Mémoïsation par nom : inline_serializer crée une CLASSE distincte à chaque appel.
 # Si le même serializer est wrappé par plusieurs endpoints (ex. ArticleListOutput sur
 # global/parish/feed/…), on obtiendrait N classes « PaginatedArticleListOutputList »
