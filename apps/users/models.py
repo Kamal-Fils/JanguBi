@@ -1,4 +1,5 @@
 import uuid
+from typing import cast
 
 from django.contrib.auth.models import AbstractBaseUser, Group, Permission, PermissionsMixin
 from django.contrib.auth.models import BaseUserManager as DjangoBaseUserManager
@@ -40,7 +41,9 @@ class BaseUserManager(DjangoBaseUserManager):
 
         normalized_email = self.normalize_email(email).lower()
 
-        user = self.model(
+        # cast : django-stubs type self.model() en "_T" générique dans BaseUserManager,
+        # ce qui masque les méthodes AbstractBaseUser (set_password, etc.).
+        user = cast("BaseUser", self.model(
             email=normalized_email,
             phone_number=phone_number,
             role=role,
@@ -49,7 +52,7 @@ class BaseUserManager(DjangoBaseUserManager):
             is_admin=is_admin,
             is_verified=is_verified,
             **extra_fields,
-        )
+        ))
 
         if password is not None:
             user.set_password(password)
@@ -174,13 +177,13 @@ class BaseUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         blank=True,
         related_name="members",
     )
-    groups = models.ManyToManyField(
+    groups = models.ManyToManyField(  # type: ignore[assignment]  # django-stubs : redéclaration M2M de PermissionsMixin (related_name custom)
         Group,
         verbose_name=_("groupes"),
         blank=True,
         related_name="baseuser_set",
     )
-    user_permissions = models.ManyToManyField(
+    user_permissions = models.ManyToManyField(  # type: ignore[assignment]  # django-stubs : redéclaration M2M de PermissionsMixin (related_name custom)
         Permission,
         verbose_name=_("permissions"),
         blank=True,

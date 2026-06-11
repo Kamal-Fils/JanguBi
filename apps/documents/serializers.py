@@ -84,7 +84,7 @@ class RejectInputSerializer(serializers.Serializer):
 
 class DepositDocumentInputSerializer(serializers.Serializer):
     file_id = serializers.IntegerField()
-    label = serializers.CharField(
+    label = serializers.CharField(  # type: ignore[assignment]  # drf-stubs : collision avec l'attribut Field.label
         max_length=255, required=False, allow_blank=True, default="Document officiel"
     )
 

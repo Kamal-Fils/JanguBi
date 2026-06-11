@@ -160,14 +160,15 @@ def _check_scope_authority(
     )
 
     if scope_type == Article.ScopeType.PARISH:
-        if not user_can_admin_parish(user, scope_parish_id):
+        # id None → aucune paroisse cible → pas d'autorité (cohérent avec le lookup raté).
+        if scope_parish_id is None or not user_can_admin_parish(user, scope_parish_id):
             raise ApplicationError("Vous n'avez pas autorité sur cette paroisse.")
     elif scope_type == Article.ScopeType.CHURCH:
         # Autorité église (RG-CONT 3b) : church_admin sur X, OU autorité sur sa paroisse.
-        if not user_can_admin_church(user, scope_church_id):
+        if scope_church_id is None or not user_can_admin_church(user, scope_church_id):
             raise ApplicationError("Vous n'avez pas autorité sur cette église.")
     elif scope_type == Article.ScopeType.DIOCESE:
-        if not user_can_admin_diocese(user, scope_diocese_id):
+        if scope_diocese_id is None or not user_can_admin_diocese(user, scope_diocese_id):
             raise ApplicationError("Vous n'avez pas autorité sur ce diocèse.")
     else:  # GLOBAL — réservé aux administrateurs province / national.
         if not (is_global_admin(user) or accessible_province_ids(user)):
@@ -239,11 +240,12 @@ def article_create(
         if not cover_image.is_valid:
             raise ApplicationError("Le fichier image n'a pas encore été finalisé.")
 
-    scope_id = {
+    scope_ids_by_type: dict[str, int | None] = {
         Article.ScopeType.PARISH: scope_parish_id,
         Article.ScopeType.DIOCESE: scope_diocese_id,
         Article.ScopeType.CHURCH: scope_church_id,
-    }.get(scope_type)
+    }
+    scope_id = scope_ids_by_type.get(scope_type)
     slug = _build_slug(title, scope_type, scope_id)
 
     return Article.objects.create(

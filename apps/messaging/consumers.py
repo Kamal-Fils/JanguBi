@@ -68,9 +68,14 @@ class ConversationConsumer(AsyncJsonWebsocketConsumer):
         emoji = content.get("emoji", "")
         action = content.get("action", "react")
 
+        if message_id is None:
+            await self.send_json({"type": "error", "detail": "message_id manquant"})
+            return
+        lookup_id = message_id  # rétréci : non-None garanti pour le lookup
+
         try:
             message = await database_sync_to_async(
-                lambda: Message.objects.get(id=message_id, conversation=self.conversation)
+                lambda: Message.objects.get(id=lookup_id, conversation=self.conversation)
             )()
             svc = message_react if action == "react" else message_unreact
             await database_sync_to_async(svc)(message=message, user=self.user, emoji=emoji)

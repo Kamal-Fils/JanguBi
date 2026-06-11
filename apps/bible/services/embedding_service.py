@@ -71,7 +71,7 @@ class GeminiEmbedder:
     """Provider payant optionnel (Google Gemini). Conservé pour compatibilité ;
     non utilisé par défaut (EMBEDDING_PROVIDER=local)."""
 
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or getattr(settings, "GEMINI_API_KEY", None)
         self.model = "gemini-embedding-001"
         # Clé via header (pas dans l'URL : évite la fuite en logs/traces réseau).
@@ -95,7 +95,7 @@ class GeminiEmbedder:
             wait_exponential,
         )
 
-        def _is_retryable(exc: Exception) -> bool:
+        def _is_retryable(exc: BaseException) -> bool:
             # Ne retenter QUE le réseau et les 5xx ; pas les 4xx (clé invalide,
             # quota mal formé, requête invalide) — déterministes, inutile d'insister.
             if isinstance(exc, httpx.RequestError):
@@ -160,7 +160,7 @@ def _build_provider(provider_name: str) -> EmbedderProvider:
 class EmbeddingService:
     """Génération et stockage des embeddings de versets."""
 
-    def __init__(self, provider: EmbedderProvider = None):
+    def __init__(self, provider: Optional[EmbedderProvider] = None):
         self.provider = provider or _build_provider(getattr(settings, "EMBEDDING_PROVIDER", "stub"))
 
     @transaction.atomic

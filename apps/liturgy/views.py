@@ -108,7 +108,7 @@ class LiturgyMessesApi(DailyLiturgyBaseApi):
 
 
 class LiturgyOfficeApi(DailyLiturgyBaseApi):
-    office_type = None
+    office_type: str | None = None
 
     @extend_schema(
         parameters=[

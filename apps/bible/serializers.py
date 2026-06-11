@@ -26,7 +26,7 @@ class TestamentWithBooksOutputSerializer(serializers.ModelSerializer):
 
 
 class BookMetadataOutputSerializer(serializers.ModelSerializer):
-    testament = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    testament: serializers.SlugRelatedField = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     chapter_count = serializers.IntegerField(read_only=True)
     
     class Meta:

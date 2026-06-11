@@ -26,11 +26,12 @@ def auth_user_get_jwt_secret_key(user: BaseUser) -> str:
     return f"{settings.SECRET_KEY}{user.jwt_key}"
 
 
-def auth_jwt_response_payload_handler(token: str, user: BaseUser = None, request=None) -> dict:
+def auth_jwt_response_payload_handler(token: str, user: BaseUser | None = None, request=None) -> dict:
     """
     Enrichit la réponse JWT avec les données utilisateur basiques.
     Référencé par JWT_AUTH['JWT_RESPONSE_PAYLOAD_HANDLER'] dans jwt.py.
     """
+    assert user is not None  # toujours fourni par le handler JWT
     return {
         "token": token,
         "user": {

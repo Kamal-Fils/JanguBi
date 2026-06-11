@@ -19,6 +19,7 @@ Clés Redis utilisées :
 import hashlib
 import hmac
 import secrets
+import uuid
 from typing import Any
 
 from django.conf import settings
@@ -78,7 +79,7 @@ def _sha256(value: str) -> str:
 # OTP courts (6 chiffres) — flux email change
 # ---------------------------------------------------------------------------
 
-def otp_store(user_id: int, action: str, code: str, ttl: int = OTP_TTL) -> None:
+def otp_store(user_id: int | str | uuid.UUID, action: str, code: str, ttl: int = OTP_TTL) -> None:
     """Stocke HMAC(code) + initialise le compteur de tentatives."""
     otp_key = f"otp:{action}:{user_id}"
     attempts_key = f"attempts:otp:{user_id}:{action}"
@@ -86,7 +87,7 @@ def otp_store(user_id: int, action: str, code: str, ttl: int = OTP_TTL) -> None:
     cache.set(attempts_key, 0, timeout=ttl)
 
 
-def otp_verify(user_id: int, action: str, input_code: str) -> str:
+def otp_verify(user_id: int | str | uuid.UUID, action: str, input_code: str) -> str:
     """
     Vérifie un code OTP et retourne un exchange token si valide.
 

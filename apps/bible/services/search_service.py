@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 from django.db import connection
@@ -226,7 +226,7 @@ class SearchService:
 
     def _group_results_by_book(self, raw_results: List[Dict]) -> List[Dict]:
         """Groups flat SQL results into the nested structure expected by the API."""
-        grouped = {}
+        grouped: Dict[int, Dict[str, Any]] = {}
         for row in raw_results:
             book_id = row["book_id"]
             if book_id not in grouped:

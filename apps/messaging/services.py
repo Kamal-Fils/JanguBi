@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from typing import TYPE_CHECKING, Optional
+from uuid import UUID
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -497,7 +498,7 @@ def clerical_message_send(
     body: str,
     recipient_scope: str,
     scope_id: int | None = None,
-    individual_recipient_id: int | None = None,
+    individual_recipient_id: str | UUID | None = None,  # PK BaseUser = UUID (pas int)
 ) -> "ClergicalMessage":
     from apps.core.exceptions import ApplicationError
     from apps.messaging.models import ClergicalMessage

@@ -106,12 +106,13 @@ def role_assignment_list(*, user=None) -> QuerySet[RoleAssignment]:
 def accessible_province_ids(user) -> set[int] | None:
     if is_global_admin(user):
         return None
-    ids = set(
-        active_role_assignments(user)
+    ids = {
+        pid
+        for pid in active_role_assignments(user)
         .filter(scope=RoleScope.PROVINCE)
         .values_list("province_id", flat=True)
-    )
-    ids.discard(None)
+        if pid is not None
+    }
     return ids
 
 
@@ -119,14 +120,20 @@ def accessible_diocese_ids(user) -> set[int] | None:
     if is_global_admin(user):
         return None
     ras = active_role_assignments(user)
-    diocese_ids = set(ras.filter(scope=RoleScope.DIOCESE).values_list("diocese_id", flat=True))
-    province_ids = set(ras.filter(scope=RoleScope.PROVINCE).values_list("province_id", flat=True))
-    province_ids.discard(None)
+    diocese_ids = {
+        did
+        for did in ras.filter(scope=RoleScope.DIOCESE).values_list("diocese_id", flat=True)
+        if did is not None
+    }
+    province_ids = {
+        pid
+        for pid in ras.filter(scope=RoleScope.PROVINCE).values_list("province_id", flat=True)
+        if pid is not None
+    }
     if province_ids:
         diocese_ids |= set(
             Diocese.objects.filter(province_id__in=province_ids).values_list("id", flat=True)
         )
-    diocese_ids.discard(None)
     return diocese_ids
 
 
@@ -134,9 +141,16 @@ def accessible_parish_ids(user) -> set[int] | None:
     if is_global_admin(user):
         return None
     ras = active_role_assignments(user)
-    parish_ids = set(ras.filter(scope=RoleScope.PARISH).values_list("parish_id", flat=True))
-    church_ids = set(ras.filter(scope=RoleScope.CHURCH).values_list("church_id", flat=True))
-    church_ids.discard(None)
+    parish_ids = {
+        pid
+        for pid in ras.filter(scope=RoleScope.PARISH).values_list("parish_id", flat=True)
+        if pid is not None
+    }
+    church_ids = {
+        cid
+        for cid in ras.filter(scope=RoleScope.CHURCH).values_list("church_id", flat=True)
+        if cid is not None
+    }
     if church_ids:
         parish_ids |= set(
             Church.objects.filter(id__in=church_ids).values_list("parish_id", flat=True)
@@ -146,7 +160,6 @@ def accessible_parish_ids(user) -> set[int] | None:
         parish_ids |= set(
             Parish.objects.filter(diocese_id__in=diocese_ids).values_list("id", flat=True)
         )
-    parish_ids.discard(None)
     return parish_ids
 
 
@@ -311,7 +324,7 @@ def superior_of(user) -> BaseUser | None:
     ras = active_role_assignments(user)
 
     diocese_ra = ras.filter(scope=RoleScope.DIOCESE).select_related("diocese").first()
-    if diocese_ra and diocese_ra.diocese_id:
+    if diocese_ra and diocese_ra.diocese is not None:
         return _province_archbishop(diocese_ra.diocese.province_id)
 
     if getattr(user, "pastoral_role", None) == PastoralRole.EVEQUE and user.province_id:
@@ -322,10 +335,11 @@ def superior_of(user) -> BaseUser | None:
         .select_related("parish__deanery", "parish__diocese")
         .first()
     )
-    if parish_ra and parish_ra.parish_id:
+    if parish_ra and parish_ra.parish is not None:
         parish = parish_ra.parish
-        if parish.deanery_id and parish.deanery.dean_id:
-            return parish.deanery.dean
+        deanery = parish.deanery
+        if deanery is not None and deanery.dean_id:
+            return deanery.dean
         return _diocese_bishop(parish.diocese_id)
 
     primary_parish_id = _primary_parish_id(user)

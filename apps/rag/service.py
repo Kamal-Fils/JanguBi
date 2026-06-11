@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 from django.conf import settings
 
@@ -83,6 +83,7 @@ class RAGService:
 
         # Le client LLM n'est créé QUE si la génération est activée (sinon extractif
         # pur : pas de client, pas de warning de clé manquante à chaque requête).
+        self.final_llm: Optional[AsyncGeminiClient]
         if final_llm is not None:
             self.final_llm = final_llm
         elif self._generation_enabled():
@@ -127,12 +128,15 @@ class RAGService:
         # Troncature pour des logs propres et sans risque PII massif
         logger.info(f"RAG processing query: {query[:100]}...")
 
-        intent_data = {}
-        
+        # intent_data : payload de réponse (dict libre) ; extracted_intent porte le
+        # type ExtractedIntentSchema attendu par le routeur — deux noms distincts.
+        intent_data: dict[str, Any] = {}
+
         # 5. Gestion native des erreurs et pannes potentielles d'API ou de BD
         try:
             # Étape 1 : Extract
-            intent_data = await self.extractor.extract(query)
+            extracted_intent = await self.extractor.extract(query)
+            intent_data = dict(extracted_intent)
             # On ne logge PAS entities.topic (= requête brute, PII potentiel) :
             # seulement intent + domains.
             logger.info(
@@ -151,7 +155,7 @@ class RAGService:
                 )
 
             # Étape 2 : Route & Retrieve
-            engine_results = await self.router.route_to_engines(intent_data)
+            engine_results = await self.router.route_to_engines(extracted_intent)
 
             # Étape 3 : Build Context
             context_string = self.context_builder.build(engine_results)
@@ -167,7 +171,7 @@ class RAGService:
             # Étape 4 : Réponse.
             # Par défaut EXTRACTIF (zéro coût LLM) : on restitue les passages réels
             # récupérés. La génération LLM est OPTIONNELLE (flag + clé présents).
-            if self._generation_enabled():
+            if self._generation_enabled() and self.final_llm is not None:
                 system_prompt = RAG_SYSTEM_PROMPT_TEMPLATE.format(context=context_string)
                 final_answer = await self.final_llm.generate_text(
                     system_prompt=system_prompt,

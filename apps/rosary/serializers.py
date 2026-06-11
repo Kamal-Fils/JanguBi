@@ -16,7 +16,7 @@ class SearchPrayerSerializer(PrayerSerializer):
     rank = serializers.FloatField(read_only=True, required=False)
 
     class Meta(PrayerSerializer.Meta):
-        fields = PrayerSerializer.Meta.fields + ("rank",)
+        fields = PrayerSerializer.Meta.fields + ("rank",)  # type: ignore[assignment]  # DRF Meta.fields override widens the base tuple
 
 
 class MysteryPrayerSerializer(serializers.ModelSerializer):
