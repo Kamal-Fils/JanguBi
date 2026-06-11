@@ -119,9 +119,9 @@ def document_request_get_for_admin(*, request_id: UUID, user: BaseUser) -> Docum
     if is_global_admin(user):
         return obj
 
-    parish_ids = accessible_parish_ids(user)  # set (jamais None ici)
+    parish_ids = accessible_parish_ids(user)  # set (jamais None ici : global admin déjà traité)
     eff_parish_id = _request_effective_parish_id(obj)
-    if eff_parish_id is None or eff_parish_id not in parish_ids:
+    if parish_ids is None or eff_parish_id is None or eff_parish_id not in parish_ids:
         raise Http404
     return obj
 
@@ -160,7 +160,7 @@ def document_request_agent_recipients(*, request_obj: DocumentRequest) -> list[B
     Priorité : l'agent assigné ; sinon le clergé de la paroisse cible (curé +
     vicaires) ; sinon, en repli, tous les admins actifs (comportement legacy).
     """
-    if request_obj.assigned_to_id:
+    if request_obj.assigned_to is not None:
         return [request_obj.assigned_to]
 
     parish = request_obj.target_parish or getattr(

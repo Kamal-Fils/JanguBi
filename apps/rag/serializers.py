@@ -12,5 +12,5 @@ class RagResponseSerializer(serializers.Serializer):
     # allow_blank : sur les branches "aucun contexte"/"erreur", context="" est
     # légitime (sinon le endpoint renvoyait un 400 — bug latent).
     answer = serializers.CharField(allow_blank=True, help_text="La réponse (extractive par défaut, ou générée si activé).")
-    context = serializers.CharField(allow_blank=True, help_text="Le contexte brut récupéré en base (peut être vide).")
+    context = serializers.CharField(allow_blank=True, help_text="Le contexte brut récupéré en base (peut être vide).")  # type: ignore[assignment]  # drf-stubs : Field.context (dict) masqué ; la métaclasse DRF déplace le champ déclaré dans _declared_fields, aucun conflit à l'exécution
     intent = serializers.DictField(help_text="Métadonnée de routage (intent/domains/entities).")

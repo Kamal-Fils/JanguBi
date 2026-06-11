@@ -45,7 +45,7 @@ def _can_manage_assignment(user, ra: RoleAssignment) -> bool:
         return True
     if ra.scope == RoleScope.PARISH and ra.parish_id:
         return user_can_admin_parish(user, ra.parish_id)
-    if ra.scope == RoleScope.CHURCH and ra.church_id:
+    if ra.scope == RoleScope.CHURCH and ra.church is not None:
         return user_can_admin_parish(user, ra.church.parish_id)
     if ra.scope == RoleScope.DIOCESE and ra.diocese_id:
         return user_can_admin_diocese(user, ra.diocese_id)

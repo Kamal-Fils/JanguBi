@@ -50,18 +50,20 @@ class QueryRouter:
         if "ROSARY" in domains:
             tasks["rosary"] = self._safe_execute("Rosaire", self.rosary_engine.search(entities))
 
-        results = {}
+        results: Dict[str, str] = {}
         if tasks:
             keys = list(tasks.keys())
             coroutines = list(tasks.values())
-            
+
             try:
                 completed = await asyncio.gather(*coroutines, return_exceptions=True)
                 for idx, key in enumerate(keys):
                     res = completed[idx]
                     # On ignore les échecs (None/Exception) ET les résultats vides :
                     # seul un contexte réel est transmis au context_builder.
-                    if isinstance(res, Exception) or res is None:
+                    # BaseException couvre aussi CancelledError renvoyé par gather
+                    # (return_exceptions=True) — jamais un contexte valide.
+                    if isinstance(res, BaseException) or res is None:
                         continue
                     if isinstance(res, str) and not res.strip():
                         continue

@@ -34,6 +34,6 @@ def school_course_create(
         roster.full_clean()
         rosters.append(roster)
 
-    Roster.objects.bulk_create(rosters, batch_size=50)
+    Roster.objects.bulk_create(rosters, batch_size=50)  # type: ignore[attr-defined]  # app démo hors INSTALLED_APPS : django-stubs ne génère pas le manager
 
     return school_course

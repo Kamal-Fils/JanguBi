@@ -124,7 +124,7 @@ def _send_invitation_email(*, invitation: ClergicalInvitation) -> None:
     frontend_url = getattr(settings, "BASE_FRONTEND_URL", "http://localhost:3000")
     invitation_url = f"{frontend_url}/accept-invitation?token={invitation.token}"
 
-    role_labels = {
+    role_labels: dict[str, str] = {
         PastoralRole.PRETRE: "Prêtre",
         PastoralRole.DIACRE: "Diacre",
         PastoralRole.RELIGIEUX: "Religieux/Religieuse",
@@ -166,7 +166,7 @@ def _resolve_capacity(invitation: ClergicalInvitation) -> tuple[dict | None, int
     """
     role = invitation.pastoral_role
 
-    if role == PastoralRole.PRETRE and invitation.parish_id:
+    if role == PastoralRole.PRETRE and invitation.parish is not None:
         parish = invitation.parish
         return (
             {"role": UserRole.PARISH_ADMIN, "scope": RoleScope.PARISH,
@@ -174,7 +174,7 @@ def _resolve_capacity(invitation: ClergicalInvitation) -> tuple[dict | None, int
             parish.diocese_id,
         )
 
-    if role == PastoralRole.DIACRE and invitation.church_id:
+    if role == PastoralRole.DIACRE and invitation.church is not None:
         church = invitation.church
         return (
             {"role": UserRole.CHURCH_ADMIN, "scope": RoleScope.CHURCH,
@@ -182,7 +182,7 @@ def _resolve_capacity(invitation: ClergicalInvitation) -> tuple[dict | None, int
             church.parish.diocese_id,
         )
 
-    if role == PastoralRole.DIACRE and invitation.parish_id:
+    if role == PastoralRole.DIACRE and invitation.parish is not None:
         parish = invitation.parish
         return (
             {"role": UserRole.PARISH_ADMIN, "scope": RoleScope.PARISH,
@@ -197,7 +197,7 @@ def _resolve_capacity(invitation: ClergicalInvitation) -> tuple[dict | None, int
             invitation.diocese_id,
         )
 
-    if role == PastoralRole.ARCHEVEQUE and invitation.diocese_id:
+    if role == PastoralRole.ARCHEVEQUE and invitation.diocese is not None:
         return (
             {"role": UserRole.PROVINCE_ADMIN, "scope": RoleScope.PROVINCE,
              "province": invitation.diocese.province, "is_principal": True},

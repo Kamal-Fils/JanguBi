@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(name="apps.liturgy.tasks.daily_sync")
-def daily_sync_task(date_str: str = None, zones: list = None):
+def daily_sync_task(date_str: str | None = None, zones: list[str] | None = None):
     from apps.liturgy.services import AelfService  # local import — évite les imports circulaires
 
     if not date_str:
@@ -28,7 +28,7 @@ def daily_sync_task(date_str: str = None, zones: list = None):
 
 
 @shared_task(name="apps.liturgy.tasks.bulk_import")
-def bulk_import_task(start_date_str: str, end_date_str: str, zones: list = None):
+def bulk_import_task(start_date_str: str, end_date_str: str, zones: list[str] | None = None):
     """
     Backfills AELF data over a range of dates.
     In production, this could enqueue individual `daily_sync_task` to parallelize work.

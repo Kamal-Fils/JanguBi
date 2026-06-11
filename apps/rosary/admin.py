@@ -28,7 +28,7 @@ class PrayerAdmin(admin.ModelAdmin):
 
     def text_snippet(self, obj):
         return obj.text[:50] + "..." if len(obj.text) > 50 else obj.text
-    text_snippet.short_description = "Text"
+    text_snippet.short_description = "Text"  # type: ignore[attr-defined]  # Django admin display-method attribute
 
 @admin.register(RosaryDay)
 class RosaryDayAdmin(admin.ModelAdmin):

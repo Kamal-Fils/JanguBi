@@ -99,7 +99,7 @@ class BookDetailApi(APIView):
         chapters = ChapterMetadataOutputSerializer(many=True, read_only=True)
         
         class Meta(BookMetadataOutputSerializer.Meta):
-            fields = BookMetadataOutputSerializer.Meta.fields + ("chapters",)
+            fields = BookMetadataOutputSerializer.Meta.fields + ("chapters",)  # type: ignore[assignment]  # DRF Meta.fields override widens the inherited tuple length
 
     @extend_schema(
         parameters=[
@@ -153,7 +153,7 @@ class VerseListApi(APIView):
     class FilterSerializer(serializers.Serializer):
         excerpt = serializers.BooleanField(required=False, default=False)
         verses = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)  # type: ignore[assignment]  # drf-stubs: serializer field named "source" collides with Field.source attribute
 
     @extend_schema(
         parameters=[
@@ -225,7 +225,7 @@ class SearchApi(APIView):
         testament = serializers.CharField(required=False, allow_blank=True, allow_null=True)
         book_slug = serializers.CharField(required=False, allow_blank=True, allow_null=True)
         chapter_number = serializers.IntegerField(required=False, allow_null=True)
-        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)  # type: ignore[assignment]  # drf-stubs: serializer field named "source" collides with Field.source attribute
         hybrid = serializers.BooleanField(default=False)
         limit = serializers.IntegerField(default=50, max_value=500)
 
@@ -291,7 +291,7 @@ class ImportApi(ApiAuthMixin, APIView):
 
     class InputSerializer(serializers.Serializer):
         filename = serializers.CharField()
-        source = serializers.CharField()
+        source = serializers.CharField()  # type: ignore[assignment]  # drf-stubs: serializer field named "source" collides with Field.source attribute
 
     @extend_schema(request=InputSerializer, tags=["Bible"], summary="Trigger background import of Bible texts")
     def post(self, request):
