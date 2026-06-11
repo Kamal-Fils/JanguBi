@@ -3,7 +3,7 @@
 FROM python:3.12.4
 
 # Fix python printing
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONUNBUFFERED=1
 
 # Installing all python dependencies
 ADD requirements/ requirements/

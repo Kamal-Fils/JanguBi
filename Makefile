@@ -7,7 +7,8 @@ export
 	   down-v rebuild dev-deps \
        flush-redis flush-db check-embeddings seed-embeddings seed-embeddings-force seed-embeddings-async \
        seed seed-senegal seed-demo seed-reset \
-	celery-logs celery-restart rabbitmq-stats clean-audio collectstatic reinit-bible reinit-bible-aelf import-bible-aelf init-tv-categories
+	celery-logs celery-restart rabbitmq-stats clean-audio collectstatic reinit-bible reinit-bible-aelf import-bible-aelf init-tv-categories \
+	ci-list ci act ci-docker ci-docker-act
 
 # ==============================================================================
 # COMMANDES DOCKER
@@ -190,3 +191,30 @@ seed: seed-senegal seed-demo
 
 init-all: init-data
 
+
+# ==============================================================================
+# CI LOCALE (act) — reproduit .github/workflows/django.yml en local
+# ==============================================================================
+# Image runner act (catthehacker ≈ runner ubuntu de GitHub).
+ACT_RUNNER := ubuntu-24.04=catthehacker/ubuntu:act-24.04
+
+# Liste les jobs du workflow sans rien exécuter (valide le parsing YAML).
+ci-list:
+	act --list
+
+# Lance le job `build` en local (install + ruff + mypy + pytest), comme la CI.
+ci:
+	act push -P $(ACT_RUNNER) --rm --job build
+
+# Alias pratique.
+act: ci
+
+# Valide EN LOCAL le build de l'image de production (ce que construit le job
+# build-docker). NE POUSSE PAS — pour débugger le Dockerfile avant un tag/push.
+ci-docker:
+	docker build -f docker/production.Dockerfile -t jangubi-backend:local .
+
+# Lance le job build-docker via act (build + push DockerHub). Nécessite un fichier
+# `.secrets` avec DOCKERHUB_USERNAME / DOCKERHUB_TOKEN. ⚠️ pousse réellement l'image.
+ci-docker-act:
+	act push -P $(ACT_RUNNER) --rm --job build-docker --secret-file .secrets
