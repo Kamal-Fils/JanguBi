@@ -17,9 +17,11 @@ class ImportServiceTests(TestCase):
         self.format_b_path = str(self.fixtures_dir / "mini_bible_format_b.json")
 
     def test_ensure_testaments_created(self):
-        self.assertEqual(Testament.objects.count(), 2)
+        # ImportService creates the three testaments: ancien, nouveau, psaume.
+        self.assertEqual(Testament.objects.count(), 3)
         self.assertTrue(Testament.objects.filter(slug="ancien").exists())
         self.assertTrue(Testament.objects.filter(slug="nouveau").exists())
+        self.assertTrue(Testament.objects.filter(slug="psaume").exists())
 
     def test_resolve_book_info_exact_match(self):
         canonical, testament, order, aliases = self.service.resolve_book_info("Genèse")
@@ -35,7 +37,8 @@ class ImportServiceTests(TestCase):
     def test_resolve_book_info_psalms_heuristic(self):
         canonical, testament, order, aliases = self.service.resolve_book_info("Psaume de David 1")
         self.assertEqual(canonical, "Psaumes")
-        self.assertEqual(testament.slug, "ancien")
+        # Psalms map to their own dedicated 'psaume' testament.
+        self.assertEqual(testament.slug, "psaume")
 
     def test_resolve_book_info_unknown_fallback(self):
         canonical, testament, order, aliases = self.service.resolve_book_info("UnknownBook")
@@ -67,10 +70,15 @@ class ImportServiceTests(TestCase):
 
         v2 = ch1.verses.get(number=2)
         self.assertEqual(v2.original_id, 2)
-        
-        # Check that tasks were enqueued
+
+        # The TSV indexing task is always enqueued per imported book.
         mock_tsv.assert_called()
-        mock_emb.assert_called()
+        # The embeddings task is gated by PGVECTOR_ENABLED; it is only enqueued
+        # when vector search is turned on (currently in stand-by by default).
+        if getattr(settings, "PGVECTOR_ENABLED", False):
+            mock_emb.assert_called()
+        else:
+            mock_emb.assert_not_called()
 
     @patch("apps.bible.services.import_service.populate_tsv_task.delay")
     @patch("apps.bible.services.import_service.compute_embeddings_task.delay")
@@ -84,7 +92,7 @@ class ImportServiceTests(TestCase):
         
         psalms = Book.objects.get(name="Psaumes")
         self.assertEqual(psalms.verse_count, 3)
-        self.assertEqual(psalms.testament.slug, "ancien")
+        self.assertEqual(psalms.testament.slug, "psaume")
 
         genese = Book.objects.get(name="Genèse")
         # Empty verses should have been skipped

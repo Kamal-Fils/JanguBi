@@ -16,6 +16,7 @@ import pytest
 from django.utils import timezone
 
 from apps.core.exceptions import ApplicationError
+from apps.files.tests.factories import FileFactory
 from apps.messaging.models import (
     Message,
     MessageBlock,
@@ -730,22 +731,23 @@ def test_conversation_purge_messages_does_not_affect_other_conversations():
 @pytest.mark.django_db
 def test_conversation_export_generate_sets_completed_at():
     # Arrange
-    from unittest.mock import MagicMock, patch
-
     from apps.messaging.models import ConversationExport
 
     conv = ConversationFactory()
     export = ConversationExport.objects.create(conversation=conv)
 
-    mock_file = MagicMock()
-    mock_file.save = MagicMock()
+    # Return a REAL File row from File.objects.create so the FK assignment +
+    # export.save() are valid; stub only the storage write (file.save) so the
+    # test never touches the real filesystem/S3.
+    def _make_real_file(**kwargs):
+        file_obj = FileFactory(**kwargs)
+        file_obj.file.save = MagicMock()
+        return file_obj
 
     # Act — patch PDF generation and storage so tests need no real filesystem
     with patch("apps.messaging.services._generate_export_pdf", return_value=b"%PDF-stub"):
         with patch("apps.messaging.services.File") as MockFile:
-            mock_file_instance = MagicMock()
-            mock_file_instance.file = MagicMock()
-            MockFile.objects.create.return_value = mock_file_instance
+            MockFile.objects.create.side_effect = _make_real_file
             result = conversation_export_generate(export_id=str(export.id))
 
     # Assert — export record marks completion
@@ -759,12 +761,18 @@ def test_conversation_export_generate_without_export_id_creates_new_export():
 
     conv = ConversationFactory()
 
+    # Return a REAL File row from File.objects.create so the FK assignment +
+    # export.save() are valid; stub only the storage write (file.save) so the
+    # test never touches the real filesystem/S3.
+    def _make_real_file(**kwargs):
+        file_obj = FileFactory(**kwargs)
+        file_obj.file.save = MagicMock()
+        return file_obj
+
     # Act — patch file operations to avoid real storage
     with patch("apps.messaging.services._generate_export_pdf", return_value=b"%PDF-stub"):
         with patch("apps.messaging.services.File") as MockFile:
-            mock_file_instance = MagicMock()
-            mock_file_instance.file = MagicMock()
-            MockFile.objects.create.return_value = mock_file_instance
+            MockFile.objects.create.side_effect = _make_real_file
             result = conversation_export_generate(conversation_id=str(conv.id))
 
     # Assert — a new export record was created and completed

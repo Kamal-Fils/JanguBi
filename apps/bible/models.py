@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 class Testament(models.Model):
     """Ancien or Nouveau Testament."""
 
+    # Prevent pytest from mistaking this model for a test class on import.
+    __test__ = False
+
     slug = models.SlugField(max_length=32, unique=True)
     name = models.CharField(max_length=200)
     order = models.IntegerField(default=0)

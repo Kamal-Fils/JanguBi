@@ -16,6 +16,7 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 
+from apps.messaging.models import Message
 from apps.messaging.selectors import (
     block_list,
     conversation_get,
@@ -226,23 +227,30 @@ def test_message_list_ordered_newest_first():
 
 @pytest.mark.django_db
 def test_message_list_cursor_pagination_with_before_id():
-    # Arrange
+    # Arrange — give each message a strictly increasing created_at so the
+    # cursor (which filters on created_at__lt, matching order_by("-created_at"))
+    # has an unambiguous ordering to page against.
     conv = ConversationFactory()
-    for _ in range(5):
-        MessageFactory(conversation=conv)
+    base = timezone.now()
+    messages = []
+    for i in range(5):
+        msg = MessageFactory(conversation=conv)
+        Message.objects.filter(pk=msg.pk).update(
+            created_at=base + timezone.timedelta(seconds=i)
+        )
+        msg.refresh_from_db()
+        messages.append(msg)
 
-    # Pick the message with the maximum UUID as pivot so id__lt=pivot.id
-    # is guaranteed to return the other 4 messages regardless of UUID v4 randomness.
-    all_msgs = list(message_list(conversation=conv, limit=100))
-    pivot = max(all_msgs, key=lambda m: m.id)
+    # Newest message is the pivot; the 4 older ones all precede it.
+    pivot = messages[-1]
 
-    # Act — only messages with id < pivot.id should be returned
+    # Act — only messages created before the pivot should be returned
     result = list(message_list(conversation=conv, before_id=pivot.id, limit=100))
 
-    # Assert — the other 4 messages all have id < pivot.id
+    # Assert — the other 4 messages all have created_at < pivot.created_at
     assert len(result) == 4
     for msg in result:
-        assert msg.id < pivot.id
+        assert msg.created_at < pivot.created_at
 
 
 # ---------------------------------------------------------------------------

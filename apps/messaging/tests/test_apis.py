@@ -428,7 +428,7 @@ def test_conversation_delete_returns_204():
     client = APIClient()
     client.force_authenticate(user=conv.participant_a)
     url = reverse(
-        "api:messaging:conversation-delete", kwargs={"conversation_id": conv.id}
+        "api:messaging:conversation-detail", kwargs={"conversation_id": conv.id}
     )
 
     # Act
@@ -443,7 +443,7 @@ def test_conversation_delete_returns_204():
 def test_conversation_delete_requires_authentication(anon_client):
     conv = ConversationFactory()
     url = reverse(
-        "api:messaging:conversation-delete", kwargs={"conversation_id": conv.id}
+        "api:messaging:conversation-detail", kwargs={"conversation_id": conv.id}
     )
     response = anon_client.delete(url)
     assert response.status_code == 401
@@ -453,7 +453,7 @@ def test_conversation_delete_requires_authentication(anon_client):
 def test_conversation_delete_returns_403_for_non_participant(auth_client):
     conv = ConversationFactory()
     url = reverse(
-        "api:messaging:conversation-delete", kwargs={"conversation_id": conv.id}
+        "api:messaging:conversation-detail", kwargs={"conversation_id": conv.id}
     )
     response = auth_client.delete(url)
     assert response.status_code == 403

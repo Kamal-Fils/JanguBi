@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ApplicationError
+from apps.files.models import File
 from apps.messaging.models import (
     Conversation,
     ConversationExport,
@@ -412,7 +413,6 @@ def conversation_export_generate(*, export_id=None, conversation_id=None) -> Con
 
     from django.utils import timezone as tz
 
-    from apps.files.models import File
     from apps.messaging.serializers import MessageOutputSerializer
 
     if export_id:
