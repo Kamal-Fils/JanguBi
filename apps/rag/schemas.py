@@ -1,5 +1,7 @@
-from typing import List, Optional, Literal
+from typing import List, Optional, TypedDict
+
 from django.db import models
+
 
 class IntentType(models.TextChoices):
     BIBLE = "BIBLE", "Bible Search"
@@ -8,10 +10,8 @@ class IntentType(models.TextChoices):
     MIXED = "MIXED", "Mixed Domains"
     UNKNOWN = "UNKNOWN", "Unknown Intent"
 
-# We use standard Python TypedDict/dataclasses for lightweight definition, 
-# or Pydantic if available. We will use TypedDict for maximum compatibility 
-# without requiring extra dependency installation.
-from typing import TypedDict
+# On utilise TypedDict (stdlib) pour des schémas légers, sans dépendance extra.
+
 
 class EntitiesSchema(TypedDict):
     topic: Optional[str]

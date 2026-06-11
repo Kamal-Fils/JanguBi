@@ -4,7 +4,6 @@ from typing import Dict, List, Optional
 from django.conf import settings
 from django.db import connection
 
-from apps.bible.models import Verse
 from apps.bible.services.cleaning import CleaningService
 from apps.bible.services.embedding_service import EmbeddingService
 

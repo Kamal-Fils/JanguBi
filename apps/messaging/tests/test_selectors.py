@@ -16,7 +16,6 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 
-from apps.messaging.models import Conversation
 from apps.messaging.selectors import (
     block_list,
     conversation_get,
@@ -36,7 +35,6 @@ from .factories import (
     NotificationFactory,
     PriestProfileFactory,
 )
-
 
 # ---------------------------------------------------------------------------
 # conversation_list

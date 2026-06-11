@@ -1,14 +1,16 @@
 from pathlib import Path
+
 from django.conf import settings
+from django.db.models import Count, Prefetch
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
-from django.db.models import Count, Prefetch
 
 from apps.api.mixins import ApiAuthMixin
+from apps.api.pagination import LimitOffsetPagination, get_paginated_response
 from apps.bible.models import Book, Chapter, DailyText, Testament, Verse
 from apps.bible.serializers import (
     BookMetadataOutputSerializer,
@@ -20,7 +22,6 @@ from apps.bible.serializers import (
 )
 from apps.bible.services.search_service import SearchService
 from apps.bible.tasks import import_file_task
-from apps.api.pagination import LimitOffsetPagination, get_paginated_response
 
 
 class TestamentListApi(APIView):

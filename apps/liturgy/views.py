@@ -1,23 +1,22 @@
 import datetime
+
+from asgiref.sync import sync_to_async
 from django.utils import timezone
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
-from rest_framework import status
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
-from asgiref.sync import sync_to_async
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from apps.liturgy.models import LiturgicalDate, Reading, Office, AelfResource
+from apps.liturgy.models import LiturgicalDate, Office, Reading
 from apps.liturgy.serializers import (
     LiturgicalDateSerializer,
-    ReadingSerializer,
     OfficeSerializer,
-    AelfResourceSerializer
+    ReadingSerializer,
 )
 from apps.liturgy.services import AelfService
-import asyncio
 
 
 class DailyLiturgyBaseApi(APIView):

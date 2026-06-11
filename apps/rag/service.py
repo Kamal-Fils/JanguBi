@@ -1,11 +1,12 @@
 import logging
-from typing import TypedDict, Optional
+from typing import Optional, TypedDict
+
 from django.conf import settings
 
-from apps.rag.extractor import IntentExtractor
-from apps.rag.router import QueryRouter
 from apps.rag.context_builder import ContextBuilder
+from apps.rag.extractor import IntentExtractor
 from apps.rag.llm_client import AsyncGeminiClient
+from apps.rag.router import QueryRouter
 
 logger = logging.getLogger(__name__)
 

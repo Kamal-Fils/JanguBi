@@ -11,8 +11,7 @@ from django.utils import timezone
 from apps.users.enums import UserRole
 from apps.users.models import BaseUser
 from apps.users.services import purge_expired_unactivated_admin_accounts
-from apps.users.tests.factories import BaseUserFactory, StaffUserFactory, SuperAdminFactory
-
+from apps.users.tests.factories import BaseUserFactory, SuperAdminFactory
 
 # ---------------------------------------------------------------------------
 # purge_expired_unactivated_admin_accounts
@@ -93,7 +92,6 @@ def test_purge_does_not_delete_fidele_accounts():
 @pytest.mark.django_db
 def test_purge_deletes_all_admin_role_types():
     # Arrange — one of each admin role, all expired and never logged in
-    from apps.users.enums import UserRole
 
     past = timezone.now() - timedelta(days=30)
     admin_roles = [

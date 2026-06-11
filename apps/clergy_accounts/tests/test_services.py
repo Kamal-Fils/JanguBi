@@ -2,7 +2,7 @@ import pytest
 from django.utils import timezone
 
 from apps.clergy_accounts.models import ClergicalInvitation
-from apps.clergy_accounts.services import invitation_create, invitation_accept, invitation_revoke
+from apps.clergy_accounts.services import invitation_accept, invitation_create, invitation_revoke
 from apps.core.exceptions import ApplicationError
 from apps.org.tests.factories import DioceseFactory, ParishFactory
 from apps.users.enums import PastoralRole, RoleScope, UserRole

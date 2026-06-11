@@ -1,5 +1,6 @@
 from typing import Dict
 
+
 class ContextBuilder:
     """
     Takes the raw context string outputs from the engines and formats them 

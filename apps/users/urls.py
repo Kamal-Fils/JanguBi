@@ -1,14 +1,5 @@
 from django.urls import path
 
-from .apis_memberships import (
-    MembershipMeDeleteApi,
-    MembershipMeListCreateApi,
-    MembershipMeSetPrimaryApi,
-)
-from .apis_roles import (
-    RoleAssignmentListApi,
-    RoleAssignmentRevokeApi,
-)
 from .apis import (
     EmailChangeConfirmApi,
     EmailChangeRequestApi,
@@ -28,6 +19,15 @@ from .apis import (
     UserMeUpdateApi,
     UserSoftDeleteApi,
     UserToggleActiveApi,
+)
+from .apis_memberships import (
+    MembershipMeDeleteApi,
+    MembershipMeListCreateApi,
+    MembershipMeSetPrimaryApi,
+)
+from .apis_roles import (
+    RoleAssignmentListApi,
+    RoleAssignmentRevokeApi,
 )
 
 urlpatterns = [

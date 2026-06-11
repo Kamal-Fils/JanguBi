@@ -15,8 +15,8 @@ from apps.donations.models import Donation
 from apps.donations.selectors import donation_flow_for_parish
 from apps.mass_intentions.models import MassIntention
 from apps.org.models import Church, Diocese, Parish
-from apps.users.models import Membership, Profile, RoleAssignment
 from apps.users.enums import RoleScope
+from apps.users.models import Membership, Profile, RoleAssignment
 from apps.users.scoping import clergy_of_parish, parish_principal_cure
 
 _ACTIVE_DOC_STATUSES = ["submitted", "under_verification", "info_requested", "validated"]

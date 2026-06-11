@@ -1,8 +1,9 @@
-import datetime
+from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db.models import Prefetch
-from django.contrib.postgres.search import SearchQuery, SearchVector, SearchRank
 from django.utils import timezone
-from apps.rosary.models import MysteryGroup, Mystery, Prayer, MysteryPrayer, RosaryDay
+
+from apps.rosary.models import Mystery, MysteryGroup, MysteryPrayer, Prayer, RosaryDay
+
 
 class RosaryService:
     @staticmethod

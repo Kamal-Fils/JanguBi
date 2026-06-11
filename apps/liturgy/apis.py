@@ -4,17 +4,15 @@ from asgiref.sync import async_to_sync
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from drf_spectacular.utils import OpenApiParameter, extend_schema
 from drf_spectacular.openapi import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.api.mixins import ApiAuthMixin
-from apps.liturgy.models import AelfResource, LiturgicalDate, Office, Reading
+from apps.liturgy.models import LiturgicalDate, Office, Reading
 from apps.liturgy.serializers import (
-    AelfResourceSerializer,
     LiturgicalDateSerializer,
     OfficeSerializer,
     ReadingSerializer,

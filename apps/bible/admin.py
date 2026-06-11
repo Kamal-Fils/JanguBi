@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from apps.bible.models import Book, Chapter, DailyText, HomilieNote, LectioDivinaSession, ReadingPlan, ReadingPlanPassage, Testament, Verse
+from apps.bible.models import (
+    Book,
+    Chapter,
+    DailyText,
+    HomilieNote,
+    LectioDivinaSession,
+    ReadingPlan,
+    ReadingPlanPassage,
+    Testament,
+    Verse,
+)
 
 
 @admin.register(Testament)

@@ -1,5 +1,7 @@
 from django.contrib import admin
-from apps.rosary.models import MysteryGroup, Mystery, Prayer, MysteryPrayer, RosaryDay
+
+from apps.rosary.models import Mystery, MysteryGroup, MysteryPrayer, Prayer, RosaryDay
+
 
 @admin.register(MysteryGroup)
 class MysteryGroupAdmin(admin.ModelAdmin):

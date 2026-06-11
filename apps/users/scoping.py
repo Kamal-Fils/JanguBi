@@ -18,7 +18,6 @@ from apps.org.models import Church, Diocese, Parish
 from apps.users.enums import PastoralRole, RoleScope, UserRole
 from apps.users.models import BaseUser, RoleAssignment
 
-
 # ---------------------------------------------------------------------------
 # Scoping de contenu (multi-appartenance) — générique, réutilisable
 # ---------------------------------------------------------------------------

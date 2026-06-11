@@ -1,5 +1,7 @@
 import logging
+
 from asgiref.sync import sync_to_async
+
 from apps.bible.services.search_service import SearchService
 from apps.rag.schemas import EntitiesSchema
 

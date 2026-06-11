@@ -1,11 +1,10 @@
-import os
 from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
 from django.test import TestCase
 
-from apps.bible.models import Book, Chapter, Testament, Verse
+from apps.bible.models import Book, Testament, Verse
 from apps.bible.services.import_service import ImportService
 
 

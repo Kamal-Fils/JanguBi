@@ -4,10 +4,10 @@ Uses factory_boy + DjangoModelFactory as per HackSoft Styleguide.
 """
 
 import factory
-from factory.django import DjangoModelFactory
 from django.utils import timezone
+from factory.django import DjangoModelFactory
 
-from apps.liturgy.models import LiturgicalDate, AelfResource, Reading, Office, AelfDataEntry
+from apps.liturgy.models import AelfDataEntry, AelfResource, LiturgicalDate, Office, Reading
 
 
 class LiturgicalDateFactory(DjangoModelFactory):

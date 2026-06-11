@@ -1,11 +1,11 @@
 from asgiref.sync import async_to_sync
 from django.db import transaction
 from django.utils.decorators import method_decorator
+from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
-from drf_spectacular.utils import extend_schema
 
 from apps.api.mixins import ApiAuthMixin
 from apps.rag.serializers import RagQuerySerializer, RagResponseSerializer

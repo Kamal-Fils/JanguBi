@@ -4,7 +4,7 @@ from factory.django import DjangoModelFactory
 
 from apps.news.models import Article, ArticleCategory
 from apps.org.tests.factories import ChurchFactory, DioceseFactory, ParishFactory
-from apps.users.tests.factories import BaseUserFactory, StaffUserFactory
+from apps.users.tests.factories import StaffUserFactory
 
 
 class ArticleCategoryFactory(DjangoModelFactory):

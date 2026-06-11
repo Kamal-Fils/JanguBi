@@ -1,10 +1,10 @@
 import json
 import logging
-import yaml
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Any, Dict, Tuple
 
+import yaml
 from django.conf import settings
 from django.db import transaction
 

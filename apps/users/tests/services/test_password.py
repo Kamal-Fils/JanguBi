@@ -103,7 +103,7 @@ class PasswordResetRequestTests(TestCase):
 
     @patch(PATCH_EMAIL)
     def test_reset_token_stored(self, mock_email):
-        with patch("apps.users.services.generate_url_token", return_value="mytoken") as mock_gen:
+        with patch("apps.users.services.generate_url_token", return_value="mytoken"):
             password_reset_request(email="user@example.com", ip="1.2.3.4")
         result = token_get("pwd_reset", "mytoken")
         self.assertIsNotNone(result)

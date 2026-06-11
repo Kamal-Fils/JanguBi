@@ -3,10 +3,9 @@ import uuid
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from apps.messaging.fields import EncryptedTextField
-
 from apps.common.models import BaseModel
 from apps.files.models import File
+from apps.messaging.fields import EncryptedTextField
 from apps.users.models import BaseUser
 
 
