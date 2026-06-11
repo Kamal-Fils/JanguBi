@@ -73,10 +73,10 @@ jobs:
 
       - name: Run tests
         env:
-          DJANGO_SETTINGS_MODULE: config.django.test   # ✅ après création du fichier
+          DJANGO_SETTINGS_MODULE: config.django.test
           SECRET_KEY: "ci-only-secret-key-not-for-production"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/jangubi_test
           REDIS_URL: redis://localhost:6379/0
-          CELERY_TASK_ALWAYS_EAGER: "True"             # ✅ pas besoin de RabbitMQ
+          CELERY_TASK_ALWAYS_EAGER: "True"         
           CELERY_TASK_EAGER_PROPAGATES: "True"
         run: pytest apps/ -v --tb=short
