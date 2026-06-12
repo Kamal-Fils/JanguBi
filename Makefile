@@ -8,7 +8,8 @@ export
        flush-redis flush-db check-embeddings seed-embeddings seed-embeddings-force seed-embeddings-async \
        seed seed-senegal seed-demo seed-reset \
 	celery-logs celery-restart rabbitmq-stats clean-audio collectstatic reinit-bible reinit-bible-aelf import-bible-aelf init-tv-categories \
-	ci-list ci act ci-docker ci-docker-act
+	ci-list ci act ci-docker ci-docker-act \
+	build-prod up-prod down-prod logs-prod
 
 # ==============================================================================
 # COMMANDES DOCKER
@@ -218,3 +219,24 @@ ci-docker:
 # `.secrets` avec DOCKERHUB_USERNAME / DOCKERHUB_TOKEN. ⚠️ pousse réellement l'image.
 ci-docker-act:
 	act push -P $(ACT_RUNNER) --rm --job build-docker --secret-file .secrets
+
+# ==============================================================================
+# RUN LOCAL DE L'IMAGE DE PRODUCTION (compose override)
+# ==============================================================================
+# Lance django/celery/beats avec la cible `production` (non-root appuser, venv
+# sans outils de dev, AUCUN bind-mount du code) + l'infra du compose de base.
+# Reproduit la prod en local. À ne pas lancer en même temps que `make up` (mêmes
+# container_names / volumes).
+PROD_COMPOSE := -f docker-compose.yml -f docker-compose.prod.yml
+
+build-prod:
+	docker compose $(PROD_COMPOSE) build
+
+up-prod:
+	docker compose $(PROD_COMPOSE) up -d --build
+
+down-prod:
+	docker compose $(PROD_COMPOSE) down
+
+logs-prod:
+	docker compose $(PROD_COMPOSE) logs -f django
