@@ -125,8 +125,7 @@ jobs:
         uses: docker/build-push-action@f72b3cf665d7d5fe435407befecb40d10b4266d2 #v7.2.0
         with:
           context: .
-          file: docker/Dockerfile
-          target: production
+          file: docker/production.Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           # ↑ Réutilise les tags générés par le step "meta" ci-dessus

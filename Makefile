@@ -213,7 +213,7 @@ act: ci
 # Valide EN LOCAL le build de l'image de production (ce que construit le job
 # build-docker). NE POUSSE PAS — pour débugger le Dockerfile avant un tag/push.
 ci-docker:
-	docker build --target production -f docker/Dockerfile -t jangubi-backend:local .
+	docker build -f docker/production.Dockerfile -t jangubi-backend:local .
 
 # Lance le job build-docker via act (build + push DockerHub). Nécessite un fichier
 # `.secrets` avec DOCKERHUB_USERNAME / DOCKERHUB_TOKEN. ⚠️ pousse réellement l'image.

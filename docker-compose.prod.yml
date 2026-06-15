@@ -17,16 +17,16 @@
 services:
   django:
     build:
-      target: production
+      dockerfile: docker/production.Dockerfile
     # Liste de volumes redéfinie à vide → masque le bind-mount `.:/app` du base.
     volumes: !reset []
 
   celery:
     build:
-      target: production
+      dockerfile: docker/production.Dockerfile
     volumes: !reset []
 
   beats:
     build:
-      target: production
+      dockerfile: docker/production.Dockerfile
     volumes: !reset []

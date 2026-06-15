@@ -5,8 +5,7 @@
 x-app-base: &app-base
   build:
     context: .
-    dockerfile: docker/Dockerfile
-    target: development
+    dockerfile: docker/local.Dockerfile
   volumes:
     - .:/app
   env_file:
