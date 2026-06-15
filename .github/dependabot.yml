@@ -5,7 +5,7 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
-    target-branch: "master"
+    target-branch: "main"
     open-pull-requests-limit: 10
     groups:
       dependencies:
@@ -15,7 +15,7 @@ updates:
   # Enable version updates for GH Actions
   - package-ecosystem: "github-actions"
     # Look for a `/workflows` in the `root` directory
-    directory: "./.github/"
+    directory: "/"
     schedule:
       interval: "monthly"
-    target-branch: "master"
+    target-branch: "main"
