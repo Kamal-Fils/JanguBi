@@ -20,6 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
   build:
     runs-on: ubuntu-24.04              
 
@@ -146,3 +147,33 @@ jobs:
           # ↑ Écrire le cache vers GitHub Actions Cache
           #   mode=max = cache TOUTES les couches intermédiaires
           #   (pas seulement le résultat final)
+          
+  trigger-deploy:
+    needs: build-docker
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Calculer le tag
+        id: tag
+        run: |
+          SHA=$(echo "${{ github.sha }}" | head -c 7)
+          BRANCH="${{ github.ref_name }}"
+          echo "value=${BRANCH}-${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Déclencher le deploy
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.DEPLOY_TOKEN }}
+          script: |
+            const tag = '${{ steps.tag.outputs.value }}'
+            const ref = '${{ github.ref_name }}'
+
+            await github.rest.repos.createDispatchEvent({
+              owner: 'Kamal-Fils',
+              repo: 'infrastructure',
+              event_type: 'deploy-backend',
+              client_payload: { tag, ref, sha: '${{ github.sha }}' }
+            })
+
+            console.log(`✅ Deploy backend déclenché — tag: ${tag}`)
