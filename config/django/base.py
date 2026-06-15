@@ -229,7 +229,9 @@ USE_TZ = True
 
 STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 STATIC_URL = "/static/"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+# Le backend de fichiers statiques/media est défini via le réglage unifié
+# STORAGES (Django 4.2+) dans config/settings/files_and_storages.py — l'ancien
+# STATICFILES_STORAGE / DEFAULT_FILE_STORAGE est SUPPRIMÉ depuis Django 5.1.
 
 REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "apps.api.exception_handlers.drf_default_with_modifications_exception_handler",

@@ -8,6 +8,16 @@ FILE_UPLOAD_STORAGE = env_to_enum(FileUploadStorage, env("FILE_UPLOAD_STORAGE", 
 
 FILE_MAX_SIZE = env.int("FILE_MAX_SIZE", default=10485760)  # 10 MiB
 
+# Réglage unifié des backends de stockage (Django 4.2+ ; remplace les
+# STATICFILES_STORAGE / DEFAULT_FILE_STORAGE SUPPRIMÉS en Django 5.1).
+#   default     : media — FileSystem en local, S3 (django-storages) en prod.
+#   staticfiles : défaut Django ici ; la prod l'override en WhiteNoise manifest
+#                 (compression + cache-busting) dans config/django/production.py.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
 if FILE_UPLOAD_STORAGE == FileUploadStorage.LOCAL:
     MEDIA_ROOT_NAME = "media"
     MEDIA_ROOT = os.path.join(BASE_DIR, MEDIA_ROOT_NAME)
@@ -16,7 +26,7 @@ if FILE_UPLOAD_STORAGE == FileUploadStorage.LOCAL:
 if FILE_UPLOAD_STORAGE == FileUploadStorage.S3:
     # Using django-storages
     # https://django-storages.readthedocs.io/en/latest/backends/amazon-S3.html
-    DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+    STORAGES["default"]["BACKEND"] = "storages.backends.s3boto3.S3Boto3Storage"
 
     AWS_S3_ACCESS_KEY_ID = env("AWS_S3_ACCESS_KEY_ID")
     AWS_S3_SECRET_ACCESS_KEY = env("AWS_S3_SECRET_ACCESS_KEY")
