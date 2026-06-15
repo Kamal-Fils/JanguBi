@@ -86,6 +86,10 @@ jobs:
 
   build-docker:
      needs: build
+     # Ne build/push l'image que sur push (branches + tags), jamais sur PR :
+     # un PR n'a pas à publier sur DockerHub (secrets indispo sur les forks,
+     # et {{branch}} y est vide → tag invalide).
+     if: github.event_name != 'pull_request'
      runs-on: ubuntu-24.04
 
      steps:
@@ -108,13 +112,11 @@ jobs:
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/jangubi-backend
           tags: |
+            type=ref,event=branch
+            type=ref,event=tag
             type=semver,pattern={{version}}
-
             type=semver,pattern={{major}}.{{minor}}
-
-            type=raw,value={{branch}}-{{sha}}
-
-            type=sha
+            type=sha,prefix=sha-
 
           # Les labels = métadonnées embarquées dans l'image
           # (visibles avec docker inspect)
