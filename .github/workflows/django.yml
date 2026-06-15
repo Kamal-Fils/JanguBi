@@ -158,8 +158,8 @@ jobs:
         id: tag
         run: |
           SHA=$(echo "${{ github.sha }}" | head -c 7)
-          BRANCH="${{ github.ref_name }}"
-          echo "value=${BRANCH}-${SHA}" >> $GITHUB_OUTPUT
+          # Tag immuable produit par build-docker (type=sha,prefix=sha-).
+          echo "value=sha-${SHA}" >> $GITHUB_OUTPUT
 
       - name: Déclencher le deploy
         uses: actions/github-script@v7
