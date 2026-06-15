@@ -89,6 +89,20 @@ WORKDIR /app
 # --chown pose la propriété EN MÊME TEMPS que la copie → une seule couche.
 COPY --chown=appuser:appuser . /app
 
+# Fichiers statiques collectés AU BUILD → bakés dans l'image (immuable).
+# Pourquoi ici et pas au runtime : /app est possédé par root (créé par WORKDIR),
+# donc l'appuser non-root ne peut PAS y créer /app/staticfiles → PermissionError
+# sur collectstatic au runtime. En le faisant au build (en tant que root), le
+# dossier est créé et peuplé une fois pour toutes. WhiteNoise utilise le
+# CompressedManifestStaticFilesStorage : sans cette collecte, l'app renvoie 500.
+# production.py exige SECRET_KEY à l'import → valeur JETABLE, utilisée uniquement
+# le temps de cette commande (le vrai .env la surcharge au runtime). On rend
+# ensuite staticfiles à appuser pour qu'un `collectstatic` manuel reste possible.
+RUN SECRET_KEY="collectstatic-build-only" \
+    DJANGO_SETTINGS_MODULE=config.django.production \
+    python manage.py collectstatic --noinput \
+ && chown -R appuser:appuser /app/staticfiles
+
 USER appuser
 
 # L'entrypoint applique les migrations puis exécute la commande. En prod on sert
