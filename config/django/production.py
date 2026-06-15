@@ -6,6 +6,16 @@ DEBUG = env.bool("DJANGO_DEBUG", default=False)
 
 SECRET_KEY = env("SECRET_KEY")
 
+# En production, les statiques sont servis par WhiteNoise avec MANIFEST
+# (cache-busting via noms hashés) + compression gzip/brotli. Le collectstatic
+# est exécuté AU BUILD (docker/production.Dockerfile), donc le manifest existe
+# déjà dans l'image. On n'active ce storage strict QU'en prod : le dev reste sur
+# le storage par défaut (pas de manifest requis sans collectstatic).
+STORAGES = {
+    **STORAGES,  # noqa: F405 — défini dans config/settings/files_and_storages.py
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+
 # Traefik passe X-Forwarded-Host; accepter aussi le container name "django"
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["django", "localhost", "127.0.0.1"])
 
