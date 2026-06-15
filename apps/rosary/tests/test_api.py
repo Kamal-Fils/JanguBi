@@ -1,6 +1,8 @@
 import pytest
 from rest_framework.test import APIClient
+
 from apps.rosary.models import MysteryGroup
+
 
 @pytest.fixture
 def api_client():

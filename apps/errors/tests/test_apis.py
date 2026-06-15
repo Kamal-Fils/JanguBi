@@ -99,6 +99,8 @@ def test_trigger_exception_returns_403_for_parish_admin(staff_client):
 
 @pytest.mark.django_db
 def test_trigger_exception_raises_for_super_admin(super_admin_client):
-    # The endpoint intentionally raises an unhandled exception — expect 500
-    response = super_admin_client.get(_EXCEPTION_URL)
-    assert response.status_code == 500
+    # The endpoint intentionally raises an unhandled exception.
+    # DRF's APIClient defaults to raise_request_exception=True, so the
+    # exception propagates to the test client instead of returning a 500.
+    with pytest.raises(Exception, match="Oops"):
+        super_admin_client.get(_EXCEPTION_URL)

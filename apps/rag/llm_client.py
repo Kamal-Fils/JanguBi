@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 MAX_OUTPUT_TOKENS = 1024
 
 
-def _is_retryable(exc: Exception) -> bool:
+def _is_retryable(exc: BaseException) -> bool:
     """Ne retenter QUE le réseau et les 5xx. Les 4xx (401/403 clé invalide,
     400 requête, 429 quota) sont déterministes : insister aggrave la charge."""
     if isinstance(exc, httpx.RequestError):

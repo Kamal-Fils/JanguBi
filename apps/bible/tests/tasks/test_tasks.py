@@ -1,12 +1,9 @@
-import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from django.test import TestCase, override_settings
 
-import apps.bible.services.aelf_service
-
 from apps.bible.models import Book, Chapter, Testament, Verse
-from apps.bible.tasks import compute_embeddings_task, populate_tsv_task, import_file_task
+from apps.bible.tasks import compute_embeddings_task, import_file_task, populate_tsv_task
 
 
 class TaskTests(TestCase):

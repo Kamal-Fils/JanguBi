@@ -1,12 +1,8 @@
 from rest_framework import serializers
-from apps.liturgy.models import (
-    AelfDataEntry,
-    LiturgicalDate,
-    AelfResource,
-    Reading,
-    Office
-)
+
 from apps.bible.serializers import VerseOutputSerializer
+from apps.liturgy.models import AelfResource, LiturgicalDate, Office, Reading
+
 
 class ReadingSerializer(serializers.ModelSerializer):
     """Serializer for Mass readings."""

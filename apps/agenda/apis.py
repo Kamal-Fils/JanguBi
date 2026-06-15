@@ -1,10 +1,15 @@
+from drf_spectacular.openapi import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-from drf_spectacular.openapi import OpenApiTypes
 
+from apps.agenda.serializers import (
+    EventInputSerializer,
+    EventOutputSerializer,
+    RegistrationOutputSerializer,
+)
 from apps.api.mixins import ApiAuthMixin
 from apps.api.pagination import (
     LimitOffsetPagination,
@@ -13,12 +18,6 @@ from apps.api.pagination import (
 )
 from apps.core.exceptions import ApplicationError
 from apps.users.permissions import IsOnboardingCompleted
-
-from apps.agenda.serializers import (
-    EventInputSerializer,
-    EventOutputSerializer,
-    RegistrationOutputSerializer,
-)
 
 
 def _error(exc: ApplicationError) -> Response:

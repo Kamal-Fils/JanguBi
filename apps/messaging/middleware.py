@@ -15,7 +15,7 @@ def _get_user_from_token(token: str):
     from apps.users.models import BaseUser
 
     try:
-        validated = UntypedToken(token)  # validates signature + expiry via simplejwt defaults
+        validated = UntypedToken(token)  # type: ignore[arg-type]  # stub SimpleJWT trop strict : UntypedToken accepte une str brute à l'exécution (validates signature + expiry)
         user_id = validated["user_id"]
         return BaseUser.objects.get(id=user_id, is_active=True)
     except (InvalidToken, TokenError, KeyError, BaseUser.DoesNotExist):

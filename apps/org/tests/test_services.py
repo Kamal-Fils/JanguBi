@@ -2,7 +2,7 @@ import pytest
 
 from apps.core.exceptions import ApplicationError
 from apps.org.services import diocese_create, parish_create, province_create
-from apps.org.tests.factories import DioceseFactory, ParishFactory, ProvinceFactory
+from apps.org.tests.factories import DioceseFactory, ProvinceFactory
 
 
 @pytest.mark.django_db

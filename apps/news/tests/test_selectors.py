@@ -7,7 +7,6 @@ Couvre : category_list, article_list, article_list_global,
 
 import pytest
 
-from apps.org.tests.factories import DioceseFactory, ParishFactory
 from apps.news.models import Article
 from apps.news.selectors import (
     article_get,
@@ -18,6 +17,7 @@ from apps.news.selectors import (
     article_list_global,
     category_list,
 )
+from apps.org.tests.factories import DioceseFactory, ParishFactory
 
 from .factories import (
     ArticleCategoryFactory,
@@ -28,7 +28,6 @@ from .factories import (
     PublishedDioceseArticleFactory,
     PublishedParishArticleFactory,
 )
-
 
 # ---------------------------------------------------------------------------
 # category_list

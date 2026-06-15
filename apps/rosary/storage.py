@@ -1,6 +1,8 @@
+from urllib.parse import urlparse
+
 from django.conf import settings
 from storages.backends.s3boto3 import S3Boto3Storage
-from urllib.parse import urlparse
+
 
 class RosaryAudioStorage(S3Boto3Storage):
     """

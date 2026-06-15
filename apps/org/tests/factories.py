@@ -7,8 +7,8 @@ from apps.org.models import (
     Diocese,
     Parish,
     Province,
-    ReligiousOrder,
     ReligiousCommunity,
+    ReligiousOrder,
 )
 
 

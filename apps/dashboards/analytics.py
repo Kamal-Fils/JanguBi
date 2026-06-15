@@ -47,7 +47,7 @@ def resolve_analytics_context(user) -> dict | None:
     ras = RoleAssignment.objects.filter(user=user, is_active=True)
 
     prov = ras.filter(scope=RoleScope.PROVINCE, province__isnull=False).first()
-    if prov:
+    if prov and prov.province_id is not None:
         p = Province.objects.filter(id=prov.province_id).first()
         return {
             "level": "province",
@@ -56,7 +56,7 @@ def resolve_analytics_context(user) -> dict | None:
         }
 
     dio = ras.filter(scope=RoleScope.DIOCESE, diocese__isnull=False).first()
-    if dio:
+    if dio and dio.diocese_id is not None:
         d = Diocese.objects.filter(id=dio.diocese_id).first()
         return {
             "level": "diocese",
@@ -82,8 +82,8 @@ def resolve_analytics_context(user) -> dict | None:
     if parish_ids:
         entity = None
         if len(parish_ids) == 1:
-            p = Parish.objects.filter(id=parish_ids[0]).first()
-            entity = {"id": p.id, "name": p.name} if p else None
+            pa = Parish.objects.filter(id=parish_ids[0]).first()
+            entity = {"id": pa.id, "name": pa.name} if pa else None
         return {"level": "parish", "entity": entity, "scope": {"parish_ids": parish_ids}}
 
     return None
@@ -138,19 +138,19 @@ def _total_units(level: str, scope: dict) -> int:
     """Nombre d'entités du grain de classement dans le périmètre (dénominateur
     du KPI « actives / total »)."""
     if level == "parish":
-        qs = Church.objects.all()
+        qs_church = Church.objects.all()
         if scope.get("parish_ids"):
-            qs = qs.filter(parish_id__in=scope["parish_ids"])
-        return qs.count()
+            qs_church = qs_church.filter(parish_id__in=scope["parish_ids"])
+        return qs_church.count()
     if level == "diocese":
-        qs = Parish.objects.all()
+        qs_parish = Parish.objects.all()
         if scope.get("diocese_ids"):
-            qs = qs.filter(diocese_id__in=scope["diocese_ids"])
-        return qs.count()
-    qs = Diocese.objects.all()
+            qs_parish = qs_parish.filter(diocese_id__in=scope["diocese_ids"])
+        return qs_parish.count()
+    qs_diocese = Diocese.objects.all()
     if scope.get("province_ids"):
-        qs = qs.filter(province_id__in=scope["province_ids"])
-    return qs.count()
+        qs_diocese = qs_diocese.filter(province_id__in=scope["province_ids"])
+    return qs_diocese.count()
 
 
 # ---------------------------------------------------------------------------
@@ -327,19 +327,19 @@ def _scope_units(level: str, scope: dict) -> list[dict]:
     """Entités {id, name} du grain de classement présentes dans le périmètre
     (incluses même sans activité → on voit les unités « dormantes »)."""
     if level == "parish":
-        qs = Church.objects.all()
+        qs_church = Church.objects.all()
         if scope.get("parish_ids"):
-            qs = qs.filter(parish_id__in=scope["parish_ids"])
-        return [{"id": c.id, "name": c.name} for c in qs.order_by("name")]
+            qs_church = qs_church.filter(parish_id__in=scope["parish_ids"])
+        return [{"id": c.id, "name": c.name} for c in qs_church.order_by("name")]
     if level == "diocese":
-        qs = Parish.objects.all()
+        qs_parish = Parish.objects.all()
         if scope.get("diocese_ids"):
-            qs = qs.filter(diocese_id__in=scope["diocese_ids"])
-        return [{"id": p.id, "name": p.name} for p in qs.order_by("name")]
-    qs = Diocese.objects.all()
+            qs_parish = qs_parish.filter(diocese_id__in=scope["diocese_ids"])
+        return [{"id": p.id, "name": p.name} for p in qs_parish.order_by("name")]
+    qs_diocese = Diocese.objects.all()
     if scope.get("province_ids"):
-        qs = qs.filter(province_id__in=scope["province_ids"])
-    return [{"id": d.id, "name": d.name} for d in qs.order_by("name")]
+        qs_diocese = qs_diocese.filter(province_id__in=scope["province_ids"])
+    return [{"id": d.id, "name": d.name} for d in qs_diocese.order_by("name")]
 
 
 def _by_status(qs: QuerySet, status_field: str, labels: dict) -> list[dict]:

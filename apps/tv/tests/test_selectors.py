@@ -8,7 +8,6 @@ import pytest
 from apps.tv.selectors import category_list, video_list
 from apps.tv.tests.factories import CategoryFactory, VideoFactory
 
-
 # ---------------------------------------------------------------------------
 # category_list
 # ---------------------------------------------------------------------------

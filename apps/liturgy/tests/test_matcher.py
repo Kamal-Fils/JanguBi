@@ -1,5 +1,6 @@
 import pytest
-from apps.bible.models import Book, Chapter, Verse, Testament
+
+from apps.bible.models import Book, Chapter, Testament, Verse
 from apps.liturgy.matcher import CitationMatcher
 
 

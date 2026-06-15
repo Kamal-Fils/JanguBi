@@ -1,6 +1,9 @@
 from datetime import date
+
 from django.core.management.base import BaseCommand
+
 from apps.liturgy.tasks import bulk_import_task
+
 
 class Command(BaseCommand):
     help = "Trigger a bulk import of AELF Liturgy data for a date range."

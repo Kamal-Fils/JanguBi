@@ -35,7 +35,6 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
-
 # ─── Identifiants de test ─────────────────────────────────────────────────────
 
 DEMO_PASSWORD = "Jangu2024!"

@@ -1,8 +1,7 @@
-import pytest
-from django.test import TransactionTestCase
 from django.db import connection
+from django.test import TransactionTestCase
 
-from apps.bible.models import Testament, Book, Chapter, Verse
+from apps.bible.models import Book, Chapter, Testament, Verse
 from apps.bible.services.search_service import SearchService
 
 

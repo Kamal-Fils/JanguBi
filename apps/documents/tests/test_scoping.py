@@ -4,7 +4,7 @@ from apps.documents.selectors import document_request_agent_recipients, document
 from apps.org.tests.factories import ParishFactory
 from apps.users.enums import RoleScope, UserRole
 from apps.users.services_roles import role_assignment_create
-from apps.users.tests.factories import BaseUserFactory, ProfileFactory
+from apps.users.tests.factories import BaseUserFactory
 
 from .factories import DocumentRequestFactory
 

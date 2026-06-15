@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 from django.urls import reverse
 from django.utils import timezone
@@ -7,8 +9,6 @@ from rest_framework.test import APIClient
 from apps.agenda.models import Event
 from apps.users.enums import UserOnboardingState
 from apps.users.models import BaseUser
-
-import datetime
 
 
 def _make_user(email, pastoral_role="fidele", role="fidele"):

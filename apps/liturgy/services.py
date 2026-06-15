@@ -1,17 +1,11 @@
 import logging
-from typing import Dict, Any, Optional
-from datetime import date
+from typing import Any, Dict
+
 from asgiref.sync import sync_to_async
 
 from apps.liturgy.client import AelfAsyncClient
-from apps.liturgy.models import (
-    AelfDataEntry,
-    LiturgicalDate,
-    AelfResource,
-    Reading,
-    Office
-)
 from apps.liturgy.matcher import CitationMatcher
+from apps.liturgy.models import AelfDataEntry, AelfResource, LiturgicalDate, Office, Reading
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +102,6 @@ class AelfService:
     @sync_to_async
     def _save_readings_sync(ld: LiturgicalDate, source_json: Dict[str, Any]):
         # Synchronous internal mapping layer
-        from apps.liturgy.matcher import CitationMatcher
         messes = source_json.get("messes", [])
         if not messes:
             return

@@ -10,7 +10,7 @@ from apps.core.exceptions import ApplicationError
 from apps.users.enums import RoleScope
 from apps.users.models import RoleAssignment
 
-_SCOPE_REQUIRED_FK = {
+_SCOPE_REQUIRED_FK: dict[str, str] = {
     RoleScope.PROVINCE: "province",
     RoleScope.DIOCESE: "diocese",
     RoleScope.PARISH: "parish",

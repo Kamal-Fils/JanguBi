@@ -1,10 +1,12 @@
 import json
 import logging
 from pathlib import Path
+
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.conf import settings
-from apps.rosary.models import MysteryGroup, Mystery, Prayer, MysteryPrayer, RosaryDay
+
+from apps.rosary.models import Mystery, MysteryGroup, MysteryPrayer, Prayer, RosaryDay
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +192,8 @@ class Command(BaseCommand):
                 # 4. Intro and Closing prayers (Standalone, for client retrieval)
                 intro_data = day_data.get("intro", {})
                 for p_key, p_val in intro_data.items():
-                    if not p_val: continue
+                    if not p_val:
+                        continue
                     # Handle hail_mary which is a list in intro
                     texts = p_val if isinstance(p_val, list) else [p_val]
                     for t in texts:
@@ -205,7 +208,8 @@ class Command(BaseCommand):
                 
                 closing_data = day_data.get("closing", {})
                 for p_key, p_val in closing_data.items():
-                    if not p_val: continue
+                    if not p_val:
+                        continue
                     Prayer.objects.get_or_create(
                         text=p_val.strip(),
                         language="fr",

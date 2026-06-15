@@ -1,6 +1,6 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from drf_spectacular.utils import extend_schema_field
 from apps.bible.models import Book, Chapter, DailyText, Testament, Verse
 
 
@@ -26,7 +26,7 @@ class TestamentWithBooksOutputSerializer(serializers.ModelSerializer):
 
 
 class BookMetadataOutputSerializer(serializers.ModelSerializer):
-    testament = serializers.SlugRelatedField(read_only=True, slug_field="slug")
+    testament: serializers.SlugRelatedField = serializers.SlugRelatedField(read_only=True, slug_field="slug")
     chapter_count = serializers.IntegerField(read_only=True)
     
     class Meta:

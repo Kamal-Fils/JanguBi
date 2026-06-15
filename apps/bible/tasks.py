@@ -1,5 +1,6 @@
-from celery import shared_task
 import logging
+
+from celery import shared_task
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ def fetch_aelf_daily():
     Fetches the daily reading from AELF.
     """
     import asyncio
+
     from apps.bible.services.aelf_service import AELFService
     
     try:

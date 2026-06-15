@@ -1,4 +1,5 @@
 from django.urls import path
+
 from apps.rag.views import RagChatApi
 
 urlpatterns = [

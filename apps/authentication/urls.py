@@ -6,8 +6,6 @@ from .apis import (
     UserJwtLogoutApi,
     UserJwtRefreshApi,
     UserMeApi,
-    UserSessionLoginApi,
-    UserSessionLogoutApi,
 )
 
 urlpatterns = [

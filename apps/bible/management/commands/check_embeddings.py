@@ -1,7 +1,9 @@
 import logging
+
 from django.core.management.base import BaseCommand
-from apps.bible.models import Verse, Book
 from django.db.models import Count, Q
+
+from apps.bible.models import Book, Verse
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +19,9 @@ class Command(BaseCommand):
         # On compte les vecteurs RÉELS (non nuls), pas seulement non-NULL : un
         # embedding stub vaut [0,0,...] (non-NULL) et donnerait un faux 100 %.
         # On compare au vecteur nul (l2_norm est ambigu selon la build pgvector).
-        from apps.bible.services.embedding_service import EMBEDDING_DIM
         from django.db import connection
+
+        from apps.bible.services.embedding_service import EMBEDDING_DIM
 
         zero_vec = "[" + ",".join(["0"] * EMBEDDING_DIM) + "]"
         with connection.cursor() as cursor:

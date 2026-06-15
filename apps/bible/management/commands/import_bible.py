@@ -1,8 +1,9 @@
-import sys
 
 from django.core.management.base import BaseCommand, CommandError
-from apps.bible.services.import_service import ImportService
+
 from apps.bible.models import Book, Verse
+from apps.bible.services.import_service import ImportService
+
 
 class Command(BaseCommand):
     help = "Imports a Bible JSON file (Format A or B)"

@@ -63,7 +63,7 @@ class UserJwtLogoutInputSerializer(serializers.Serializer):
 
 class UserSessionLoginOutputSerializer(serializers.Serializer):
     session = serializers.CharField()
-    data = MeOutputSerializer()
+    data = MeOutputSerializer()  # type: ignore[assignment]  # drf-stubs : serializer imbriqué nommé `data` masque Serializer.data
 
 # ---------------------------------------------------------------------------
 # JWT Login

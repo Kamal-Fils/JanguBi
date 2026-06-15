@@ -1,5 +1,6 @@
 from datetime import date, timedelta
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+from uuid import UUID
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -9,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ApplicationError
+from apps.files.models import File
 from apps.messaging.models import (
     Conversation,
     ConversationExport,
@@ -20,6 +22,8 @@ from apps.messaging.models import (
 )
 from apps.users.models import BaseUser
 
+if TYPE_CHECKING:  # annotations seules ; l'import runtime reste local (anti-circulaire)
+    from apps.messaging.models import ClergicalMessage
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -404,13 +408,11 @@ def conversation_purge_messages(*, conversation: Conversation) -> None:
 
 @transaction.atomic
 def conversation_export_generate(*, export_id=None, conversation_id=None) -> ConversationExport:
-    import io
     import json
     import uuid
 
     from django.utils import timezone as tz
 
-    from apps.files.models import File
     from apps.messaging.serializers import MessageOutputSerializer
 
     if export_id:
@@ -496,11 +498,11 @@ def clerical_message_send(
     body: str,
     recipient_scope: str,
     scope_id: int | None = None,
-    individual_recipient_id: int | None = None,
+    individual_recipient_id: str | UUID | None = None,  # PK BaseUser = UUID (pas int)
 ) -> "ClergicalMessage":
     from apps.core.exceptions import ApplicationError
-    from apps.users.enums import PastoralRole
     from apps.messaging.models import ClergicalMessage
+    from apps.users.enums import PastoralRole
 
     clergy_roles = {
         PastoralRole.PRETRE,

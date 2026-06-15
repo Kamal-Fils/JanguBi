@@ -1,5 +1,5 @@
-from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from drf_spectacular.openapi import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response

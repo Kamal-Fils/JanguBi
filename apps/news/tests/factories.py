@@ -4,7 +4,7 @@ from factory.django import DjangoModelFactory
 
 from apps.news.models import Article, ArticleCategory
 from apps.org.tests.factories import ChurchFactory, DioceseFactory, ParishFactory
-from apps.users.tests.factories import BaseUserFactory, StaffUserFactory
+from apps.users.tests.factories import StaffUserFactory
 
 
 class ArticleCategoryFactory(DjangoModelFactory):
@@ -42,7 +42,7 @@ class PublishedArticleFactory(ArticleFactory):
     """Article global publié."""
 
     status = Article.Status.PUBLISHED
-    published_at = factory.LazyFunction(timezone.now)
+    published_at = factory.LazyFunction(timezone.now)  # type: ignore[assignment]  # factory_boy LazyFunction override of base attr
 
 
 class ParishArticleFactory(ArticleFactory):
@@ -57,7 +57,7 @@ class PublishedParishArticleFactory(ParishArticleFactory):
     """Article de paroisse publié."""
 
     status = Article.Status.PUBLISHED
-    published_at = factory.LazyFunction(timezone.now)
+    published_at = factory.LazyFunction(timezone.now)  # type: ignore[assignment]  # factory_boy LazyFunction override of base attr
 
 
 class DioceseArticleFactory(ArticleFactory):
@@ -72,7 +72,7 @@ class PublishedDioceseArticleFactory(DioceseArticleFactory):
     """Article de diocèse publié."""
 
     status = Article.Status.PUBLISHED
-    published_at = factory.LazyFunction(timezone.now)
+    published_at = factory.LazyFunction(timezone.now)  # type: ignore[assignment]  # factory_boy LazyFunction override of base attr
 
 
 class ChurchArticleFactory(ArticleFactory):
@@ -87,4 +87,4 @@ class PublishedChurchArticleFactory(ChurchArticleFactory):
     """Article d'église publié."""
 
     status = Article.Status.PUBLISHED
-    published_at = factory.LazyFunction(timezone.now)
+    published_at = factory.LazyFunction(timezone.now)  # type: ignore[assignment]  # factory_boy LazyFunction override of base attr

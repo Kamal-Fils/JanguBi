@@ -143,7 +143,6 @@ class UserSoftDeleteTests(TestCase):
         self.assertFalse(self.user.is_active)
 
     def test_email_anonymized(self):
-        original_id = self.user.id
         user_soft_delete(user=self.user, performed_by=self.admin)
         self.user.refresh_from_db()
         self.assertNotEqual(self.user.email, "victim@example.com")

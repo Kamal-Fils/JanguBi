@@ -19,7 +19,6 @@ from apps.users.enums import AuditEvent
 from apps.users.models import SecurityAuditLog
 from apps.users.tests.factories import BaseUserFactory
 
-
 # ---------------------------------------------------------------------------
 # auth_logout
 # ---------------------------------------------------------------------------

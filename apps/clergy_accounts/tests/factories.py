@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import factory
 from django.utils import timezone
 from factory.django import DjangoModelFactory
@@ -19,4 +21,4 @@ class ClergicalInvitationFactory(DjangoModelFactory):
     diocese = factory.SubFactory(DioceseFactory)
     created_by = factory.SubFactory(BaseUserFactory)
     status = ClergicalInvitation.Status.PENDING
-    expires_at = factory.LazyFunction(lambda: timezone.now() + timezone.timedelta(hours=48))
+    expires_at = factory.LazyFunction(lambda: timezone.now() + timedelta(hours=48))

@@ -1,12 +1,13 @@
 import asyncio
 import logging
+from typing import Any, Dict
+
 import httpx
-from typing import Dict, Any, List
 from tenacity import (
     retry,
-    wait_exponential,
-    stop_after_attempt,
     retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,7 +118,7 @@ class AelfAsyncClient:
             "complies": f"/v1/complies/{date_str}/{zone}"
         }
 
-        results = {}
+        results: Dict[str, Dict[str, Any]] = {}
         async with httpx.AsyncClient(headers=HEADERS) as client:
             # Create list of tasks
             keys = list(endpoints.keys())
@@ -127,7 +128,7 @@ class AelfAsyncClient:
             responses = await asyncio.gather(*tasks, return_exceptions=True)
             
             for key, response in zip(keys, responses):
-                if isinstance(response, Exception):
+                if isinstance(response, BaseException):
                     logger.error(f"Error fetching {key} concurrently: {str(response)}")
                     results[key] = {}
                 else:

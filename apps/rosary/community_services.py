@@ -2,7 +2,6 @@ from django.db import transaction
 
 from apps.core.exceptions import ApplicationError
 
-
 CLERGY_ROLES = {"religieux", "diacre", "pretre", "eveque", "archeveque"}
 
 

@@ -3,6 +3,7 @@ Selectors utilisateurs — toute la logique de lecture.
 Aucune logique d'écriture ici.
 """
 
+import uuid
 from typing import Optional
 
 from django.db.models.query import QuerySet
@@ -102,11 +103,11 @@ def user_get_by_email(email: str) -> Optional[BaseUser]:
     return get_object(BaseUser, email__iexact=email)
 
 
-def user_get_with_profile(user_id: int) -> Optional[BaseUser]:
+def user_get_with_profile(user_id: uuid.UUID | str | int) -> Optional[BaseUser]:
     return (
         BaseUser.objects
         .select_related("profile")
-        .filter(id=user_id)
+        .filter(id=user_id)  # type: ignore[misc]  # django-stubs limite le lookup UUIDField à UUID|str ; Django accepte aussi int (uuid.UUID(int=...))
         .first()
     )
 

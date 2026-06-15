@@ -12,8 +12,8 @@ pytest + factory_boy. AAA.
 """
 
 import pytest
-from rest_framework.test import APIClient
 from django.urls import reverse
+from rest_framework.test import APIClient
 
 from apps.org.tests.factories import ChurchFactory, ParishFactory
 from apps.users.enums import UserOnboardingState
@@ -22,7 +22,6 @@ from apps.users.selectors import user_get_login_data
 from apps.users.serializers import MeOutputSerializer
 from apps.users.services_memberships import membership_create
 from apps.users.tests.factories import BaseUserFactory, ProfileFactory
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -265,7 +264,7 @@ def test_remove_endpoint_promotes_oldest():
     client = _client(user)
     m_a = membership_create(user=user, church=_main_church(), is_primary=True)
     m_b = membership_create(user=user, church=_main_church())
-    m_c = membership_create(user=user, church=_main_church())
+    membership_create(user=user, church=_main_church())
 
     url = reverse("api:users:me-membership-delete", kwargs={"membership_id": m_a.id})
     resp = client.delete(url)

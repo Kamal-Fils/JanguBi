@@ -8,7 +8,7 @@ logger = structlog.get_logger(__name__)
 @shared_task(bind=True, max_retries=3)
 def purge_expired_conversations(self):
     from apps.messaging.models import Conversation
-    from apps.messaging.services import conversation_export_generate, conversation_purge_messages
+    from apps.messaging.services import conversation_purge_messages
 
     now = timezone.now()
     expired = Conversation.objects.filter(

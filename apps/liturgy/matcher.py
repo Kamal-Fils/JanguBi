@@ -1,8 +1,8 @@
 import re
 from typing import List
-from django.db.models import QuerySet
 
 from apps.bible.models import Book, Verse
+
 
 class CitationMatcher:
     """

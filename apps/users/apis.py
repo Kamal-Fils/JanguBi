@@ -26,7 +26,7 @@ Endpoints admin :
 """
 
 from django.http import Http404
-from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, OpenApiExample
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView

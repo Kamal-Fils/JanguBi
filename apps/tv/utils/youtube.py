@@ -25,8 +25,9 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
     if "youtube.com" in host or "youtube-nocookie.com" in host:
         if parsed.path == "/watch":
             query = parse_qs(parsed.query)
-            candidate = (query.get("v") or [None])[0]
-            return candidate if candidate and YOUTUBE_ID_REGEX.match(candidate) else None
+            values = query.get("v") or []
+            video_id = values[0] if values else None
+            return video_id if video_id and YOUTUBE_ID_REGEX.match(video_id) else None
 
         parts = [part for part in path.split("/") if part]
         if len(parts) >= 2 and parts[0] in {"embed", "shorts", "live", "v"}:

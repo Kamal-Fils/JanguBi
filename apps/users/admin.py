@@ -42,7 +42,7 @@ class BaseUserAdmin(admin.ModelAdmin):
         if hasattr(obj, "profile"):
             return f"{obj.profile.first_name} {obj.profile.last_name}"
         return "-"
-    full_name.short_description = _("Nom complet")
+    full_name.short_description = _("Nom complet")  # type: ignore[attr-defined]  # pattern Django admin standard : attribut dynamique sur méthode
 
 
 @admin.register(RoleAssignment)

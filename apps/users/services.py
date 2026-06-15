@@ -277,6 +277,8 @@ def user_activate_account(*, token: str, ip: str | None = None) -> BaseUser:
         raise TokenInvalidError("Lien d'activation invalide ou expiré.")
 
     user_id = payload.get("user_id")
+    if user_id is None:
+        raise TokenInvalidError("Compte introuvable.")
     try:
         user = BaseUser.objects.get(id=user_id)
     except BaseUser.DoesNotExist:

@@ -1,0 +1,32 @@
+# ==============================================================================
+# OVERRIDE « image de production » pour un run local de bout en bout.
+#
+# Le docker-compose.yml de base construit la cible `development` (outils de dev,
+# root, code bind-monté pour le hot-reload). Ce fichier bascule django/celery/
+# beats sur la cible `production` (non-root `appuser`, venv sans outils de test)
+# et RETIRE le bind-mount du code : on exécute bien l'image COPYée, pas le code
+# de l'hôte — exactement ce qui sera poussé sur DockerHub.
+#
+# Usage :
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+#
+# L'infra (db, redis, rabbitmq, minio, traefik, mailhog) est héritée telle quelle
+# du fichier de base — on ne la redéfinit pas ici.
+# ==============================================================================
+services:
+  django:
+    build:
+      dockerfile: docker/production.Dockerfile
+    # Liste de volumes redéfinie à vide → masque le bind-mount `.:/app` du base.
+    volumes: !reset []
+
+  celery:
+    build:
+      dockerfile: docker/production.Dockerfile
+    volumes: !reset []
+
+  beats:
+    build:
+      dockerfile: docker/production.Dockerfile
+    volumes: !reset []

@@ -1,14 +1,16 @@
 from pathlib import Path
+
 from django.conf import settings
+from django.db.models import Count, Prefetch
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
-from django.db.models import Count, Prefetch
 
 from apps.api.mixins import ApiAuthMixin
+from apps.api.pagination import LimitOffsetPagination, get_paginated_response
 from apps.bible.models import Book, Chapter, DailyText, Testament, Verse
 from apps.bible.serializers import (
     BookMetadataOutputSerializer,
@@ -20,7 +22,6 @@ from apps.bible.serializers import (
 )
 from apps.bible.services.search_service import SearchService
 from apps.bible.tasks import import_file_task
-from apps.api.pagination import LimitOffsetPagination, get_paginated_response
 
 
 class TestamentListApi(APIView):
@@ -98,7 +99,7 @@ class BookDetailApi(APIView):
         chapters = ChapterMetadataOutputSerializer(many=True, read_only=True)
         
         class Meta(BookMetadataOutputSerializer.Meta):
-            fields = BookMetadataOutputSerializer.Meta.fields + ("chapters",)
+            fields = BookMetadataOutputSerializer.Meta.fields + ("chapters",)  # type: ignore[assignment]  # DRF Meta.fields override widens the inherited tuple length
 
     @extend_schema(
         parameters=[
@@ -152,7 +153,7 @@ class VerseListApi(APIView):
     class FilterSerializer(serializers.Serializer):
         excerpt = serializers.BooleanField(required=False, default=False)
         verses = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)  # type: ignore[assignment]  # drf-stubs: serializer field named "source" collides with Field.source attribute
 
     @extend_schema(
         parameters=[
@@ -224,7 +225,7 @@ class SearchApi(APIView):
         testament = serializers.CharField(required=False, allow_blank=True, allow_null=True)
         book_slug = serializers.CharField(required=False, allow_blank=True, allow_null=True)
         chapter_number = serializers.IntegerField(required=False, allow_null=True)
-        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+        source = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)  # type: ignore[assignment]  # drf-stubs: serializer field named "source" collides with Field.source attribute
         hybrid = serializers.BooleanField(default=False)
         limit = serializers.IntegerField(default=50, max_value=500)
 
@@ -290,7 +291,7 @@ class ImportApi(ApiAuthMixin, APIView):
 
     class InputSerializer(serializers.Serializer):
         filename = serializers.CharField()
-        source = serializers.CharField()
+        source = serializers.CharField()  # type: ignore[assignment]  # drf-stubs: serializer field named "source" collides with Field.source attribute
 
     @extend_schema(request=InputSerializer, tags=["Bible"], summary="Trigger background import of Bible texts")
     def post(self, request):

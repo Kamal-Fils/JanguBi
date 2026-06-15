@@ -1,10 +1,10 @@
+from unittest.mock import patch
+
 import pytest
 import respx
-import httpx
 from httpx import Response
-from unittest.mock import patch, AsyncMock
 
-from apps.liturgy.client import AelfAsyncClient, AelfApiError
+from apps.liturgy.client import AelfAsyncClient
 
 # Make sure pytest-asyncio runs these
 pytestmark = pytest.mark.asyncio

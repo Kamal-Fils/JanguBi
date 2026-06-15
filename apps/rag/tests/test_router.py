@@ -1,6 +1,9 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
+
 from apps.rag.router import QueryRouter
+
 
 @pytest.mark.asyncio
 async def test_router_bible_only():

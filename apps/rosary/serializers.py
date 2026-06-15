@@ -1,5 +1,7 @@
 from rest_framework import serializers
-from apps.rosary.models import MysteryGroup, Mystery, Prayer, MysteryPrayer, RosaryDay
+
+from apps.rosary.models import Mystery, MysteryGroup, MysteryPrayer, Prayer, RosaryDay
+
 
 class PrayerSerializer(serializers.ModelSerializer):
     type_display = serializers.CharField(source="get_type_display", read_only=True)
@@ -14,7 +16,7 @@ class SearchPrayerSerializer(PrayerSerializer):
     rank = serializers.FloatField(read_only=True, required=False)
 
     class Meta(PrayerSerializer.Meta):
-        fields = PrayerSerializer.Meta.fields + ("rank",)
+        fields = PrayerSerializer.Meta.fields + ("rank",)  # type: ignore[assignment]  # DRF Meta.fields override widens the base tuple
 
 
 class MysteryPrayerSerializer(serializers.ModelSerializer):

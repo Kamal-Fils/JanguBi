@@ -1,8 +1,9 @@
-import datetime
+from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db.models import Prefetch
-from django.contrib.postgres.search import SearchQuery, SearchVector, SearchRank
 from django.utils import timezone
-from apps.rosary.models import MysteryGroup, Mystery, Prayer, MysteryPrayer, RosaryDay
+
+from apps.rosary.models import Mystery, MysteryGroup, MysteryPrayer, Prayer, RosaryDay
+
 
 class RosaryService:
     @staticmethod
@@ -21,7 +22,7 @@ class RosaryService:
         return qs.get(slug=group_id_or_slug)
 
     @staticmethod
-    def get_daily_rosary(day_of_week: int = None):
+    def get_daily_rosary(day_of_week: int | None = None):
         """
         Retrieves the Rosary mapping for a specific day of the week (0=Monday, 6=Sunday).
         If None is provided, defaults to today's weekday.
@@ -73,7 +74,7 @@ class RosaryService:
         )
 
     @staticmethod
-    def vector_search(query: str, embedding: list = None):
+    def vector_search(query: str, embedding: list | None = None):
         """Recherche « sémantique » des prières.
 
         Le rosaire ne porte pas d'embeddings (corpus minuscule) : on délègue à la

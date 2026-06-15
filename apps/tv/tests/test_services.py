@@ -17,7 +17,6 @@ from apps.tv.services import (
 )
 from apps.tv.tests.factories import CategoryFactory, VideoFactory
 
-
 # ---------------------------------------------------------------------------
 # category_create
 # ---------------------------------------------------------------------------

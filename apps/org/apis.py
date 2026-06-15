@@ -1,5 +1,5 @@
-from drf_spectacular.utils import OpenApiParameter, extend_schema
 from drf_spectacular.openapi import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -143,8 +143,8 @@ class DioceseListApi(ApiAuthMixin, APIView):
         serializer = DioceseCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        from apps.org.models import Province
         from apps.core.exceptions import ApplicationError as AE
+        from apps.org.models import Province
         try:
             province = Province.objects.get(id=data["province_id"])
         except Province.DoesNotExist:

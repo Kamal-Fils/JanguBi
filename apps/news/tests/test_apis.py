@@ -15,8 +15,12 @@ from apps.users.services_memberships import membership_create
 from apps.users.tests.factories import (
     AdminUserFactory,
     BaseUserFactory,
-    ProfileFactory,
-    StaffUserFactory,
+)
+
+from .factories import (
+    ArticleCategoryFactory,
+    ArticleFactory,
+    PublishedArticleFactory,
 )
 
 
@@ -38,13 +42,6 @@ def _member_of(parish):
     membership_create(user=user, church=church, is_primary=True)
     user.refresh_from_db()
     return user
-
-from .factories import (
-    ArticleCategoryFactory,
-    ArticleFactory,
-    PublishedArticleFactory,
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
