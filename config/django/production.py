@@ -20,6 +20,7 @@ STORAGES = {
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["django", "localhost", "127.0.0.1"])
 
 CORS_ALLOW_ALL_ORIGINS = env.bool("CORS_ALLOW_ALL_ORIGINS", default=False)
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ORIGIN_WHITELIST = env.list(
     "DJANGO_CORS_ORIGIN_WHITELIST",
     default=env.list("CORS_ORIGIN_WHITELIST", default=[]),
