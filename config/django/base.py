@@ -87,6 +87,7 @@ LOCAL_APPS = [
     "apps.donations.apps.DonationsConfig",
     "apps.dashboards.apps.DashboardsConfig",
     "apps.spiritual.apps.SpiritualConfig",
+    "apps.transfers.apps.TransfersConfig",
     #"apps.blog_examples.apps.BlogExamplesConfig",
 ]
 
