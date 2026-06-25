@@ -6,8 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
-from apps.api.pagination import LimitOffsetPagination, get_paginated_response
-from apps.api.pagination import paginated_response_serializer
+from apps.api.pagination import LimitOffsetPagination, get_paginated_response, paginated_response_serializer
 from apps.core.exceptions import ApplicationError
 from apps.org.selectors import parish_get_by_id
 from apps.users.permissions import IsAnyAdmin, IsOnboardingCompleted
