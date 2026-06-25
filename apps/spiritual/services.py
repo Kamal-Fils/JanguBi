@@ -67,13 +67,13 @@ def _check_scope_authority(
 
     ST = PastoralReflection.ScopeType
     if scope_type == ST.PARISH:
-        if not user_can_admin_parish(user, scope_parish_id):
+        if scope_parish_id is None or not user_can_admin_parish(user, scope_parish_id):
             raise ApplicationError("Vous n'avez pas autorité sur cette paroisse.")
     elif scope_type == ST.CHURCH:
-        if not user_can_admin_church(user, scope_church_id):
+        if scope_church_id is None or not user_can_admin_church(user, scope_church_id):
             raise ApplicationError("Vous n'avez pas autorité sur cette église.")
     elif scope_type == ST.DIOCESE:
-        if not user_can_admin_diocese(user, scope_diocese_id):
+        if scope_diocese_id is None or not user_can_admin_diocese(user, scope_diocese_id):
             raise ApplicationError("Vous n'avez pas autorité sur ce diocèse.")
     else:  # GLOBAL — réservé aux administrateurs province / national.
         if not (is_global_admin(user) or accessible_province_ids(user)):
