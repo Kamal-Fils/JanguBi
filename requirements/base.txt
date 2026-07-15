@@ -1,53 +1,53 @@
-Django==5.2.7
-django-environ==0.12.0
-psycopg2==2.9.11
-djangorestframework==3.16.1
+Django==6.0.7
+django-environ==0.14.0
+psycopg2==2.9.12
+djangorestframework==3.17.1
 
-celery==5.5.3
+celery==5.6.3
 django-celery-results==2.6.0
-django-celery-beat==2.8.1
+django-celery-beat==2.9.0
 
-whitenoise==6.11.0
+whitenoise==6.12.0
 
-pgvector==0.4.2
+pgvector==0.5.0
 # Embeddings locaux gratuits (ONNX, sans torch) pour la recherche sémantique.
 fastembed==0.8.0
 
-django-filter==25.2
+django-filter==26.1
 django-extensions==4.1
 django-cors-headers==4.9.0
 django-storages==1.14.6
-django-structlog[celery]==9.1.1
-django-redis==6.0.0
-drf-spectacular==0.29.0
+django-structlog[celery]==10.1.0
+django-redis==7.0.0
+drf-spectacular==0.30.0
 djangorestframework-simplejwt==5.5.1
 
 drf-jwt==1.19.2
 
-boto3==1.40.52
-attrs==25.4.0
+boto3==1.43.48
+attrs==26.1.0
 
-gunicorn==23.0.0
-sentry-sdk==2.42.0
+gunicorn==26.0.0
+sentry-sdk==2.65.0
 
-requests==2.32.5
+requests==2.34.2
 httpx==0.28.1
 PyYAML==6.0.3
-Pillow>=10.0.0
+Pillow>=12.3.0
 tenacity==9.1.4
-beautifulsoup4==4.14.3
+beautifulsoup4==4.15.0
 #google-api-python-client==2.184.0
 #google-auth==2.41.1
 #google-auth-httplib2==0.2.0
 #google-auth-oauthlib==1.2.2
 
-pyotp==2.9.0
+pyotp==2.10.0
 qrcode==8.2
-tabulate==0.9.0
-django-phonenumber-field[phonenumbers]>=7.3.0
+tabulate==0.10.0
+django-phonenumber-field[phonenumbers]>=8.4.0
 
-channels==4.2.0
-daphne==4.1.2
-channels_redis==4.2.1
-cryptography>=41.0.0
-reportlab==4.4.1
+channels==4.3.2
+daphne==4.2.2
+channels_redis==4.3.0
+cryptography>=49.0.0
+reportlab==5.0.0
