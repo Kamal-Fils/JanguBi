@@ -1,3 +1,6 @@
+import datetime
+
+import nh3
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.text import slugify
@@ -177,6 +180,17 @@ def _check_scope_authority(
             )
 
 
+def _clean_content(content: str, content_format: str) -> str:
+    """
+    Sanitize le HTML de l'éditeur riche AVANT persistance (nh3 / ammonia) :
+    aucun HTML non filtré n'entre en base — le client mobile RN, lui, n'a pas
+    de DOMPurify. Le texte brut passe tel quel.
+    """
+    if content_format == Article.ContentFormat.HTML:
+        return nh3.clean(content)
+    return content
+
+
 def _build_slug(title: str, scope_type: str, scope_id: int | None) -> str:
     base = slugify(title)
     suffix = f"{scope_type}-{scope_id}" if scope_id else scope_type
@@ -201,6 +215,8 @@ def article_create(
     category_id: int,
     scope_type: str = Article.ScopeType.GLOBAL,
     content_type: str = Article.ContentType.ARTICLE,
+    content_format: str = Article.ContentFormat.TEXT,
+    announcement_date: datetime.date | None = None,
     excerpt: str = "",
     cover_image_id: int | None = None,
     scope_parish_id: int | None = None,
@@ -208,6 +224,8 @@ def article_create(
     scope_church_id: int | None = None,
 ) -> Article:
     _check_editor(author)
+    if announcement_date is not None and content_type != Article.ContentType.ANNOUNCEMENT:
+        raise ApplicationError("announcement_date est réservé aux annonces.")
     _check_scope_consistency(scope_type, scope_parish_id, scope_diocese_id, scope_church_id)
     _check_scope_authority(
         user=author,
@@ -252,8 +270,10 @@ def article_create(
         title=title,
         slug=slug,
         excerpt=excerpt,
-        content=content,
+        content=_clean_content(content, content_format),
         content_type=content_type,
+        content_format=content_format,
+        announcement_date=announcement_date,
         category=category,
         author=author,
         cover_image=cover_image,
@@ -273,6 +293,8 @@ def article_update(
     title: str | None = None,
     excerpt: str | None = None,
     content: str | None = None,
+    content_format: str | None = None,
+    announcement_date: datetime.date | None = None,
     category_id: int | None = None,
     cover_image_id: int | None = None,
 ) -> Article:
@@ -283,6 +305,15 @@ def article_update(
 
     update_fields = ["updated_at"]
 
+    if content_format is not None:
+        article.content_format = content_format
+        update_fields.append("content_format")
+    if announcement_date is not None:
+        if article.content_type != Article.ContentType.ANNOUNCEMENT:
+            raise ApplicationError("announcement_date est réservé aux annonces.")
+        article.announcement_date = announcement_date
+        update_fields.append("announcement_date")
+
     if title is not None:
         article.title = title
         update_fields.append("title")
@@ -290,7 +321,7 @@ def article_update(
         article.excerpt = excerpt
         update_fields.append("excerpt")
     if content is not None:
-        article.content = content
+        article.content = _clean_content(content, article.content_format)
         update_fields.append("content")
 
     if category_id is not None:

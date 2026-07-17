@@ -83,6 +83,12 @@ class ArticleGlobalListApi(APIView):
             OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+            OpenApiParameter(
+                "content_type",
+                OpenApiTypes.STR,
+                enum=["announcement", "article", "pastoral_letter"],
+                description="Filtrer par type de contenu",
+            ),
         ],
         responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
@@ -92,6 +98,7 @@ class ArticleGlobalListApi(APIView):
         qs = article_list_global(
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
+            content_type=request.query_params.get("content_type"),
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -117,6 +124,12 @@ class ArticleParishListApi(ApiAuthMixin, APIView):
             OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+            OpenApiParameter(
+                "content_type",
+                OpenApiTypes.STR,
+                enum=["announcement", "article", "pastoral_letter"],
+                description="Filtrer par type de contenu",
+            ),
         ],
         responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
@@ -141,6 +154,7 @@ class ArticleParishListApi(ApiAuthMixin, APIView):
             parish_id=parish_id,
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
+            content_type=request.query_params.get("content_type"),
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -164,6 +178,12 @@ class ArticleFeedApi(ApiAuthMixin, APIView):
             OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+            OpenApiParameter(
+                "content_type",
+                OpenApiTypes.STR,
+                enum=["announcement", "article", "pastoral_letter"],
+                description="Filtrer par type de contenu",
+            ),
             OpenApiParameter(
                 "scope_type",
                 OpenApiTypes.STR,
@@ -193,6 +213,8 @@ class ArticleFeedApi(ApiAuthMixin, APIView):
             qs = qs.filter(category__slug=category)
         if search := request.query_params.get("search"):
             qs = qs.filter(title__icontains=search)
+        if content_type := request.query_params.get("content_type"):
+            qs = qs.filter(content_type=content_type)
         return get_paginated_response(
             pagination_class=self.Pagination,
             serializer_class=ArticleListOutputSerializer,
@@ -256,6 +278,12 @@ class ArticleMyParishListApi(ApiAuthMixin, APIView):
             OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+            OpenApiParameter(
+                "content_type",
+                OpenApiTypes.STR,
+                enum=["announcement", "article", "pastoral_letter"],
+                description="Filtrer par type de contenu",
+            ),
         ],
         responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
@@ -274,6 +302,7 @@ class ArticleMyParishListApi(ApiAuthMixin, APIView):
             parish_id=parish_id,
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
+            content_type=request.query_params.get("content_type"),
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -299,6 +328,12 @@ class ArticleDioceseListApi(ApiAuthMixin, APIView):
             OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage pagination"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug de catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+            OpenApiParameter(
+                "content_type",
+                OpenApiTypes.STR,
+                enum=["announcement", "article", "pastoral_letter"],
+                description="Filtrer par type de contenu",
+            ),
         ],
         responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news"],
@@ -321,6 +356,7 @@ class ArticleDioceseListApi(ApiAuthMixin, APIView):
             diocese_id=diocese_id,
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
+            content_type=request.query_params.get("content_type"),
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -371,6 +407,12 @@ class AdminArticleListApi(ApiAuthMixin, APIView):
             OpenApiParameter("scope_type", OpenApiTypes.STR, enum=["global", "diocese", "parish", "church"], description="Filtrer par portée"),
             OpenApiParameter("category", OpenApiTypes.STR, description="Filtrer par slug catégorie"),
             OpenApiParameter("search", OpenApiTypes.STR, description="Recherche dans le titre"),
+            OpenApiParameter(
+                "content_type",
+                OpenApiTypes.STR,
+                enum=["announcement", "article", "pastoral_letter"],
+                description="Filtrer par type de contenu",
+            ),
         ],
         responses={200: paginated_response_serializer(ArticleListOutputSerializer)},
         tags=["news-admin"],
@@ -382,6 +424,7 @@ class AdminArticleListApi(ApiAuthMixin, APIView):
             scope_type=request.query_params.get("scope_type") or None,
             category_slug=request.query_params.get("category") or None,
             search=request.query_params.get("search") or None,
+            content_type=request.query_params.get("content_type") or None,
         )
         return get_paginated_response(
             pagination_class=self.Pagination,

@@ -571,3 +571,82 @@ def test_pretre_without_ra_cannot_publish_anything():
                 author=pretre, title="X", content="...", category_id=cat.id,
                 content_type=Article.ContentType.ANNOUNCEMENT, **scope_kwargs,
             )
+
+
+# ---------------------------------------------------------------------------
+# Lot 3 — content_format / sanitization / announcement_date
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_article_create_html_content_is_sanitized():
+    # Arrange
+    author = SuperAdminFactory()
+    category = ArticleCategoryFactory()
+
+    # Act — contenu HTML avec un script injecté
+    article = article_create(
+        author=author,
+        title="Article riche",
+        content='<p>Bonjour</p><script>alert("xss")</script>',
+        content_format=Article.ContentFormat.HTML,
+        category_id=category.id,
+    )
+
+    # Assert — le script est strippé, le HTML légitime conservé
+    assert "<script>" not in article.content
+    assert "<p>Bonjour</p>" in article.content
+    assert article.content_format == Article.ContentFormat.HTML
+
+
+@pytest.mark.django_db
+def test_article_create_text_content_kept_verbatim():
+    author = SuperAdminFactory()
+    category = ArticleCategoryFactory()
+
+    article = article_create(
+        author=author,
+        title="Article texte",
+        content="Ligne 1 <pas du html>",
+        category_id=category.id,
+    )
+
+    assert article.content == "Ligne 1 <pas du html>"
+    assert article.content_format == Article.ContentFormat.TEXT
+
+
+@pytest.mark.django_db
+def test_announcement_date_rejected_for_non_announcement():
+    import datetime
+
+    author = SuperAdminFactory()
+    category = ArticleCategoryFactory()
+
+    with pytest.raises(ApplicationError, match="annonces"):
+        article_create(
+            author=author,
+            title="Article daté",
+            content="...",
+            category_id=category.id,
+            content_type=Article.ContentType.ARTICLE,
+            announcement_date=datetime.date(2026, 7, 19),
+        )
+
+
+@pytest.mark.django_db
+def test_announcement_with_date_roundtrip():
+    import datetime
+
+    author = SuperAdminFactory()
+    category = ArticleCategoryFactory()
+
+    article = article_create(
+        author=author,
+        title="Annonces du dimanche",
+        content="Messes à 9h et 11h.",
+        category_id=category.id,
+        content_type=Article.ContentType.ANNOUNCEMENT,
+        announcement_date=datetime.date(2026, 7, 19),
+    )
+
+    assert article.announcement_date == datetime.date(2026, 7, 19)
