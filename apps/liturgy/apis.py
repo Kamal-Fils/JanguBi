@@ -1,6 +1,7 @@
 import datetime
 
 from asgiref.sync import async_to_sync
+from django.core.cache import cache
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
@@ -11,6 +12,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.api.mixins import ApiAuthMixin
 from apps.liturgy.models import LiturgicalDate, Office, Reading
 from apps.liturgy.serializers import (
     LiturgicalDateSerializer,
@@ -35,8 +37,14 @@ class CanAccessLiturgyOfHours(IsAuthenticated):
 # Base helpers
 # ---------------------------------------------------------------------------
 
-class _DailyLiturgyBase(APIView):
-    """Common date/zone parsing and AELF auto-sync for liturgy endpoints."""
+class _DailyLiturgyBase(ApiAuthMixin, APIView):
+    """
+    Common date/zone parsing and AELF auto-sync for liturgy endpoints.
+
+    ApiAuthMixin est INDISPENSABLE : sans lui, le Bearer JWT n'était pas lu
+    (pas de JWTAuthentication) et les endpoints clergé renvoyaient 401 à tout
+    client SPA/mobile authentifié. Les vues publiques gardent AllowAny.
+    """
 
     permission_classes = [AllowAny]
 
@@ -166,17 +174,28 @@ class LiturgyMessesApi(_DailyLiturgyBase):
         return Response(ReadingSerializer(date_obj.readings.all(), many=True).data)
 
 
-class LiturgyTodayApi(APIView):
-    permission_classes = [AllowAny]
+class LiturgyTodayApi(ApiAuthMixin, APIView):
+    # Renvoie le jour liturgique COMPLET (messe + offices). Les offices relèvent
+    # de la Liturgie des Heures (clergé/religieux). On applique donc le même gate
+    # que les endpoints d'office dédiés. Les lectures de messe publiques restent
+    # accessibles via /v1/messes/ et /v1/informations/ (AllowAny).
+    permission_classes = [CanAccessLiturgyOfHours]
 
     @extend_schema(
         responses={200: LiturgicalDateSerializer},
         tags=["Liturgy"],
-        summary="Liturgie du jour complet (messe + offices)",
+        summary="Liturgie du jour complet (messe + offices, clergé uniquement)",
     )
-    @method_decorator(cache_page(60 * 60 * 1))
     def get(self, request):
+        # Cache manuel APRÈS la permission (l'ancien @cache_page servait la même
+        # entrée à tous — y compris des réponses d'erreur mises en cache — sans
+        # re-passer par le gate clergé).
         today = timezone.localtime().date()
+        cache_key = f"liturgy_today_api_{today.isoformat()}"
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return Response(cached_data)
+
         date_obj = (
             LiturgicalDate.objects.filter(date=today, zone="afrique")
             .prefetch_related("readings__matched_verses", "offices")
@@ -194,16 +213,20 @@ class LiturgyTodayApi(APIView):
                 {"detail": "Données liturgiques du jour non encore synchronisées."},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        return Response(LiturgicalDateSerializer(date_obj).data)
+        data = LiturgicalDateSerializer(date_obj).data
+        cache.set(cache_key, data, timeout=60 * 60)
+        return Response(data)
 
 
-class LiturgyDateApi(APIView):
-    permission_classes = [AllowAny]
+class LiturgyDateApi(ApiAuthMixin, APIView):
+    # Jour liturgique complet (messe + offices) pour une date donnée → même gate
+    # clergé que /today/ (les offices ne doivent pas fuiter en public).
+    permission_classes = [CanAccessLiturgyOfHours]
 
     @extend_schema(
         responses={200: LiturgicalDateSerializer},
         tags=["Liturgy"],
-        summary="Liturgie pour une date spécifique",
+        summary="Liturgie pour une date spécifique (clergé uniquement)",
     )
     def get(self, request, date_str):
         from django.core.cache import cache
@@ -244,7 +267,7 @@ class LiturgyDateApi(APIView):
         return Response(data)
 
 
-class ReadingDetailApi(APIView):
+class ReadingDetailApi(ApiAuthMixin, APIView):
     permission_classes = [AllowAny]
 
     @extend_schema(
@@ -261,13 +284,15 @@ class ReadingDetailApi(APIView):
         return Response(ReadingSerializer(reading).data)
 
 
-class OfficeDetailApi(APIView):
-    permission_classes = [AllowAny]
+class OfficeDetailApi(ApiAuthMixin, APIView):
+    # Un office isolé = Liturgie des Heures → réservé au clergé/religieux, comme
+    # les endpoints /v1/<office>/. Évite le contournement du gate par pk direct.
+    permission_classes = [CanAccessLiturgyOfHours]
 
     @extend_schema(
         responses={200: OfficeSerializer},
         tags=["Liturgy"],
-        summary="Détail d'un office liturgique",
+        summary="Détail d'un office liturgique (clergé uniquement)",
     )
     @method_decorator(cache_page(60 * 60 * 24))
     def get(self, request, pk):
