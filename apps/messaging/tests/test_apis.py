@@ -280,8 +280,9 @@ def test_conversation_list_requires_authentication(anon_client):
 
 @pytest.mark.django_db
 def test_conversation_create_returns_201(auth_client):
-    # Arrange
+    # Arrange — le destinataire doit être un prêtre éligible (PriestProfile acceptant).
     priest_user = BaseUserFactory()
+    PriestProfileFactory(user=priest_user, accepts_pastoral_chat=True)
     url = reverse("api:messaging:conversation-create")
 
     # Act
@@ -291,6 +292,19 @@ def test_conversation_create_returns_201(auth_client):
 
     # Assert
     assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_conversation_create_rejected_for_non_clergy_recipient(auth_client):
+    # Garde pastorale : impossible d'ouvrir une conversation avec un non-prêtre.
+    other_user = BaseUserFactory()  # aucun PriestProfile
+    url = reverse("api:messaging:conversation-create")
+
+    response = auth_client.post(
+        url, {"priest_user_id": str(other_user.id)}, format="json"
+    )
+
+    assert response.status_code == 400
 
 
 @pytest.mark.django_db
@@ -1140,3 +1154,73 @@ def test_notification_read_returns_404_when_not_found(auth_client):
     )
     response = auth_client.post(url)
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# CGU messagerie globales  (GET/POST /messaging/cgu/)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_messaging_cgu_status_defaults_to_not_accepted(auth_client):
+    url = reverse("api:messaging:messaging-cgu")
+    response = auth_client.get(url)
+    assert response.status_code == 200
+    assert response.data["accepted"] is False
+    assert response.data["accepted_at"] is None
+
+
+@pytest.mark.django_db
+def test_messaging_cgu_accept_is_idempotent(auth_client):
+    url = reverse("api:messaging:messaging-cgu")
+
+    first = auth_client.post(url)
+    second = auth_client.post(url)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.data["accepted"] is True
+    assert second.data["accepted_at"] == first.data["accepted_at"]
+
+
+@pytest.mark.django_db
+def test_messaging_cgu_requires_authentication(anon_client):
+    url = reverse("api:messaging:messaging-cgu")
+    assert anon_client.get(url).status_code == 401
+    assert anon_client.post(url).status_code == 401
+
+
+@pytest.mark.django_db
+def test_global_cgu_grants_message_access_on_any_conversation():
+    # Arrange — aucune acceptation PAR CONVERSATION (l'ancien modèle aurait 403)
+    conv = ConversationFactory(cgu_accepted_by_a=None, cgu_accepted_by_b=None)
+    client = APIClient()
+    client.force_authenticate(user=conv.participant_a)
+
+    # Act — acceptation GLOBALE puis accès aux messages de la conversation
+    client.post(reverse("api:messaging:messaging-cgu"))
+    response = client.get(
+        reverse("api:messaging:message-list", kwargs={"conversation_id": conv.id})
+    )
+
+    # Assert — l'acceptation globale vaut pour toutes les conversations
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_global_cgu_allows_sending_without_per_conversation_flag():
+    # Arrange
+    conv = ConversationFactory(cgu_accepted_by_a=None, cgu_accepted_by_b=None)
+    client = APIClient()
+    client.force_authenticate(user=conv.participant_a)
+    client.post(reverse("api:messaging:messaging-cgu"))
+    url = reverse("api:messaging:message-send", kwargs={"conversation_id": conv.id})
+
+    # Act — _check_cgu (couche service) doit aussi honorer l'acceptation globale
+    with patch(_FANOUT_WS), patch(_FANOUT_NOTIF), patch(
+        "apps.messaging.services.cache", _mock_cache()
+    ):
+        response = client.post(url, {"content": "Bonjour"}, format="json")
+
+    # Assert
+    assert response.status_code == 201

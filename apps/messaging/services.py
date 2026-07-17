@@ -17,6 +17,7 @@ from apps.messaging.models import (
     Message,
     MessageBlock,
     MessageReaction,
+    MessagingCguAcceptance,
     Notification,
     PriestProfile,
 )
@@ -44,7 +45,18 @@ def _check_not_blocked(sender: BaseUser, receiver: BaseUser) -> None:
         raise ApplicationError("Échange bloqué entre ces deux utilisateurs.")
 
 
+def _user_display_name(user: BaseUser) -> str:
+    profile = getattr(user, "profile", None)
+    if profile:
+        return f"{profile.first_name} {profile.last_name}".strip() or user.email
+    return user.email
+
+
 def _check_cgu(conversation: Conversation, user: BaseUser) -> None:
+    # Acceptation globale (par utilisateur) : vaut pour toutes les conversations.
+    if MessagingCguAcceptance.objects.filter(user=user).exists():
+        return
+    # Compat : flags historiques par conversation.
     if user.id == conversation.participant_a_id:
         if conversation.cgu_accepted_by_a is None:
             raise ApplicationError("Vous devez accepter les CGU de messagerie.")
@@ -134,12 +146,34 @@ def priest_profile_update(
 def conversation_get_or_create(
     *, fidele: BaseUser, priest: BaseUser
 ) -> tuple[Conversation, bool]:
+    # Garde pastorale : une conversation 1-à-1 ne peut être ouverte qu'avec un membre
+    # du clergé ÉLIGIBLE — un prêtre disposant d'un PriestProfile qui accepte
+    # l'accompagnement pastoral (accepts_pastoral_chat). Bloque les échanges
+    # fidèle↔fidèle et le contact d'un utilisateur non pastoral par UUID.
+    if not PriestProfile.objects.filter(user=priest, accepts_pastoral_chat=True).exists():
+        raise ApplicationError(
+            "Vous ne pouvez démarrer une conversation qu'avec un prêtre disponible "
+            "pour l'accompagnement pastoral."
+        )
     participant_a, participant_b = _normalize_participants(fidele, priest)
     conversation, created = Conversation.objects.get_or_create(
         participant_a=participant_a,
         participant_b=participant_b,
     )
     return conversation, created
+
+
+@transaction.atomic
+def messaging_cgu_accept(*, user: BaseUser) -> MessagingCguAcceptance:
+    """
+    Acceptation GLOBALE des CGU de messagerie — une fois pour toutes les
+    conversations. Idempotent : ré-accepter ne lève pas d'erreur.
+    """
+    acceptance, _created = MessagingCguAcceptance.objects.get_or_create(
+        user=user,
+        defaults={"accepted_at": timezone.now()},
+    )
+    return acceptance
 
 
 @transaction.atomic
@@ -245,7 +279,11 @@ def message_send(
         )
     )
 
-    # Persist a Notification row so the recipient sees it even when offline
+    # Persist a Notification row so the recipient sees it even when offline.
+    # Le payload porte le nom de l'expéditeur pour permettre un rendu direct
+    # (toast, ligne de liste) sans refetch — mais PAS d'extrait du contenu :
+    # les messages sont chiffrés au repos (Fernet) et Notification.payload est
+    # un JSONField en clair.
     transaction.on_commit(
         lambda: notification_send(
             user=receiver,
@@ -253,6 +291,8 @@ def message_send(
             payload={
                 "conversation_id": str(conversation.id),
                 "sender_id": str(sender.id),
+                "sender_name": _user_display_name(sender),
+                "sent_at": now.isoformat(),
             },
         )
     )

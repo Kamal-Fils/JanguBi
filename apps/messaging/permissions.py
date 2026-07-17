@@ -1,6 +1,11 @@
 from rest_framework.permissions import BasePermission
 
-from apps.messaging.models import Conversation, Message, MessageBlock
+from apps.messaging.models import (
+    Conversation,
+    Message,
+    MessageBlock,
+    MessagingCguAcceptance,
+)
 
 
 class IsParticipant(BasePermission):
@@ -20,7 +25,10 @@ class IsParticipant(BasePermission):
 
 
 class HasAcceptedMessagingCgu(BasePermission):
-    """Request user has accepted the messaging CGU for this conversation."""
+    """
+    Request user has accepted the messaging CGU — globally (MessagingCguAcceptance,
+    une fois pour toutes) OR for this specific conversation (flags historiques).
+    """
 
     message = "Vous devez accepter les CGU de messagerie pour accéder aux messages."
 
@@ -28,6 +36,8 @@ class HasAcceptedMessagingCgu(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         if isinstance(obj, Conversation):
+            if MessagingCguAcceptance.objects.filter(user=request.user).exists():
+                return True
             if obj.participant_a_id == request.user.id:
                 return obj.cgu_accepted_by_a is not None
             return obj.cgu_accepted_by_b is not None

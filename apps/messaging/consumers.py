@@ -153,7 +153,10 @@ class NotificationConsumer(AsyncJsonWebsocketConsumer):
             await self._mark_notification_read(content.get("notification_id"))
 
     async def notification_push(self, event: dict):
-        await self.send_json({"type": "notification", **event})
+        # `event["type"]` = "notification.push" (clé de dispatch Channels) : le
+        # spreader APRÈS l'écrasait. On force "notification" comme type de frame.
+        payload = {k: v for k, v in event.items() if k != "type"}
+        await self.send_json({"type": "notification", **payload})
 
     @database_sync_to_async
     def _mark_notification_read(self, notification_id: str):

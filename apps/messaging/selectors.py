@@ -12,6 +12,7 @@ from apps.messaging.models import (
     ConversationExport,
     Message,
     MessageBlock,
+    MessagingCguAcceptance,
     Notification,
     PriestProfile,
 )
@@ -20,7 +21,7 @@ from apps.users.models import BaseUser
 if TYPE_CHECKING:
     from apps.users.models import BaseUser
 
-def conversation_list(*, user: BaseUser) -> QuerySet[Conversation]:
+def conversation_list(*, user: BaseUser, search: str | None = None) -> QuerySet[Conversation]:
     unread_subquery = (
         Message.objects.filter(
             conversation=OuterRef("pk"),
@@ -33,7 +34,7 @@ def conversation_list(*, user: BaseUser) -> QuerySet[Conversation]:
         .values("cnt")
     )
 
-    return (
+    qs = (
         Conversation.objects.filter(Q(participant_a=user) | Q(participant_b=user))
         .annotate(
             unread_count=Coalesce(
@@ -50,6 +51,25 @@ def conversation_list(*, user: BaseUser) -> QuerySet[Conversation]:
         )
         .order_by(models.F("last_message_at").desc(nulls_last=True))
     )
+
+    if search:
+        # Filtre sur le nom/email des participants. On ne peut pas exclure
+        # proprement le user courant du match (il est l'un des deux côtés) mais
+        # chercher son propre nom est un cas marginal sans conséquence.
+        qs = qs.filter(
+            Q(participant_a__email__icontains=search)
+            | Q(participant_a__profile__first_name__icontains=search)
+            | Q(participant_a__profile__last_name__icontains=search)
+            | Q(participant_b__email__icontains=search)
+            | Q(participant_b__profile__first_name__icontains=search)
+            | Q(participant_b__profile__last_name__icontains=search)
+        )
+
+    return qs
+
+
+def messaging_cgu_get(*, user: BaseUser) -> Optional[MessagingCguAcceptance]:
+    return MessagingCguAcceptance.objects.filter(user=user).first()
 
 
 def conversation_get(

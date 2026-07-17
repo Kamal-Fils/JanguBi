@@ -48,6 +48,11 @@ class PriestProfileUpdateInputSerializer(serializers.Serializer):
     bio = serializers.CharField(required=False, max_length=1000, allow_blank=True)
 
 
+class MessagingCguStatusSerializer(serializers.Serializer):
+    accepted = serializers.BooleanField()
+    accepted_at = serializers.DateTimeField(allow_null=True)
+
+
 class ConversationParticipantSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     full_name = serializers.SerializerMethodField()
