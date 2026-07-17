@@ -1224,3 +1224,73 @@ def test_global_cgu_allows_sending_without_per_conversation_flag():
 
     # Assert
     assert response.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# Notifications top-level + devices push  (Lot 5 — API mobile-ready)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_notifications_top_level_alias(auth_client):
+    NotificationFactory(user=auth_client._user, is_read=False)
+    NotificationFactory(user=auth_client._user, is_read=False)
+
+    listing = auth_client.get(reverse("api:notifications:list"))
+    count = auth_client.get(reverse("api:notifications:unread-count"))
+
+    assert listing.status_code == 200
+    assert len(listing.data) == 2
+    assert count.status_code == 200
+    assert count.data["unread"] == 2
+
+
+@pytest.mark.django_db
+def test_notifications_read_all(auth_client):
+    NotificationFactory(user=auth_client._user, is_read=False)
+    NotificationFactory(user=auth_client._user, is_read=False)
+
+    response = auth_client.post(reverse("api:notifications:read-all"))
+
+    assert response.status_code == 200
+    assert response.data["unread"] == 0
+    count = auth_client.get(reverse("api:notifications:unread-count"))
+    assert count.data["unread"] == 0
+
+
+@pytest.mark.django_db
+def test_push_device_register_is_idempotent_and_reassigns(auth_client):
+    url = reverse("api:notifications:devices")
+
+    first = auth_client.post(url, {"platform": "android", "token": "tok-123"}, format="json")
+    second = auth_client.post(url, {"platform": "android", "token": "tok-123"}, format="json")
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    # Le même token se réassigne au dernier utilisateur connecté sur l'appareil.
+    other = APIClient()
+    other_user = BaseUserFactory()
+    other.force_authenticate(user=other_user)
+    reassigned = other.post(url, {"platform": "ios", "token": "tok-123"}, format="json")
+    assert reassigned.status_code == 201
+
+    from apps.messaging.models import PushDevice
+
+    device = PushDevice.objects.get(token="tok-123")
+    assert device.user_id == other_user.id
+    assert device.platform == "ios"
+    assert PushDevice.objects.filter(token="tok-123").count() == 1
+
+
+@pytest.mark.django_db
+def test_push_device_unregister(auth_client):
+    url = reverse("api:notifications:devices")
+    auth_client.post(url, {"platform": "web", "token": "tok-del"}, format="json")
+
+    response = auth_client.delete(url, {"token": "tok-del"}, format="json")
+
+    assert response.status_code == 204
+    from apps.messaging.models import PushDevice
+
+    assert not PushDevice.objects.filter(token="tok-del").exists()

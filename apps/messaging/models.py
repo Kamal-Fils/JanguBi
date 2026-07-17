@@ -285,6 +285,35 @@ class Notification(BaseModel):
         return f"Notification({self.user_id}, {self.event_type})"
 
 
+class PushDevice(BaseModel):
+    """
+    Token d'appareil pour les notifications push (app mobile React Native).
+    On enregistre les tokens dès maintenant ; l'envoi FCM/APNs viendra avec
+    l'app. Un token est unique et se réassigne au dernier utilisateur connecté
+    sur l'appareil.
+    """
+
+    class Platform(models.TextChoices):
+        IOS = "ios", _("iOS")
+        ANDROID = "android", _("Android")
+        WEB = "web", _("Web")
+
+    user = models.ForeignKey(
+        BaseUser,
+        on_delete=models.CASCADE,
+        related_name="push_devices",
+    )
+    platform = models.CharField(max_length=10, choices=Platform.choices)
+    token = models.CharField(max_length=512, unique=True)
+
+    class Meta:
+        verbose_name = _("Appareil push")
+        verbose_name_plural = _("Appareils push")
+
+    def __str__(self) -> str:
+        return f"PushDevice({self.user_id}, {self.platform})"
+
+
 class ClergicalMessage(BaseModel):
     """Encrypted message between clergy members (distinct from the pastoral Conversation model)."""
 

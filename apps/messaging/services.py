@@ -24,7 +24,7 @@ from apps.messaging.models import (
 from apps.users.models import BaseUser
 
 if TYPE_CHECKING:  # annotations seules ; l'import runtime reste local (anti-circulaire)
-    from apps.messaging.models import ClergicalMessage
+    from apps.messaging.models import ClergicalMessage, PushDevice
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -414,6 +414,40 @@ def notification_send(
     transaction.on_commit(lambda: _fanout_notification(user, event_type, payload))
 
     return notification
+
+
+@transaction.atomic
+def notification_mark_all_read(*, user: BaseUser) -> int:
+    """Marque toutes les notifications non lues de l'utilisateur comme lues."""
+    return Notification.objects.filter(user=user, is_read=False).update(
+        is_read=True, read_at=timezone.now()
+    )
+
+
+@transaction.atomic
+def push_device_register(*, user: BaseUser, platform: str, token: str) -> "PushDevice":
+    """
+    Enregistre (ou réassigne) un token push. Idempotent : un token existant est
+    rattaché au dernier utilisateur connecté sur l'appareil.
+    """
+    from apps.messaging.models import PushDevice
+
+    device, created = PushDevice.objects.get_or_create(
+        token=token,
+        defaults={"user": user, "platform": platform},
+    )
+    if not created and (device.user_id != user.id or device.platform != platform):
+        device.user = user
+        device.platform = platform
+        device.save(update_fields=["user", "platform", "updated_at"])
+    return device
+
+
+@transaction.atomic
+def push_device_unregister(*, user: BaseUser, token: str) -> None:
+    from apps.messaging.models import PushDevice
+
+    PushDevice.objects.filter(user=user, token=token).delete()
 
 
 @transaction.atomic

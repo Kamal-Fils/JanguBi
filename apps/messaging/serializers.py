@@ -220,6 +220,21 @@ class NotificationOutputSerializer(serializers.ModelSerializer):
         fields = ["id", "event_type", "payload", "is_read", "read_at", "created_at"]
 
 
+class NotificationUnreadCountSerializer(serializers.Serializer):
+    unread = serializers.IntegerField()
+
+
+class PushDeviceInputSerializer(serializers.Serializer):
+    platform = serializers.ChoiceField(choices=["ios", "android", "web"])
+    token = serializers.CharField(max_length=512)
+
+
+class PushDeviceOutputSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    platform = serializers.CharField()
+    created_at = serializers.DateTimeField()
+
+
 class ClergicalMessageSendInputSerializer(serializers.Serializer):
     subject = serializers.CharField(max_length=200)
     body = serializers.CharField()

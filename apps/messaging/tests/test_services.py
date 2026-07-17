@@ -160,9 +160,10 @@ def test_priest_profile_update_partial_leaves_other_fields_unchanged():
 
 @pytest.mark.django_db
 def test_conversation_get_or_create_creates_new():
-    # Arrange
+    # Arrange — le destinataire doit être un prêtre éligible (PriestProfile acceptant).
     fidele = BaseUserFactory()
     priest = BaseUserFactory()
+    PriestProfileFactory(user=priest, accepts_pastoral_chat=True)
 
     # Act
     conversation, created = conversation_get_or_create(fidele=fidele, priest=priest)
@@ -181,6 +182,7 @@ def test_conversation_get_or_create_returns_existing():
     existing = ConversationFactory()
     a = existing.participant_a
     b = existing.participant_b
+    PriestProfileFactory(user=b, accepts_pastoral_chat=True)
 
     # Act
     conversation, created = conversation_get_or_create(fidele=a, priest=b)
@@ -188,6 +190,28 @@ def test_conversation_get_or_create_returns_existing():
     # Assert
     assert created is False
     assert conversation.id == existing.id
+
+
+@pytest.mark.django_db
+def test_conversation_get_or_create_rejected_for_non_clergy_recipient():
+    # Un fidèle ne peut pas ouvrir une conversation avec un autre fidèle (pas de
+    # PriestProfile) — garde pastorale (permissions-matrix.md §Messagerie).
+    fidele = BaseUserFactory()
+    other = BaseUserFactory()  # aucun PriestProfile
+
+    with pytest.raises(ApplicationError, match="prêtre disponible"):
+        conversation_get_or_create(fidele=fidele, priest=other)
+
+
+@pytest.mark.django_db
+def test_conversation_get_or_create_rejected_when_priest_not_accepting():
+    # Un prêtre dont le profil n'accepte PAS le chat pastoral n'est pas joignable.
+    fidele = BaseUserFactory()
+    priest = BaseUserFactory()
+    PriestProfileFactory(user=priest, accepts_pastoral_chat=False)
+
+    with pytest.raises(ApplicationError, match="prêtre disponible"):
+        conversation_get_or_create(fidele=fidele, priest=priest)
 
 
 @pytest.mark.django_db

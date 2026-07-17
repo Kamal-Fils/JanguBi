@@ -42,9 +42,12 @@ from apps.messaging.serializers import (
     MessageSendInputSerializer,
     MessagingCguStatusSerializer,
     NotificationOutputSerializer,
+    NotificationUnreadCountSerializer,
     PriestProfileCreateInputSerializer,
     PriestProfileOutputSerializer,
     PriestProfileUpdateInputSerializer,
+    PushDeviceInputSerializer,
+    PushDeviceOutputSerializer,
     ReactInputSerializer,
 )
 from apps.messaging.services import (
@@ -60,10 +63,13 @@ from apps.messaging.services import (
     message_send,
     message_unreact,
     messaging_cgu_accept,
+    notification_mark_all_read,
     notification_mark_read,
     priest_profile_accept_cgu,
     priest_profile_create,
     priest_profile_update,
+    push_device_register,
+    push_device_unregister,
     unblock_user,
 )
 from apps.users.models import BaseUser
@@ -416,6 +422,61 @@ class NotificationReadApi(ApiAuthMixin, APIView):
         except ApplicationError as exc:
             return _error(exc)
         return Response(NotificationOutputSerializer(notification).data)
+
+
+class NotificationReadAllApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: NotificationUnreadCountSerializer},
+        tags=["notifications"],
+        summary="Marquer toutes mes notifications comme lues",
+    )
+    def post(self, request):
+        notification_mark_all_read(user=request.user)
+        return Response(NotificationUnreadCountSerializer({"unread": 0}).data)
+
+
+class NotificationUnreadCountApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: NotificationUnreadCountSerializer},
+        tags=["notifications"],
+        summary="Nombre de notifications non lues (badge)",
+    )
+    def get(self, request):
+        count = notification_list(user=request.user, unread_only=True).count()
+        return Response(NotificationUnreadCountSerializer({"unread": count}).data)
+
+
+class PushDeviceApi(ApiAuthMixin, APIView):
+    """Enregistrement des tokens push de l'app mobile (React Native)."""
+
+    @extend_schema(
+        request=PushDeviceInputSerializer,
+        responses={201: PushDeviceOutputSerializer},
+        tags=["notifications"],
+        summary="Enregistrer un token push (idempotent, réassigne l'appareil)",
+    )
+    def post(self, request):
+        serializer = PushDeviceInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        device = push_device_register(user=request.user, **serializer.validated_data)
+        return Response(
+            PushDeviceOutputSerializer(device).data, status=status.HTTP_201_CREATED
+        )
+
+    @extend_schema(
+        request=PushDeviceInputSerializer,
+        responses={204: None},
+        tags=["notifications"],
+        summary="Désenregistrer un token push (déconnexion)",
+    )
+    def delete(self, request):
+        token = request.data.get("token") or request.query_params.get("token")
+        if not token:
+            return Response(
+                {"detail": "token requis."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        push_device_unregister(user=request.user, token=token)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
