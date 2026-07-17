@@ -17,12 +17,16 @@ from apps.dashboards.selectors import (
     cure_dashboard,
     diocese_dashboard,
     fidele_dashboard,
+    global_dashboard,
+    province_dashboard,
     user_principal_diocese_id,
     user_principal_parish_id,
+    user_principal_province_id,
 )
 from apps.users.scoping import (
     accessible_diocese_ids,
     accessible_parish_ids,
+    is_global_admin,
     user_can_admin_diocese,
     user_can_admin_parish,
 )
@@ -179,6 +183,42 @@ class DioceseDashboardApi(ApiAuthMixin, APIView):
         if data is None:
             return Response({"detail": "Diocèse introuvable."}, status=status.HTTP_404_NOT_FOUND)
         return Response(data)
+
+
+class MyProvinceDashboardApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: OpenApiTypes.OBJECT},
+        tags=["dashboards"],
+        summary="Tableau de bord de ma province (archevêque connecté)",
+    )
+    def get(self, request):
+        province_id = user_principal_province_id(user=request.user)
+        if not province_id:
+            return Response(
+                {"detail": "Aucune province rattachée à votre compte."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        data = province_dashboard(province_id=province_id)
+        if data is None:
+            return Response(
+                {"detail": "Province introuvable."}, status=status.HTTP_404_NOT_FOUND
+            )
+        return Response(data)
+
+
+class GlobalDashboardApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: OpenApiTypes.OBJECT},
+        tags=["dashboards"],
+        summary="Vue d'ensemble plateforme (super-admin uniquement)",
+    )
+    def get(self, request):
+        if not is_global_admin(request.user):
+            return Response(
+                {"detail": "Accès réservé à l'administration nationale."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return Response(global_dashboard())
 
 
 class AnalyticsApi(ApiAuthMixin, APIView):

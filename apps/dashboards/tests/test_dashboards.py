@@ -73,3 +73,90 @@ def test_diocese_dashboard_aggregates_parishes_and_fideles():
     # Assert
     assert data["parishes_count"] == 2
     assert data["total_fideles"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Lot 4 — province_dashboard (archevêque) & global_dashboard (super-admin)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_province_dashboard_aggregates_dioceses():
+    # Arrange — une province, 2 diocèses, 3 paroisses, 2 fidèles
+    from apps.dashboards.selectors import province_dashboard
+    from apps.org.tests.factories import ProvinceFactory
+
+    province = ProvinceFactory()
+    d1 = DioceseFactory(province=province)
+    d2 = DioceseFactory(province=province)
+    p1 = ParishFactory(diocese=d1)
+    ParishFactory(diocese=d1)
+    ParishFactory(diocese=d2)
+    ProfileFactory(user=BaseUserFactory(role=UserRole.FIDELE), primary_parish=p1)
+    ProfileFactory(user=BaseUserFactory(role=UserRole.FIDELE), primary_parish=p1)
+
+    # Act
+    data = province_dashboard(province_id=province.id)
+
+    # Assert
+    assert data["province"]["id"] == province.id
+    assert data["dioceses_count"] == 2
+    assert data["parishes_count"] == 3
+    assert data["total_fideles"] == 2
+    rows = {row["id"]: row for row in data["dioceses"]}
+    assert rows[d1.id]["parishes_count"] == 2
+    assert rows[d1.id]["fideles_count"] == 2
+    assert rows[d2.id]["parishes_count"] == 1
+
+
+@pytest.mark.django_db
+def test_my_province_api_for_archeveque():
+    # Arrange — archevêque rattaché à sa province via RoleAssignment
+    from django.urls import reverse
+    from rest_framework.test import APIClient
+
+    from apps.org.tests.factories import ProvinceFactory
+
+    province = ProvinceFactory()
+    DioceseFactory(province=province)
+    archeveque = BaseUserFactory(
+        role=UserRole.PROVINCE_ADMIN, pastoral_role=PastoralRole.ARCHEVEQUE
+    )
+    role_assignment_create(
+        user=archeveque, role=UserRole.PROVINCE_ADMIN, scope=RoleScope.PROVINCE,
+        province=province,
+    )
+    client = APIClient()
+    client.force_authenticate(user=archeveque)
+
+    # Act
+    response = client.get(reverse("api:dashboards:my-province"))
+
+    # Assert
+    assert response.status_code == 200
+    assert response.data["province"]["id"] == province.id
+    assert response.data["dioceses_count"] == 1
+
+
+@pytest.mark.django_db
+def test_global_dashboard_api_super_admin_only():
+    from django.urls import reverse
+    from rest_framework.test import APIClient
+
+    from apps.users.tests.factories import SuperAdminFactory
+
+    url = reverse("api:dashboards:global")
+
+    # Un fidèle est refusé
+    fidele_client = APIClient()
+    fidele_client.force_authenticate(user=BaseUserFactory(role=UserRole.FIDELE))
+    assert fidele_client.get(url).status_code == 403
+
+    # Le super-admin voit les compteurs plateforme
+    admin_client = APIClient()
+    admin_client.force_authenticate(user=SuperAdminFactory())
+    response = admin_client.get(url)
+    assert response.status_code == 200
+    assert response.data["users_total"] >= 2
+    assert "pending_clergy_invitations" in response.data
+    assert "donations_total_year" in response.data
