@@ -73,8 +73,8 @@ class UserSessionLoginOutputSerializer(serializers.Serializer):
     tags=["Authentification"],
     summary="Connexion JWT",
     description=(
-        "Authentifie l'utilisateur et retourne un access token (60 min) "
-        "et un refresh token (7 jours). "
+        "Authentifie l'utilisateur et retourne un access token (30 min par défaut, "
+        "réglable via JWT_ACCESS_TOKEN_LIFETIME_MINUTES) et un refresh token (7 jours). "
         "Le compte doit être actif ET l'email vérifié."
     ),
     request=UserJwtLoginInputSerializer,
@@ -116,7 +116,7 @@ class UserJwtRefreshApi(TokenRefreshView):
     summary="Déconnexion (appareil courant)",
     description=(
         "Blackliste le refresh token fourni. "
-        "L'access token reste valide jusqu'à son expiration naturelle (60 min max). "
+        "L'access token reste valide jusqu'à son expiration naturelle (30 min max par défaut). "
         "Pour révoquer tous les appareils, utiliser /logout-all/."
     ),
     request=UserJwtLogoutInputSerializer,

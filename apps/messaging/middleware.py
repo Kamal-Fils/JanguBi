@@ -17,7 +17,13 @@ def _get_user_from_token(token: str):
     try:
         validated = UntypedToken(token)  # type: ignore[arg-type]  # stub SimpleJWT trop strict : UntypedToken accepte une str brute à l'exécution (validates signature + expiry)
         user_id = validated["user_id"]
-        return BaseUser.objects.get(id=user_id, is_active=True)
+        user = BaseUser.objects.get(id=user_id, is_active=True)
+        # Même règle que JwtKeyEnforcingJWTAuthentication côté REST : un token émis
+        # avant rotate_jwt_key() (logout-all, changement de mot de passe) est rejeté.
+        token_jwt_key = validated.payload.get("jwt_key")
+        if token_jwt_key is None or str(token_jwt_key) != str(user.jwt_key):
+            return AnonymousUser()
+        return user
     except (InvalidToken, TokenError, KeyError, BaseUser.DoesNotExist):
         return AnonymousUser()
     except Exception:

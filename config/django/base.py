@@ -58,6 +58,11 @@ DEBUG = env.bool("DJANGO_DEBUG", default=True)
 
 ALLOWED_HOSTS = ["*"]
 
+# WebSocket : origins explicites (schéma+hôte du FRONT) pour OriginValidator.
+# Vide en dev → config/asgi.py retombe sur AllowedHostsOriginValidator
+# (permissif ici puisque ALLOWED_HOSTS=["*"]). Surchargé en production.
+WS_ALLOWED_ORIGINS = env.list("WS_ALLOWED_ORIGINS", default=[])
+
 # Application definition
 
 LOCAL_APPS = [
@@ -238,6 +243,14 @@ STATIC_URL = "/static/"
 REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "apps.api.exception_handlers.drf_default_with_modifications_exception_handler",
     # 'EXCEPTION_HANDLER': 'apps.api.exception_handlers.hacksoft_proposed_exception_handler',
+    # Filet de sécurité global : sans ce réglage, toute vue qui oublie ApiAuthMixin
+    # retombe sur le défaut DRF (Session+Basic) et IGNORE le Bearer JWT — c'était
+    # la cause du 401 systématique de la Liturgie des Heures côté SPA/mobile.
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'apps.authentication.authentication.JwtKeyEnforcingJWTAuthentication',
+        'apps.api.mixins.CsrfExemptedSessionAuthentication',
+        'apps.api.mixins.SessionAsHeaderAuthentication',
+    ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_FILTER_BACKENDS': [
             'django_filters.rest_framework.DjangoFilterBackend',
@@ -277,7 +290,7 @@ CACHES = {
 }
 
 APP_DOMAIN = env("APP_DOMAIN", default="http://localhost:8001")
-
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 from config.settings.loggers.settings import *  # noqa

@@ -28,6 +28,16 @@ CORS_ORIGIN_WHITELIST = env.list(
 CORS_ALLOWED_ORIGIN_REGEXES = env.list("CORS_ALLOWED_ORIGIN_REGEXES", default=[])
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
+# Origins autorisées au handshake WebSocket (config/asgi.py). L'Origin envoyée par
+# le navigateur est le domaine du FRONT — qui n'est pas dans ALLOWED_HOSTS (domaine
+# API) — donc AllowedHostsOriginValidator rejetait tous les WS en prod. À défaut de
+# WS_ALLOWED_ORIGINS explicite, on réutilise CORS_ALLOWED_ORIGINS (même liste de
+# fronts de confiance).
+WS_ALLOWED_ORIGINS = env.list(
+    "WS_ALLOWED_ORIGINS",
+    default=env.list("CORS_ALLOWED_ORIGINS", default=[]),
+)
+
 SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=True)
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#secure-proxy-ssl-header
