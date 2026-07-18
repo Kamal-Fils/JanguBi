@@ -14,33 +14,48 @@ from apps.core.exceptions import ApplicationError
 from apps.org.selectors import (
     church_get_by_id,
     church_list,
+    deanery_get_by_id,
     deanery_list,
+    diocese_get_by_id,
     diocese_list,
     parish_get_by_id,
     parish_list,
+    province_get_by_id,
     province_list,
 )
 from apps.org.serializers import (
     ChurchCreateInputSerializer,
     ChurchOutputSerializer,
+    ChurchUpdateInputSerializer,
     DeaneryCreateInputSerializer,
     DeaneryOutputSerializer,
+    DeaneryUpdateInputSerializer,
     DioceseCreateInputSerializer,
     DioceseOutputSerializer,
+    DioceseUpdateInputSerializer,
     ParishCreateInputSerializer,
     ParishOutputSerializer,
     ParishUpdateInputSerializer,
     ProvinceCreateInputSerializer,
     ProvinceOutputSerializer,
+    ProvinceUpdateInputSerializer,
 )
 from apps.org.services import (
     church_create,
+    church_delete,
+    church_update,
     deanery_create,
+    deanery_delete,
+    deanery_update,
     diocese_create,
+    diocese_delete,
+    diocese_update,
     parish_create,
     parish_delete,
     parish_update,
     province_create,
+    province_delete,
+    province_update,
 )
 from apps.users.permissions import IsSuperAdmin
 from apps.users.scoping import user_can_admin_diocese, user_can_admin_parish
@@ -99,6 +114,65 @@ class ProvinceListApi(ApiAuthMixin, APIView):
         return Response(ProvinceOutputSerializer(province).data, status=status.HTTP_201_CREATED)
 
 
+class ProvinceDetailApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: ProvinceOutputSerializer},
+        tags=["org"],
+        summary="Détail d'une province",
+    )
+    def get(self, request, province_id: int):
+        try:
+            province = province_get_by_id(province_id=province_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ProvinceOutputSerializer(province).data)
+
+    @extend_schema(
+        request=ProvinceUpdateInputSerializer,
+        responses={200: ProvinceOutputSerializer},
+        tags=["org"],
+        summary="Modifier une province (super_admin)",
+    )
+    def patch(self, request, province_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            province = province_get_by_id(province_id=province_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ProvinceUpdateInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            province = province_update(province=province, **serializer.validated_data)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(ProvinceOutputSerializer(province).data)
+
+    @extend_schema(
+        responses={204: None},
+        tags=["org"],
+        summary="Supprimer une province (super_admin)",
+    )
+    def delete(self, request, province_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            province = province_get_by_id(province_id=province_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            province_delete(province=province)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 # ---------------------------------------------------------------------------
 # Diocèses
 # ---------------------------------------------------------------------------
@@ -154,6 +228,65 @@ class DioceseListApi(ApiAuthMixin, APIView):
         except AE as e:
             return _error(e)
         return Response(DioceseOutputSerializer(diocese).data, status=status.HTTP_201_CREATED)
+
+
+class DioceseDetailApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: DioceseOutputSerializer},
+        tags=["org"],
+        summary="Détail d'un diocèse",
+    )
+    def get(self, request, diocese_id: int):
+        try:
+            diocese = diocese_get_by_id(diocese_id=diocese_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        return Response(DioceseOutputSerializer(diocese).data)
+
+    @extend_schema(
+        request=DioceseUpdateInputSerializer,
+        responses={200: DioceseOutputSerializer},
+        tags=["org"],
+        summary="Modifier un diocèse (super_admin)",
+    )
+    def patch(self, request, diocese_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            diocese = diocese_get_by_id(diocese_id=diocese_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        serializer = DioceseUpdateInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            diocese = diocese_update(diocese=diocese, **serializer.validated_data)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(DioceseOutputSerializer(diocese).data)
+
+    @extend_schema(
+        responses={204: None},
+        tags=["org"],
+        summary="Supprimer un diocèse (super_admin)",
+    )
+    def delete(self, request, diocese_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            diocese = diocese_get_by_id(diocese_id=diocese_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            diocese_delete(diocese=diocese)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +494,51 @@ class ChurchDetailApi(ApiAuthMixin, APIView):
             return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
         return Response(ChurchOutputSerializer(church).data)
 
+    @extend_schema(
+        request=ChurchUpdateInputSerializer,
+        responses={200: ChurchOutputSerializer},
+        tags=["org"],
+        summary="Modifier une église (super_admin)",
+    )
+    def patch(self, request, church_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            church = church_get_by_id(church_id=church_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ChurchUpdateInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            church = church_update(church=church, **serializer.validated_data)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(ChurchOutputSerializer(church).data)
+
+    @extend_schema(
+        responses={204: None},
+        tags=["org"],
+        summary="Supprimer une église (super_admin)",
+    )
+    def delete(self, request, church_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            church = church_get_by_id(church_id=church_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            church_delete(church=church)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 # ---------------------------------------------------------------------------
 # Doyennés
@@ -407,3 +585,74 @@ class DeaneryListApi(ApiAuthMixin, APIView):
         except ApplicationError as e:
             return _error(e)
         return Response(DeaneryOutputSerializer(deanery).data, status=status.HTTP_201_CREATED)
+
+
+class DeaneryDetailApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: DeaneryOutputSerializer},
+        tags=["org"],
+        summary="Détail d'un doyenné",
+    )
+    def get(self, request, deanery_id: int):
+        try:
+            deanery = deanery_get_by_id(deanery_id=deanery_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        return Response(DeaneryOutputSerializer(deanery).data)
+
+    @extend_schema(
+        request=DeaneryUpdateInputSerializer,
+        responses={200: DeaneryOutputSerializer},
+        tags=["org"],
+        summary="Modifier un doyenné (super_admin)",
+    )
+    def patch(self, request, deanery_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            deanery = deanery_get_by_id(deanery_id=deanery_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        serializer = DeaneryUpdateInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        kwargs = {}
+        if "name" in data:
+            kwargs["name"] = data["name"]
+        if "dean_id" in data:
+            # `dean_id: null` explicite retire le doyen ; absent = inchangé
+            # (le service utilise un sentinel `...` pour distinguer les deux).
+            dean = None
+            if data["dean_id"]:
+                from apps.users.models import BaseUser
+                dean = BaseUser.objects.filter(id=data["dean_id"]).first()
+            kwargs["dean"] = dean
+        try:
+            deanery = deanery_update(deanery=deanery, **kwargs)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(DeaneryOutputSerializer(deanery).data)
+
+    @extend_schema(
+        responses={204: None},
+        tags=["org"],
+        summary="Supprimer un doyenné (super_admin)",
+    )
+    def delete(self, request, deanery_id: int):
+        if not IsSuperAdmin().has_permission(request, self):
+            return Response(
+                {"detail": "Accès réservé au Super Admin."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            deanery = deanery_get_by_id(deanery_id=deanery_id)
+        except ApplicationError as e:
+            return Response({"detail": e.message}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            deanery_delete(deanery=deanery)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(status=status.HTTP_204_NO_CONTENT)

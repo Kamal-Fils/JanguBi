@@ -34,10 +34,24 @@ class ProvinceCreateInputSerializer(serializers.Serializer):
     country = serializers.CharField(max_length=100, default="Senegal")
 
 
+class ProvinceUpdateInputSerializer(serializers.Serializer):
+    # Mise à jour partielle : tous les champs optionnels (le service ne touche
+    # que ceux fournis) — même pattern que ParishUpdateInputSerializer.
+    name = serializers.CharField(max_length=200, required=False)
+    code = serializers.CharField(max_length=10, required=False)
+
+
 class DioceseCreateInputSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     code = serializers.CharField(max_length=10)
     province_id = serializers.IntegerField()
+
+
+class DioceseUpdateInputSerializer(serializers.Serializer):
+    # Mise à jour partielle : tous les champs optionnels. La province n'est PAS
+    # modifiable ici (déplacement de diocèse = opération distincte).
+    name = serializers.CharField(max_length=200, required=False)
+    code = serializers.CharField(max_length=10, required=False)
 
 
 class ParishCreateInputSerializer(serializers.Serializer):
@@ -78,6 +92,15 @@ class ChurchCreateInputSerializer(serializers.Serializer):
     address = serializers.CharField(default="", allow_blank=True)
 
 
+class ChurchUpdateInputSerializer(serializers.Serializer):
+    # Mise à jour partielle : tous les champs optionnels. `is_main` n'est PAS
+    # modifiable ici — la promotion passe par le service `church_set_main`.
+    name = serializers.CharField(max_length=200, required=False)
+    church_type = serializers.ChoiceField(choices=ChurchType.choices, required=False)
+    city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+
+
 class DeaneryOutputSerializer(serializers.ModelSerializer):
     diocese_name = serializers.CharField(source="diocese.name", read_only=True)
     dean_email = serializers.SerializerMethodField()
@@ -93,4 +116,12 @@ class DeaneryOutputSerializer(serializers.ModelSerializer):
 class DeaneryCreateInputSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
     diocese_id = serializers.IntegerField()
+    dean_id = serializers.UUIDField(required=False, allow_null=True)
+
+
+class DeaneryUpdateInputSerializer(serializers.Serializer):
+    # Mise à jour partielle : tous les champs optionnels. Le diocèse n'est PAS
+    # modifiable ici. `dean_id: null` explicite retire le doyen (le service
+    # distingue « non fourni » de « null » via un sentinel).
+    name = serializers.CharField(max_length=200, required=False)
     dean_id = serializers.UUIDField(required=False, allow_null=True)

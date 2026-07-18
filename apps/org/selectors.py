@@ -7,11 +7,29 @@ def province_list() -> QuerySet[Province]:
     return Province.objects.all().order_by("name")
 
 
+def province_get_by_id(*, province_id: int) -> Province:
+    from apps.core.exceptions import ApplicationError
+
+    try:
+        return Province.objects.get(id=province_id)
+    except Province.DoesNotExist:
+        raise ApplicationError(f"Province {province_id} introuvable.")
+
+
 def diocese_list(*, province_id: int | None = None) -> QuerySet[Diocese]:
     qs = Diocese.objects.select_related("province")
     if province_id is not None:
         qs = qs.filter(province_id=province_id)
     return qs.order_by("name")
+
+
+def diocese_get_by_id(*, diocese_id: int) -> Diocese:
+    from apps.core.exceptions import ApplicationError
+
+    try:
+        return Diocese.objects.select_related("province").get(id=diocese_id)
+    except Diocese.DoesNotExist:
+        raise ApplicationError(f"Diocèse {diocese_id} introuvable.")
 
 
 def parish_list(
@@ -78,3 +96,12 @@ def deanery_list(*, diocese_id: int | None = None) -> QuerySet[Deanery]:
     if diocese_id is not None:
         qs = qs.filter(diocese_id=diocese_id)
     return qs.order_by("name")
+
+
+def deanery_get_by_id(*, deanery_id: int) -> Deanery:
+    from apps.core.exceptions import ApplicationError
+
+    try:
+        return Deanery.objects.select_related("diocese", "dean").get(id=deanery_id)
+    except Deanery.DoesNotExist:
+        raise ApplicationError(f"Doyenné {deanery_id} introuvable.")
