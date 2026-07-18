@@ -154,6 +154,109 @@ def diocese_dashboard(*, diocese_id: int) -> dict | None:
     }
 
 
+def province_dashboard(*, province_id: int) -> dict | None:
+    """Consolidation provinciale pour l'archevêque : chiffres clés de la
+    province + une ligne par diocèse (l'archevêque voyait jusqu'ici le
+    dashboard évêque, scopé sur un seul diocèse)."""
+    from apps.org.models import Province
+
+    province = Province.objects.filter(id=province_id).first()
+    if province is None:
+        return None
+
+    dioceses = Diocese.objects.filter(province_id=province_id).order_by("name")
+
+    diocese_rows = []
+    for d in dioceses:
+        diocese_rows.append(
+            {
+                "id": d.id,
+                "name": d.name,
+                "parishes_count": Parish.objects.filter(diocese_id=d.id).count(),
+                "fideles_count": Profile.objects.filter(
+                    primary_parish__diocese_id=d.id
+                ).count(),
+                "pending_documents": DocumentRequest.objects.filter(
+                    Q(target_parish__diocese_id=d.id)
+                    | Q(
+                        target_parish_id__isnull=True,
+                        requester__profile__primary_parish__diocese_id=d.id,
+                    ),
+                    status__in=_ACTIVE_DOC_STATUSES,
+                ).count(),
+            }
+        )
+
+    donations_total_year = (
+        Donation.objects.filter(
+            status="confirmed",
+            parish__diocese__province_id=province_id,
+            created_at__gte=_start_of_year(),
+        ).aggregate(t=Sum("amount"))["t"]
+        or 0
+    )
+
+    return {
+        "province": {"id": province.id, "name": province.name},
+        "dioceses_count": dioceses.count(),
+        "parishes_count": Parish.objects.filter(diocese__province_id=province_id).count(),
+        "total_fideles": Profile.objects.filter(
+            primary_parish__diocese__province_id=province_id
+        ).count(),
+        "donations_total_year": donations_total_year,
+        "pending_documents": sum(r["pending_documents"] for r in diocese_rows),
+        "dioceses": diocese_rows,
+    }
+
+
+def global_dashboard() -> dict:
+    """Vue d'ensemble plateforme pour le super-admin : utilisateurs, structure
+    territoriale, files d'attente et contenu."""
+    import datetime
+
+    from apps.clergy_accounts.models import ClergicalInvitation
+    from apps.news.models import Article
+    from apps.org.models import Province
+    from apps.users.models import BaseUser
+
+    clergy_roles = ["religieux", "diacre", "pretre", "eveque", "archeveque"]
+    month_ago = timezone.now() - datetime.timedelta(days=30)
+    users = BaseUser.objects.filter(is_active=True)
+
+    return {
+        "users_total": users.count(),
+        "users_new_30d": users.filter(created_at__gte=month_ago).count(),
+        "fideles_count": users.exclude(pastoral_role__in=clergy_roles).count(),
+        "clergy_count": users.filter(pastoral_role__in=clergy_roles).count(),
+        "pending_clergy_invitations": ClergicalInvitation.objects.filter(
+            status=ClergicalInvitation.Status.PENDING
+        ).count(),
+        "provinces_count": Province.objects.count(),
+        "dioceses_count": Diocese.objects.count(),
+        "parishes_count": Parish.objects.count(),
+        "articles_published": Article.objects.filter(status="published").count(),
+        "pending_documents": DocumentRequest.objects.filter(
+            status__in=_ACTIVE_DOC_STATUSES
+        ).count(),
+        "donations_total_year": Donation.objects.filter(
+            status="confirmed", created_at__gte=_start_of_year()
+        ).aggregate(t=Sum("amount"))["t"]
+        or 0,
+    }
+
+
+def user_principal_province_id(*, user) -> int | None:
+    """Province où l'utilisateur a autorité (archevêque / admin province)."""
+    ra = RoleAssignment.objects.filter(
+        user=user, scope=RoleScope.PROVINCE, is_active=True
+    ).first()
+    if ra and ra.province_id:
+        return ra.province_id
+    if getattr(user, "pastoral_role", None) == "archeveque":
+        return getattr(user, "province_id", None)
+    return None
+
+
 def user_principal_parish_id(*, user) -> int | None:
     """Paroisse où l'utilisateur est administrateur (curé), principale en priorité."""
     ra = (

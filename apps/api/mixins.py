@@ -5,7 +5,8 @@ from django.conf import settings
 from django.contrib import auth
 from rest_framework.authentication import BaseAuthentication, SessionAuthentication
 from rest_framework.permissions import BasePermission, IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
+
+from apps.authentication.authentication import JwtKeyEnforcingJWTAuthentication
 
 
 def get_auth_header(headers):
@@ -72,7 +73,7 @@ else:
 
 class ApiAuthMixin:
     authentication_classes: Sequence[Type[BaseAuthentication]] = [
-        JWTAuthentication,
+        JwtKeyEnforcingJWTAuthentication,
         CsrfExemptedSessionAuthentication,
         SessionAsHeaderAuthentication,
     ]

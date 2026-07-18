@@ -25,6 +25,7 @@ from apps.messaging.selectors import (
     conversation_list,
     export_list,
     message_list,
+    messaging_cgu_get,
     notification_list,
     priest_list_available,
 )
@@ -39,10 +40,14 @@ from apps.messaging.serializers import (
     MessageListInputSerializer,
     MessageOutputSerializer,
     MessageSendInputSerializer,
+    MessagingCguStatusSerializer,
     NotificationOutputSerializer,
+    NotificationUnreadCountSerializer,
     PriestProfileCreateInputSerializer,
     PriestProfileOutputSerializer,
     PriestProfileUpdateInputSerializer,
+    PushDeviceInputSerializer,
+    PushDeviceOutputSerializer,
     ReactInputSerializer,
 )
 from apps.messaging.services import (
@@ -57,10 +62,14 @@ from apps.messaging.services import (
     message_react,
     message_send,
     message_unreact,
+    messaging_cgu_accept,
+    notification_mark_all_read,
     notification_mark_read,
     priest_profile_accept_cgu,
     priest_profile_create,
     priest_profile_update,
+    push_device_register,
+    push_device_unregister,
     unblock_user,
 )
 from apps.users.models import BaseUser
@@ -128,10 +137,37 @@ class PriestListApi(ApiAuthMixin, APIView):
 # ---------------------------------------------------------------------------
 
 
-class ConversationListApi(ApiAuthMixin, APIView):
-    @extend_schema(responses={200: ConversationOutputSerializer(many=True)}, tags=["messaging"], summary="Lister mes conversations")
+class MessagingCguApi(ApiAuthMixin, APIView):
+    """CGU de messagerie globales : une acceptation vaut pour toutes les conversations."""
+
+    @extend_schema(responses={200: MessagingCguStatusSerializer}, tags=["messaging"], summary="Statut d'acceptation des CGU de messagerie")
     def get(self, request):
-        conversations = conversation_list(user=request.user)
+        acceptance = messaging_cgu_get(user=request.user)
+        data = {
+            "accepted": acceptance is not None,
+            "accepted_at": acceptance.accepted_at if acceptance else None,
+        }
+        return Response(MessagingCguStatusSerializer(data).data)
+
+    @extend_schema(responses={200: MessagingCguStatusSerializer}, tags=["messaging"], summary="Accepter les CGU de messagerie (global, idempotent)")
+    def post(self, request):
+        acceptance = messaging_cgu_accept(user=request.user)
+        data = {"accepted": True, "accepted_at": acceptance.accepted_at}
+        return Response(MessagingCguStatusSerializer(data).data)
+
+
+class ConversationListApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("search", OpenApiTypes.STR, description="Filtrer par nom ou email d'un participant"),
+        ],
+        responses={200: ConversationOutputSerializer(many=True)},
+        tags=["messaging"],
+        summary="Lister mes conversations",
+    )
+    def get(self, request):
+        search = request.query_params.get("search") or None
+        conversations = conversation_list(user=request.user, search=search)
         return Response(ConversationOutputSerializer(conversations, many=True).data)
 
 
@@ -141,7 +177,10 @@ class ConversationCreateApi(ApiAuthMixin, APIView):
         serializer = ConversationCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         priest_user = get_object_or_404(BaseUser, id=serializer.validated_data["priest_user_id"])
-        conversation, _ = conversation_get_or_create(fidele=request.user, priest=priest_user)
+        try:
+            conversation, _ = conversation_get_or_create(fidele=request.user, priest=priest_user)
+        except ApplicationError as exc:
+            return _error(exc)
         return Response(ConversationOutputSerializer(conversation).data, status=status.HTTP_201_CREATED)
 
 
@@ -383,6 +422,61 @@ class NotificationReadApi(ApiAuthMixin, APIView):
         except ApplicationError as exc:
             return _error(exc)
         return Response(NotificationOutputSerializer(notification).data)
+
+
+class NotificationReadAllApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: NotificationUnreadCountSerializer},
+        tags=["notifications"],
+        summary="Marquer toutes mes notifications comme lues",
+    )
+    def post(self, request):
+        notification_mark_all_read(user=request.user)
+        return Response(NotificationUnreadCountSerializer({"unread": 0}).data)
+
+
+class NotificationUnreadCountApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        responses={200: NotificationUnreadCountSerializer},
+        tags=["notifications"],
+        summary="Nombre de notifications non lues (badge)",
+    )
+    def get(self, request):
+        count = notification_list(user=request.user, unread_only=True).count()
+        return Response(NotificationUnreadCountSerializer({"unread": count}).data)
+
+
+class PushDeviceApi(ApiAuthMixin, APIView):
+    """Enregistrement des tokens push de l'app mobile (React Native)."""
+
+    @extend_schema(
+        request=PushDeviceInputSerializer,
+        responses={201: PushDeviceOutputSerializer},
+        tags=["notifications"],
+        summary="Enregistrer un token push (idempotent, réassigne l'appareil)",
+    )
+    def post(self, request):
+        serializer = PushDeviceInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        device = push_device_register(user=request.user, **serializer.validated_data)
+        return Response(
+            PushDeviceOutputSerializer(device).data, status=status.HTTP_201_CREATED
+        )
+
+    @extend_schema(
+        request=PushDeviceInputSerializer,
+        responses={204: None},
+        tags=["notifications"],
+        summary="Désenregistrer un token push (déconnexion)",
+    )
+    def delete(self, request):
+        token = request.data.get("token") or request.query_params.get("token")
+        if not token:
+            return Response(
+                {"detail": "token requis."}, status=status.HTTP_400_BAD_REQUEST
+            )
+        push_device_unregister(user=request.user, token=token)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------

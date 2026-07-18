@@ -13,6 +13,9 @@ urlpatterns = [
         path("rag/", include(("apps.rag.urls", "rag"))),
         path("liturgy/", include(("apps.liturgy.urls", "liturgy"))),
         path("messaging/", include(("apps.messaging.urls", "messaging"))),
+        # Notifications top-level (web + mobile RN) — les routes historiques
+        # /messaging/notifications/ restent pour compatibilité.
+        path("notifications/", include(("apps.messaging.urls_notifications", "notifications"))),
         path("documents/", include(("apps.documents.urls", "documents"))),
         path("news/", include(("apps.news.urls", "news"))),
         path("org/", include(("apps.org.urls", "org"))),

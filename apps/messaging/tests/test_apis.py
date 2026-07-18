@@ -280,8 +280,9 @@ def test_conversation_list_requires_authentication(anon_client):
 
 @pytest.mark.django_db
 def test_conversation_create_returns_201(auth_client):
-    # Arrange
+    # Arrange — le destinataire doit être un prêtre éligible (PriestProfile acceptant).
     priest_user = BaseUserFactory()
+    PriestProfileFactory(user=priest_user, accepts_pastoral_chat=True)
     url = reverse("api:messaging:conversation-create")
 
     # Act
@@ -291,6 +292,19 @@ def test_conversation_create_returns_201(auth_client):
 
     # Assert
     assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_conversation_create_rejected_for_non_clergy_recipient(auth_client):
+    # Garde pastorale : impossible d'ouvrir une conversation avec un non-prêtre.
+    other_user = BaseUserFactory()  # aucun PriestProfile
+    url = reverse("api:messaging:conversation-create")
+
+    response = auth_client.post(
+        url, {"priest_user_id": str(other_user.id)}, format="json"
+    )
+
+    assert response.status_code == 400
 
 
 @pytest.mark.django_db
@@ -1140,3 +1154,143 @@ def test_notification_read_returns_404_when_not_found(auth_client):
     )
     response = auth_client.post(url)
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# CGU messagerie globales  (GET/POST /messaging/cgu/)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_messaging_cgu_status_defaults_to_not_accepted(auth_client):
+    url = reverse("api:messaging:messaging-cgu")
+    response = auth_client.get(url)
+    assert response.status_code == 200
+    assert response.data["accepted"] is False
+    assert response.data["accepted_at"] is None
+
+
+@pytest.mark.django_db
+def test_messaging_cgu_accept_is_idempotent(auth_client):
+    url = reverse("api:messaging:messaging-cgu")
+
+    first = auth_client.post(url)
+    second = auth_client.post(url)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.data["accepted"] is True
+    assert second.data["accepted_at"] == first.data["accepted_at"]
+
+
+@pytest.mark.django_db
+def test_messaging_cgu_requires_authentication(anon_client):
+    url = reverse("api:messaging:messaging-cgu")
+    assert anon_client.get(url).status_code == 401
+    assert anon_client.post(url).status_code == 401
+
+
+@pytest.mark.django_db
+def test_global_cgu_grants_message_access_on_any_conversation():
+    # Arrange — aucune acceptation PAR CONVERSATION (l'ancien modèle aurait 403)
+    conv = ConversationFactory(cgu_accepted_by_a=None, cgu_accepted_by_b=None)
+    client = APIClient()
+    client.force_authenticate(user=conv.participant_a)
+
+    # Act — acceptation GLOBALE puis accès aux messages de la conversation
+    client.post(reverse("api:messaging:messaging-cgu"))
+    response = client.get(
+        reverse("api:messaging:message-list", kwargs={"conversation_id": conv.id})
+    )
+
+    # Assert — l'acceptation globale vaut pour toutes les conversations
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_global_cgu_allows_sending_without_per_conversation_flag():
+    # Arrange
+    conv = ConversationFactory(cgu_accepted_by_a=None, cgu_accepted_by_b=None)
+    client = APIClient()
+    client.force_authenticate(user=conv.participant_a)
+    client.post(reverse("api:messaging:messaging-cgu"))
+    url = reverse("api:messaging:message-send", kwargs={"conversation_id": conv.id})
+
+    # Act — _check_cgu (couche service) doit aussi honorer l'acceptation globale
+    with patch(_FANOUT_WS), patch(_FANOUT_NOTIF), patch(
+        "apps.messaging.services.cache", _mock_cache()
+    ):
+        response = client.post(url, {"content": "Bonjour"}, format="json")
+
+    # Assert
+    assert response.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# Notifications top-level + devices push  (Lot 5 — API mobile-ready)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_notifications_top_level_alias(auth_client):
+    NotificationFactory(user=auth_client._user, is_read=False)
+    NotificationFactory(user=auth_client._user, is_read=False)
+
+    listing = auth_client.get(reverse("api:notifications:list"))
+    count = auth_client.get(reverse("api:notifications:unread-count"))
+
+    assert listing.status_code == 200
+    assert len(listing.data) == 2
+    assert count.status_code == 200
+    assert count.data["unread"] == 2
+
+
+@pytest.mark.django_db
+def test_notifications_read_all(auth_client):
+    NotificationFactory(user=auth_client._user, is_read=False)
+    NotificationFactory(user=auth_client._user, is_read=False)
+
+    response = auth_client.post(reverse("api:notifications:read-all"))
+
+    assert response.status_code == 200
+    assert response.data["unread"] == 0
+    count = auth_client.get(reverse("api:notifications:unread-count"))
+    assert count.data["unread"] == 0
+
+
+@pytest.mark.django_db
+def test_push_device_register_is_idempotent_and_reassigns(auth_client):
+    url = reverse("api:notifications:devices")
+
+    first = auth_client.post(url, {"platform": "android", "token": "tok-123"}, format="json")
+    second = auth_client.post(url, {"platform": "android", "token": "tok-123"}, format="json")
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    # Le même token se réassigne au dernier utilisateur connecté sur l'appareil.
+    other = APIClient()
+    other_user = BaseUserFactory()
+    other.force_authenticate(user=other_user)
+    reassigned = other.post(url, {"platform": "ios", "token": "tok-123"}, format="json")
+    assert reassigned.status_code == 201
+
+    from apps.messaging.models import PushDevice
+
+    device = PushDevice.objects.get(token="tok-123")
+    assert device.user_id == other_user.id
+    assert device.platform == "ios"
+    assert PushDevice.objects.filter(token="tok-123").count() == 1
+
+
+@pytest.mark.django_db
+def test_push_device_unregister(auth_client):
+    url = reverse("api:notifications:devices")
+    auth_client.post(url, {"platform": "web", "token": "tok-del"}, format="json")
+
+    response = auth_client.delete(url, {"token": "tok-del"}, format="json")
+
+    assert response.status_code == 204
+    from apps.messaging.models import PushDevice
+
+    assert not PushDevice.objects.filter(token="tok-del").exists()

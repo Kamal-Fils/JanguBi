@@ -48,6 +48,11 @@ class PriestProfileUpdateInputSerializer(serializers.Serializer):
     bio = serializers.CharField(required=False, max_length=1000, allow_blank=True)
 
 
+class MessagingCguStatusSerializer(serializers.Serializer):
+    accepted = serializers.BooleanField()
+    accepted_at = serializers.DateTimeField(allow_null=True)
+
+
 class ConversationParticipantSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     full_name = serializers.SerializerMethodField()
@@ -213,6 +218,21 @@ class NotificationOutputSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = ["id", "event_type", "payload", "is_read", "read_at", "created_at"]
+
+
+class NotificationUnreadCountSerializer(serializers.Serializer):
+    unread = serializers.IntegerField()
+
+
+class PushDeviceInputSerializer(serializers.Serializer):
+    platform = serializers.ChoiceField(choices=["ios", "android", "web"])
+    token = serializers.CharField(max_length=512)
+
+
+class PushDeviceOutputSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    platform = serializers.CharField()
+    created_at = serializers.DateTimeField()
 
 
 class ClergicalMessageSendInputSerializer(serializers.Serializer):

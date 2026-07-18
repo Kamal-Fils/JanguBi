@@ -28,6 +28,31 @@ class PriestProfile(BaseModel):
         return f"PriestProfile({self.user_id})"
 
 
+class MessagingCguAcceptance(BaseModel):
+    """
+    Acceptation GLOBALE (par utilisateur) des CGU de messagerie.
+
+    Historiquement l'acceptation n'existait que par conversation
+    (Conversation.cgu_accepted_by_a/_b) : chaque nouvelle conversation redemandait
+    les CGU et renvoyait un 403 surprise. Une ligne ici vaut acceptation pour
+    TOUTES les conversations (les flags par conversation restent honorés en OR).
+    """
+
+    user = models.OneToOneField(
+        BaseUser,
+        on_delete=models.CASCADE,
+        related_name="messaging_cgu",
+    )
+    accepted_at = models.DateTimeField()
+
+    class Meta:
+        verbose_name = _("Acceptation CGU messagerie")
+        verbose_name_plural = _("Acceptations CGU messagerie")
+
+    def __str__(self) -> str:
+        return f"MessagingCguAcceptance({self.user_id})"
+
+
 class Conversation(BaseModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # participant_a.id < participant_b.id (UUID string comparison) — canonical ordering
@@ -258,6 +283,35 @@ class Notification(BaseModel):
 
     def __str__(self) -> str:
         return f"Notification({self.user_id}, {self.event_type})"
+
+
+class PushDevice(BaseModel):
+    """
+    Token d'appareil pour les notifications push (app mobile React Native).
+    On enregistre les tokens dès maintenant ; l'envoi FCM/APNs viendra avec
+    l'app. Un token est unique et se réassigne au dernier utilisateur connecté
+    sur l'appareil.
+    """
+
+    class Platform(models.TextChoices):
+        IOS = "ios", _("iOS")
+        ANDROID = "android", _("Android")
+        WEB = "web", _("Web")
+
+    user = models.ForeignKey(
+        BaseUser,
+        on_delete=models.CASCADE,
+        related_name="push_devices",
+    )
+    platform = models.CharField(max_length=10, choices=Platform.choices)
+    token = models.CharField(max_length=512, unique=True)
+
+    class Meta:
+        verbose_name = _("Appareil push")
+        verbose_name_plural = _("Appareils push")
+
+    def __str__(self) -> str:
+        return f"PushDevice({self.user_id}, {self.platform})"
 
 
 class ClergicalMessage(BaseModel):

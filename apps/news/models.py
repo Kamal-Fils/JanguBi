@@ -51,6 +51,10 @@ class Article(BaseModel):
         PUBLISHED = "published", _("Publié")
         UNPUBLISHED = "unpublished", _("Dépublié")
 
+    class ContentFormat(models.TextChoices):
+        TEXT = "text", _("Texte brut")
+        HTML = "html", _("HTML riche")
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     content_type = models.CharField(
@@ -67,6 +71,23 @@ class Article(BaseModel):
         max_length=400, blank=True, default="", verbose_name=_("Résumé court")
     )
     content = models.TextField(verbose_name=_("Contenu"))
+    # Format du contenu : "text" pour l'existant (rédigé en textarea brut),
+    # "html" pour l'éditeur riche (TipTap). Le HTML est SANITIZÉ côté service
+    # (nh3) avant persistance — jamais de HTML brut non filtré en base.
+    content_format = models.CharField(
+        max_length=10,
+        choices=ContentFormat.choices,
+        default=ContentFormat.TEXT,
+        verbose_name=_("Format du contenu"),
+    )
+    # Pour les annonces : date du jour concerné (ex. le dimanche à venir) —
+    # alimente le bloc « Annonces du dimanche » du fil.
+    announcement_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name=_("Date de l'annonce"),
+    )
 
     cover_image = models.ForeignKey(
         File,

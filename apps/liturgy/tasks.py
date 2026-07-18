@@ -16,7 +16,11 @@ def daily_sync_task(date_str: str | None = None, zones: list[str] | None = None)
         date_str = timezone.now().date().isoformat()
 
     if not zones:
-        zones = ["romain"]
+        # DOIT correspondre à la zone lue par les APIs (défaut "afrique" dans
+        # apps/liturgy/apis.py). Avec "romain" seul, le cache nocturne n'était
+        # jamais utilisé : chaque requête retombait sur un fetch AELF live
+        # (9 appels HTTP, retries 5×15 s) dans le cycle requête → lenteur/500.
+        zones = ["afrique"]
 
     logger.info(f"Starting scheduled daily AELF sync for dates: {date_str} in zones: {zones}")
 

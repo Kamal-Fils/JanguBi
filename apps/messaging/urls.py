@@ -18,6 +18,7 @@ from apps.messaging.apis import (
     MessageReactApi,
     MessageReadApi,
     MessageSendApi,
+    MessagingCguApi,
     NotificationListApi,
     NotificationReadApi,
     PriestListApi,
@@ -32,6 +33,8 @@ urlpatterns = [
     path("priest-profile/cgu/", PriestProfileCguApi.as_view(), name="priest-profile-cgu"),
     path("priest-profile/me/", PriestProfileUpdateApi.as_view(), name="priest-profile-update"),
     path("priests/", PriestListApi.as_view(), name="priest-list"),
+    # CGU messagerie (global, par utilisateur)
+    path("cgu/", MessagingCguApi.as_view(), name="messaging-cgu"),
     # Conversations
     path("conversations/", ConversationListApi.as_view(), name="conversation-list"),
     path("conversations/create/", ConversationCreateApi.as_view(), name="conversation-create"),

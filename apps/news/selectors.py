@@ -20,6 +20,7 @@ def article_list(
     status: str = Article.Status.PUBLISHED,
     author: BaseUser | None = None,
     search: str | None = None,
+    content_type: str | None = None,
 ) -> QuerySet[Article]:
     qs = Article.objects.select_related("category", "author", "cover_image")
 
@@ -37,6 +38,8 @@ def article_list(
         qs = qs.filter(author=author)
     if search:
         qs = qs.filter(title__icontains=search)
+    if content_type:
+        qs = qs.filter(content_type=content_type)
 
     return qs.order_by("-published_at", "-created_at")
 
@@ -45,12 +48,14 @@ def article_list_global(
     *,
     category_slug: str | None = None,
     search: str | None = None,
+    content_type: str | None = None,
 ) -> QuerySet[Article]:
     """Articles publiés de portée globale — accessibles publiquement."""
     return article_list(
         scope_type=Article.ScopeType.GLOBAL,
         category_slug=category_slug,
         search=search,
+        content_type=content_type,
     )
 
 
@@ -59,6 +64,7 @@ def article_list_for_parish(
     parish_id: int,
     category_slug: str | None = None,
     search: str | None = None,
+    content_type: str | None = None,
 ) -> QuerySet[Article]:
     """Articles publiés d'une paroisse précise."""
     return article_list(
@@ -66,6 +72,7 @@ def article_list_for_parish(
         scope_parish_id=parish_id,
         category_slug=category_slug,
         search=search,
+        content_type=content_type,
     )
 
 
@@ -74,6 +81,7 @@ def article_list_for_diocese(
     diocese_id: int,
     category_slug: str | None = None,
     search: str | None = None,
+    content_type: str | None = None,
 ) -> QuerySet[Article]:
     """Articles publiés d'un diocèse précis."""
     return article_list(
@@ -81,6 +89,7 @@ def article_list_for_diocese(
         scope_diocese_id=diocese_id,
         category_slug=category_slug,
         search=search,
+        content_type=content_type,
     )
 
 

@@ -26,6 +26,17 @@ class ArticleCreateInputSerializer(serializers.Serializer):
         default=Article.ContentType.ARTICLE,
         required=False,
     )
+    content_format = serializers.ChoiceField(
+        choices=Article.ContentFormat.choices,
+        default=Article.ContentFormat.TEXT,
+        required=False,
+        help_text="'html' pour l'éditeur riche (sanitizé côté serveur), 'text' sinon.",
+    )
+    announcement_date = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="Annonces : date du jour concerné (ex. dimanche à venir).",
+    )
     excerpt = serializers.CharField(max_length=400, required=False, allow_blank=True, default="")
     cover_image_id = serializers.IntegerField(required=False, allow_null=True)
     scope_type = serializers.ChoiceField(
@@ -41,6 +52,10 @@ class ArticleUpdateInputSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=200, required=False)
     excerpt = serializers.CharField(max_length=400, required=False, allow_blank=True)
     content = serializers.CharField(required=False)
+    content_format = serializers.ChoiceField(
+        choices=Article.ContentFormat.choices, required=False
+    )
+    announcement_date = serializers.DateField(required=False, allow_null=True)
     category_id = serializers.IntegerField(required=False)
     cover_image_id = serializers.IntegerField(required=False, allow_null=True)
 
@@ -84,6 +99,7 @@ class ArticleListOutputSerializer(serializers.ModelSerializer):
             "author_name",
             "content_type",
             "content_type_label",
+            "announcement_date",
             "scope_type",
             "scope_type_label",
             "scope_parish_id",
@@ -126,11 +142,13 @@ class ArticleDetailOutputSerializer(serializers.ModelSerializer):
             "slug",
             "excerpt",
             "content",
+            "content_format",
             "cover_image_url",
             "category",
             "author_name",
             "content_type",
             "content_type_label",
+            "announcement_date",
             "scope_type",
             "scope_type_label",
             "scope_parish_id",
