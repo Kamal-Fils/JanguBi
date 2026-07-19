@@ -4,7 +4,7 @@ from django.conf import settings
 from django.db.models import Count, Prefetch
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -293,7 +293,17 @@ class ImportApi(ApiAuthMixin, APIView):
         filename = serializers.CharField()
         source = serializers.CharField()  # type: ignore[assignment]  # drf-stubs: serializer field named "source" collides with Field.source attribute
 
-    @extend_schema(request=InputSerializer, tags=["Bible"], summary="Trigger background import of Bible texts")
+    @extend_schema(
+        request=InputSerializer,
+        responses={
+            202: OpenApiResponse(description="Import enqueued — `{\"status\": ...}`"),
+            400: OpenApiResponse(description="Nom de fichier invalide (chemin de répertoire interdit) — `{\"error\": ...}`"),
+            403: OpenApiResponse(description="Réservé aux super-utilisateurs — `{\"error\": ...}`"),
+            404: OpenApiResponse(description="Fichier introuvable dans le dossier d'importation — `{\"error\": ...}`"),
+        },
+        tags=["Bible"],
+        summary="Trigger background import of Bible texts",
+    )
     def post(self, request):
         if not request.user.is_superuser:
             return Response({"error": "Admin only"}, status=status.HTTP_403_FORBIDDEN)

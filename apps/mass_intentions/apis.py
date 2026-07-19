@@ -125,6 +125,7 @@ class MassIntentionParishListApi(ApiAuthMixin, APIView):
 
 class MassIntentionAcceptApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: MassIntentionOutputSerializer},
         tags=["mass-intentions"],
         summary="Accepter une intention de messe",
@@ -172,6 +173,7 @@ class MassIntentionProposeDateApi(ApiAuthMixin, APIView):
 
 class MassIntentionCelebrateApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: MassIntentionOutputSerializer},
         tags=["mass-intentions"],
         summary="Marquer une intention comme célébrée",

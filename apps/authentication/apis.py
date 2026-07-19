@@ -154,6 +154,7 @@ class UserJwtLogoutApi(ApiAuthMixin, APIView):
         "Invalide TOUS les JWT actifs de l'utilisateur via rotation du jwt_key. "
         "Utile en cas de suspicion de compromission."
     ),
+    request=None,
     responses={204: OpenApiResponse(description="Tous les appareils déconnectés")},
 )
 class UserJwtLogoutAllApi(ApiAuthMixin, APIView):

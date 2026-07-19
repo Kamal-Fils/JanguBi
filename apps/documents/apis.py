@@ -256,6 +256,7 @@ class AdminStartVerificationApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
     @extend_schema(
+        request=None,
         responses={200: DocumentRequestDetailOutputSerializer},
         tags=["documents"],
         summary="Démarrer la vérification (admin)",
@@ -297,9 +298,14 @@ class AdminValidateApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
     @extend_schema(
+        request=None,
         responses={200: DocumentRequestDetailOutputSerializer},
         tags=["documents"],
         summary="Valider une demande (admin)",
+        description=(
+            "Cet endpoint n'accepte AUCUN corps de requête : la validation est une simple "
+            "transition d'état. Tout payload envoyé serait ignoré silencieusement."
+        ),
     )
     def post(self, request, request_id: UUID):
         req = document_request_get_for_admin(request_id=request_id, user=request.user)

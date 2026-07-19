@@ -502,6 +502,7 @@ class AdminArticlePublishApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsArticleEditor]
 
     @extend_schema(
+        request=None,
         responses={200: ArticleDetailOutputSerializer},
         tags=["news-admin"],
         summary="[Admin] Publier un article",

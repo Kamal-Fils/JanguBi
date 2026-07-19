@@ -90,6 +90,7 @@ class EventRegisterApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsOnboardingCompleted]  # A1 — écriture territoriale
 
     @extend_schema(
+        request=None,
         responses={201: None},
         tags=["Agenda"],
         summary="S'inscrire à un événement",
@@ -106,6 +107,7 @@ class EventRegisterApi(ApiAuthMixin, APIView):
         return Response(status=status.HTTP_201_CREATED)
 
     @extend_schema(
+        request=None,
         responses={204: None},
         tags=["Agenda"],
         summary="Annuler son inscription à un événement",
