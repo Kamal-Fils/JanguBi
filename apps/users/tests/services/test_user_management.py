@@ -15,8 +15,8 @@ from django.test import TestCase, override_settings
 
 from apps.core.exceptions import ApplicationError, TokenInvalidError
 from apps.org.tests.factories import ChurchFactory, ParishFactory
-from apps.users.enums import UserOnboardingState
-from apps.users.models import BaseUser, Profile, SecurityAuditLog
+from apps.users.enums import RoleScope, UserOnboardingState, UserRole
+from apps.users.models import BaseUser, Profile, RoleAssignment, SecurityAuditLog
 from apps.users.otp import VERIFY_TOKEN_TTL, generate_url_token, token_store
 from apps.users.services import (
     user_activate_account,
@@ -110,8 +110,38 @@ class UserToggleActiveTests(TestCase):
         self.assertTrue(result.is_active)
 
     def test_staff_can_toggle(self):
+        # Un admin de paroisse agit sur SA paroisse. Avant le cloisonnement,
+        # ce test passait avec un admin sans affectation et une cible sans
+        # paroisse — il validait donc la faille : un admin pouvait désactiver
+        # n'importe quel compte de la plateforme.
+        parish = ParishFactory()
+        RoleAssignment.objects.create(
+            user=self.staff,
+            role=UserRole.PARISH_ADMIN,
+            scope=RoleScope.PARISH,
+            parish=parish,
+            is_active=True,
+        )
+        ProfileFactory(user=self.user, primary_parish=parish)
+
         result = user_toggle_active(user=self.user, is_active=False, performed_by=self.staff)
         self.assertFalse(result.is_active)
+
+    def test_staff_cannot_toggle_outside_own_parish(self):
+        RoleAssignment.objects.create(
+            user=self.staff,
+            role=UserRole.PARISH_ADMIN,
+            scope=RoleScope.PARISH,
+            parish=ParishFactory(),
+            is_active=True,
+        )
+        ProfileFactory(user=self.user, primary_parish=ParishFactory())
+
+        with self.assertRaises(ApplicationError):
+            user_toggle_active(user=self.user, is_active=False, performed_by=self.staff)
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
 
     def test_customer_cannot_toggle(self):
         customer = BaseUserFactory()

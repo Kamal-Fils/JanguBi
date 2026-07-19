@@ -1,4 +1,4 @@
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from apps.news.models import Article, ArticleCategory
 from apps.users.models import BaseUser
@@ -42,6 +42,52 @@ def article_list(
         qs = qs.filter(content_type=content_type)
 
     return qs.order_by("-published_at", "-created_at")
+
+
+def article_list_for_editor(*, editor: BaseUser, **filters) -> QuerySet[Article]:
+    """Articles visibles dans le back-office par `editor`, **scopés à son autorité**.
+
+    La liste admin exposait auparavant TOUS les articles de la plateforme à tout
+    éditeur — brouillons et lettres pastorales non publiées d'autres diocèses
+    compris — alors que l'écriture, elle, est bien cloisonnée. On aligne la
+    lecture sur l'autorité d'écriture : ce qu'on voit est ce sur quoi on peut
+    agir, donc l'UI ne propose plus d'actions vouées à échouer.
+
+    Fail-CLOSED : un éditeur sans affectation territoriale ne voit que ses
+    propres articles.
+    """
+    from apps.users.scoping import (
+        accessible_diocese_ids,
+        accessible_parish_ids,
+        accessible_province_ids,
+        is_global_admin,
+    )
+
+    qs = article_list(**filters)
+
+    if is_global_admin(editor):
+        return qs
+
+    visible = Q(author=editor)
+
+    parish_ids = accessible_parish_ids(editor) or set()
+    if parish_ids:
+        visible |= Q(scope_type=Article.ScopeType.PARISH, scope_parish_id__in=parish_ids)
+        # L'autorité « église » découle de celle sur sa paroisse (RG-CONT 3b).
+        visible |= Q(
+            scope_type=Article.ScopeType.CHURCH,
+            scope_church__parish_id__in=parish_ids,
+        )
+
+    diocese_ids = accessible_diocese_ids(editor) or set()
+    if diocese_ids:
+        visible |= Q(scope_type=Article.ScopeType.DIOCESE, scope_diocese_id__in=diocese_ids)
+
+    # La portée globale suit la même règle qu'à la publication : province+.
+    if accessible_province_ids(editor):
+        visible |= Q(scope_type=Article.ScopeType.GLOBAL)
+
+    return qs.filter(visible)
 
 
 def article_list_global(

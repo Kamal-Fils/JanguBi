@@ -8,7 +8,7 @@ from apps.users.enums import UserOnboardingState
 from apps.users.models import BaseUser
 
 
-def _make_user(email, pastoral_role="fidele"):
+def _make_user(email, pastoral_role="fidele", parish=None):
     user = BaseUser.objects.create_user(
         email=email,
         password="StrongPassw0rd!",
@@ -20,22 +20,35 @@ def _make_user(email, pastoral_role="fidele"):
     user.pastoral_role = pastoral_role
     user.onboarding_state = UserOnboardingState.COMPLETED  # onboardé → peut écrire (A1)
     user.save(update_fields=["pastoral_role", "onboarding_state"])
+    if parish is not None:
+        # Rattachement territorial : sans lui, le clergé n'a aucun périmètre et
+        # ne peut donc rien traiter (fail-closed du cloisonnement territorial).
+        from apps.users.models import Profile
+
+        Profile.objects.update_or_create(user=user, defaults={"primary_parish": parish})
     return user
 
 
 @pytest.fixture
-def fidele_client(db):
+def parish(db):
+    from apps.org.tests.factories import ParishFactory
+
+    return ParishFactory()
+
+
+@pytest.fixture
+def fidele_client(db, parish):
     client = APIClient()
-    user = _make_user("fidele@test.com", "fidele")
+    user = _make_user("fidele@test.com", "fidele", parish=parish)
     client.force_authenticate(user=user)
     client._user = user
     return client
 
 
 @pytest.fixture
-def pretre_client(db):
+def pretre_client(db, parish):
     client = APIClient()
-    user = _make_user("pretre@test.com", "pretre")
+    user = _make_user("pretre@test.com", "pretre", parish=parish)
     client.force_authenticate(user=user)
     client._user = user
     return client
@@ -120,11 +133,12 @@ def test_parish_list_accessible_to_pretre(pretre_client):
 
 
 @pytest.mark.django_db
-def test_accept_intention(fidele_client, pretre_client):
+def test_accept_intention(fidele_client, pretre_client, parish):
     intention = MassIntention.objects.create(
         requestor=fidele_client._user,
         intention_type="for_living",
         intention_text="Pour la guérison de Marie",
+        parish=parish,
     )
     url = reverse("api:mass-intentions:accept", kwargs={"intention_id": intention.pk})
     resp = pretre_client.post(url)
@@ -135,11 +149,12 @@ def test_accept_intention(fidele_client, pretre_client):
 
 
 @pytest.mark.django_db
-def test_accept_intention_requires_clergy(fidele_client):
+def test_accept_intention_requires_clergy(fidele_client, parish):
     intention = MassIntention.objects.create(
         requestor=fidele_client._user,
         intention_type="for_living",
         intention_text="Pour la guérison de Marie",
+        parish=parish,
     )
     url = reverse("api:mass-intentions:accept", kwargs={"intention_id": intention.pk})
     resp = fidele_client.post(url)
@@ -147,13 +162,14 @@ def test_accept_intention_requires_clergy(fidele_client):
 
 
 @pytest.mark.django_db
-def test_celebrate_intention(fidele_client, pretre_client):
+def test_celebrate_intention(fidele_client, pretre_client, parish):
     intention = MassIntention.objects.create(
         requestor=fidele_client._user,
         intention_type="for_deceased",
         intention_text="Pour le repos de l'âme",
         pretre=pretre_client._user,
         status="accepted",
+        parish=parish,
     )
     url = reverse("api:mass-intentions:celebrate", kwargs={"intention_id": intention.pk})
     resp = pretre_client.post(url)
@@ -163,11 +179,12 @@ def test_celebrate_intention(fidele_client, pretre_client):
 
 
 @pytest.mark.django_db
-def test_decline_intention(fidele_client, pretre_client):
+def test_decline_intention(fidele_client, pretre_client, parish):
     intention = MassIntention.objects.create(
         requestor=fidele_client._user,
         intention_type="for_community",
         intention_text="Pour la paroisse entière",
+        parish=parish,
     )
     url = reverse("api:mass-intentions:decline", kwargs={"intention_id": intention.pk})
     resp = pretre_client.post(url, {"notes": "Agenda complet ce mois-ci."}, format="json")

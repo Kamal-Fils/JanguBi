@@ -99,6 +99,34 @@ def user_get(user_id: int) -> Optional[BaseUser]:
     return get_object(BaseUser, id=user_id)
 
 
+def user_is_in_scope_of(*, target: BaseUser, admin: BaseUser) -> bool:
+    """L'administrateur `admin` a-t-il autorité territoriale sur `target` ?
+
+    **Fail-CLOSED** : un admin sans affectation territoriale n'a autorité sur
+    PERSONNE (le repli historique « aucune affectation ⇒ tout le monde » était
+    un fail-open ; cf. `apps/documents/selectors.py`, qui a corrigé le même
+    anti-pattern). Un admin garde toujours autorité sur son propre compte.
+
+    Un utilisateur sans paroisse principale (onboarding non terminé) n'est
+    rattaché à aucun périmètre : seul un admin global peut agir sur lui.
+    """
+    from apps.users.scoping import accessible_parish_ids, is_global_admin
+
+    if target.id == admin.id:
+        return True
+    if is_global_admin(admin):
+        return True
+
+    parish_ids = accessible_parish_ids(admin)  # set (jamais None : global déjà traité)
+    if not parish_ids:
+        return False
+
+    target_parish_id = getattr(getattr(target, "profile", None), "primary_parish_id", None)
+    if target_parish_id is None:
+        return False
+    return target_parish_id in parish_ids
+
+
 def user_get_by_email(email: str) -> Optional[BaseUser]:
     return get_object(BaseUser, email__iexact=email)
 
@@ -131,10 +159,14 @@ def user_list(*, filters: dict | None = None, for_user: BaseUser | None = None) 
 
         if not is_global_admin(for_user):
             parish_ids = accessible_parish_ids(for_user)
-            if parish_ids:
-                qs = qs.filter(
-                    Q(profile__primary_parish_id__in=parish_ids) | Q(id=for_user.id)
-                )
+            # Fail-CLOSED : sans affectation territoriale, l'admin ne voit que
+            # son propre compte. L'ancien `if parish_ids:` sautait le filtre et
+            # renvoyait TOUTE la plateforme — or aucun `RoleAssignment` n'est
+            # créé par `user_create_by_admin`, donc c'était le cas courant.
+            qs = qs.filter(
+                Q(profile__primary_parish_id__in=parish_ids or [])
+                | Q(id=for_user.id)
+            )
     return qs
 
 

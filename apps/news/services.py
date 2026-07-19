@@ -180,6 +180,47 @@ def _check_scope_authority(
             )
 
 
+def _check_article_authority(*, editor: BaseUser, article: Article) -> None:
+    """Autorité d'édition sur un article DÉJÀ persisté (update / unpublish / delete).
+
+    Symétrique de ce que `article_create` et `article_publish` font à l'entrée :
+    sans ça, `_check_editor` seul ne dit que « c'est un éditeur quelconque », et
+    un curé de la paroisse A peut réécrire, dépublier ou supprimer le contenu de
+    la paroisse B, d'un diocèse, ou de la portée globale.
+
+    1. PORTÉE — l'éditeur doit avoir autorité territoriale réelle sur la portée
+       de l'article. La portée est IMMUABLE après création : ni `article_update`
+       ni `ArticleUpdateInputSerializer` n'exposent `scope_type` / `scope_*_id`,
+       donc vérifier la portée courante suffit.
+       ⚠️ SI la portée devient un jour modifiable, cette vérification unique ne
+       suffit PLUS : il faudra exiger l'autorité sur l'ANCIENNE **et** la
+       NOUVELLE portée. Sinon un éditeur s'approprie un contenu d'un territoire
+       qu'il ne contrôle pas (ancienne portée non vérifiée), ou l'exfiltre vers
+       un territoire qu'il ne contrôle pas davantage (nouvelle portée non
+       vérifiée). Le test `test_article_update_ne_permet_pas_de_changer_la_portee`
+       garde cet invariant.
+
+    2. TYPE DE CONTENU — une lettre pastorale est un acte d'évêque (matrice §16) :
+       sa publication est déjà réservée à `is_bishop` via `article_can_publish`.
+       La réécrire, la retirer ou la supprimer sont des actes de même gravité —
+       et une lettre pastorale PEUT être scopée paroisse, auquel cas l'autorité
+       territoriale du curé suffirait à passer le point 1. On aligne donc
+       update/unpublish/delete sur la règle de publication : hors évêque, on
+       refuse, même sur son propre territoire.
+    """
+    _check_scope_authority(
+        user=editor,
+        scope_type=article.scope_type,
+        scope_parish_id=article.scope_parish_id,
+        scope_diocese_id=article.scope_diocese_id,
+        scope_church_id=article.scope_church_id,
+    )
+    if article.content_type == Article.ContentType.PASTORAL_LETTER and not is_bishop(editor):
+        raise ApplicationError(
+            "Seul un évêque peut modifier ou retirer une lettre pastorale."
+        )
+
+
 def _clean_content(content: str, content_format: str) -> str:
     """
     Sanitize le HTML de l'éditeur riche AVANT persistance (nh3 / ammonia) :
@@ -299,6 +340,8 @@ def article_update(
     cover_image_id: int | None = None,
 ) -> Article:
     _check_editor(editor)
+    # Autorité territoriale + type de contenu sur l'article ciblé (anti inter-paroisses).
+    _check_article_authority(editor=editor, article=article)
 
     if article.status == Article.Status.UNPUBLISHED:
         raise ApplicationError("Un article dépublié ne peut pas être modifié.")
@@ -375,6 +418,8 @@ def article_publish(*, article: Article, editor: BaseUser) -> Article:
 @transaction.atomic
 def article_unpublish(*, article: Article, editor: BaseUser, reason: str = "") -> Article:
     _check_editor(editor)
+    # Autorité territoriale + type de contenu : on ne retire pas le contenu d'autrui.
+    _check_article_authority(editor=editor, article=article)
 
     if article.status != Article.Status.PUBLISHED:
         raise ApplicationError("Seul un article publié peut être dépublié.")
@@ -394,6 +439,8 @@ def article_unpublish(*, article: Article, editor: BaseUser, reason: str = "") -
 @transaction.atomic
 def article_delete(*, article: Article, editor: BaseUser) -> None:
     _check_editor(editor)
+    # Autorité territoriale + type de contenu : on ne supprime pas le contenu d'autrui.
+    _check_article_authority(editor=editor, article=article)
 
     if article.status == Article.Status.PUBLISHED:
         raise ApplicationError(

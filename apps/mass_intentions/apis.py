@@ -11,6 +11,7 @@ from apps.core.exceptions import ApplicationError
 from apps.users.permissions import IsOnboardingCompleted
 
 from .selectors import (
+    CLERGY_PASTORAL_ROLES,
     mass_intention_get,
     mass_intention_list_for_requestor,
     mass_intention_list_pending,
@@ -29,7 +30,9 @@ from .services import (
     mass_intention_submit,
 )
 
-CLERGY_ROLES = {"pretre", "eveque", "archeveque"}
+# Alias historique — la définition vit dans selectors.py, pour que la garde de
+# rôle ci-dessous et la garde de périmètre territorial partagent une seule source.
+CLERGY_ROLES = CLERGY_PASTORAL_ROLES
 
 
 def _error(exc: ApplicationError) -> Response:
@@ -133,7 +136,7 @@ class MassIntentionAcceptApi(ApiAuthMixin, APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         try:
-            intention = mass_intention_get(intention_id=intention_id)
+            intention = mass_intention_get(intention_id=intention_id, user=request.user)
             intention = mass_intention_accept(intention=intention, pretre=request.user)
         except ApplicationError as e:
             return _error(e)
@@ -156,10 +159,11 @@ class MassIntentionProposeDateApi(ApiAuthMixin, APIView):
         serializer = MassIntentionProposeDateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            intention = mass_intention_get(intention_id=intention_id)
+            intention = mass_intention_get(intention_id=intention_id, user=request.user)
             intention = mass_intention_propose_date(
                 intention=intention,
                 proposed_date=serializer.validated_data["proposed_date"],
+                pretre=request.user,
             )
         except ApplicationError as e:
             return _error(e)
@@ -179,8 +183,8 @@ class MassIntentionCelebrateApi(ApiAuthMixin, APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         try:
-            intention = mass_intention_get(intention_id=intention_id)
-            intention = mass_intention_celebrate(intention=intention)
+            intention = mass_intention_get(intention_id=intention_id, user=request.user)
+            intention = mass_intention_celebrate(intention=intention, pretre=request.user)
         except ApplicationError as e:
             return _error(e)
         return Response(MassIntentionOutputSerializer(intention).data)
@@ -202,9 +206,10 @@ class MassIntentionDeclineApi(ApiAuthMixin, APIView):
         serializer = MassIntentionDeclineInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            intention = mass_intention_get(intention_id=intention_id)
+            intention = mass_intention_get(intention_id=intention_id, user=request.user)
             intention = mass_intention_decline(
                 intention=intention,
+                pretre=request.user,
                 notes=serializer.validated_data.get("notes", ""),
             )
         except ApplicationError as e:
