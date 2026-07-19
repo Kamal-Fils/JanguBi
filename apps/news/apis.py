@@ -31,6 +31,8 @@ from apps.news.serializers import (
     ArticleCreateInputSerializer,
     ArticleDetailOutputSerializer,
     ArticleListOutputSerializer,
+    ArticleReactionSetInputSerializer,
+    ArticleReactionsOutputSerializer,
     ArticleUnpublishInputSerializer,
     ArticleUpdateInputSerializer,
 )
@@ -39,6 +41,7 @@ from apps.news.services import (
     article_delete,
     article_increment_views,
     article_publish,
+    article_reaction_set,
     article_unpublish,
     article_update,
 )
@@ -99,6 +102,7 @@ class ArticleGlobalListApi(APIView):
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
             content_type=request.query_params.get("content_type"),
+            viewer=request.user,
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -155,6 +159,7 @@ class ArticleParishListApi(ApiAuthMixin, APIView):
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
             content_type=request.query_params.get("content_type"),
+            viewer=request.user,
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -303,6 +308,7 @@ class ArticleMyParishListApi(ApiAuthMixin, APIView):
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
             content_type=request.query_params.get("content_type"),
+            viewer=request.user,
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -357,6 +363,7 @@ class ArticleDioceseListApi(ApiAuthMixin, APIView):
             category_slug=request.query_params.get("category"),
             search=request.query_params.get("search"),
             content_type=request.query_params.get("content_type"),
+            viewer=request.user,
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -381,11 +388,52 @@ class ArticleDetailApi(APIView):
         summary="Détail d'un article publié",
     )
     def get(self, request, article_id: UUID):
-        article = article_get(article_id=str(article_id))
+        article = article_get(article_id=str(article_id), viewer=request.user)
         if article is None or article.status != Article.Status.PUBLISHED:
             return Response({"detail": "Article introuvable."}, status=status.HTTP_404_NOT_FOUND)
         article_increment_views(article=article)
         return Response(ArticleDetailOutputSerializer(article).data)
+
+
+# ---------------------------------------------------------------------------
+# Réactions (auth requise)
+# ---------------------------------------------------------------------------
+
+
+class ArticleReactionSetApi(ApiAuthMixin, APIView):
+    """Poser ou retirer une réaction (prier / amen / participer).
+
+    Un seul endpoint pour les deux sens, avec l'état voulu dans le corps : c'est
+    ce qui rend l'action rejouable sans effet de bord (cf. `article_reaction_set`).
+    """
+
+    @extend_schema(
+        request=ArticleReactionSetInputSerializer,
+        responses={
+            200: ArticleReactionsOutputSerializer,
+            400: OpenApiTypes.OBJECT,
+            401: OpenApiTypes.OBJECT,
+        },
+        tags=["news"],
+        summary="Poser ou retirer une réaction sur un article publié",
+        description=(
+            "Idempotent : rejouer la même requête laisse le système dans le même "
+            "état. Réagir exige de pouvoir lire l'article (portée + publication). "
+            "Renvoie les compteurs réconciliés et les réactions de l'utilisateur."
+        ),
+    )
+    def post(self, request, article_id: UUID):
+        serializer = ArticleReactionSetInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            summary = article_reaction_set(
+                article_id=str(article_id),
+                user=request.user,
+                **serializer.validated_data,
+            )
+        except ApplicationError as exc:
+            return _error(exc)
+        return Response(ArticleReactionsOutputSerializer(summary).data)
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +477,7 @@ class AdminArticleListApi(ApiAuthMixin, APIView):
             category_slug=request.query_params.get("category") or None,
             search=request.query_params.get("search") or None,
             content_type=request.query_params.get("content_type") or None,
+            viewer=request.user,
         )
         return get_paginated_response(
             pagination_class=self.Pagination,
@@ -472,7 +521,7 @@ class AdminArticleDetailApi(ApiAuthMixin, APIView):
         summary="[Admin] Détail d'un article (tous statuts)",
     )
     def get(self, request, article_id: UUID):
-        article = article_get(article_id=str(article_id))
+        article = article_get(article_id=str(article_id), viewer=request.user)
         if article is None:
             return Response({"detail": "Article introuvable."}, status=status.HTTP_404_NOT_FOUND)
         return Response(ArticleDetailOutputSerializer(article).data)

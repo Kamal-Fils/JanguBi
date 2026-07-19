@@ -22,7 +22,9 @@ def _annotate_is_registered(qs: QuerySet, user) -> QuerySet:
 def event_list(*, scope_type: str | None = None, event_type: str | None = None, upcoming_only: bool = True) -> QuerySet:
     from apps.agenda.models import Event
 
-    qs = Event.objects.select_related("organizer")
+    # Les événements annulés sortent des feeds (les inscrits ont été prévenus par
+    # email) ; ils restent lisibles en détail pour ne pas casser un lien profond.
+    qs = Event.objects.select_related("organizer").filter(cancelled_at__isnull=True)
     if upcoming_only:
         qs = qs.filter(start_at__gte=timezone.now())
     if scope_type:
@@ -38,7 +40,7 @@ def event_list_for_user(*, user, event_type: str | None = None, upcoming_only: b
     from apps.agenda.models import Event
     from apps.users.scoping import get_scoped_queryset
 
-    qs = Event.objects.select_related("organizer")
+    qs = Event.objects.select_related("organizer").filter(cancelled_at__isnull=True)
     if upcoming_only:
         qs = qs.filter(start_at__gte=timezone.now())
     if event_type:

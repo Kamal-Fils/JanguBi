@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from drf_spectacular.openapi import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -16,6 +17,7 @@ from apps.api.pagination import (
 )
 from apps.core.exceptions import ApplicationError
 from apps.documents.constants import allowed_reasons_for
+from apps.documents.exceptions import DocumentRequestNotFoundError
 from apps.documents.models import DocumentRequest
 from apps.documents.permissions import IsDocumentRequester, IsDocumentRequesterOrAdmin
 from apps.documents.selectors import (
@@ -55,6 +57,20 @@ from apps.users.permissions import IsAnyAdmin, IsOnboardingCompleted
 
 def _error(exc: ApplicationError) -> Response:
     return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _get_for_admin_or_404(*, request_id: UUID, user) -> DocumentRequest:
+    """Traduit l'exception domaine du sélecteur en 404 HTTP.
+
+    La couche HTTP est seule responsable du mapping : le sélecteur reste
+    appelable depuis une tâche Celery ou une commande sans lever de `Http404`.
+    Le 404 (et non 403) est VOULU — il évite de révéler l'existence d'une
+    demande appartenant à une autre paroisse.
+    """
+    try:
+        return document_request_get_for_admin(request_id=request_id, user=user)
+    except DocumentRequestNotFoundError:
+        raise Http404
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +300,7 @@ class AdminDocumentRequestDetailApi(ApiAuthMixin, APIView):
         summary="Détail d'une demande (admin)",
     )
     def get(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         return Response(DocumentRequestDetailOutputSerializer(req).data)
 
 
@@ -298,7 +314,7 @@ class AdminStartVerificationApi(ApiAuthMixin, APIView):
         summary="Démarrer la vérification (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         try:
             req = document_request_start_verification(request_obj=req, agent=request.user)
         except ApplicationError as exc:
@@ -316,7 +332,7 @@ class AdminRequestInfoApi(ApiAuthMixin, APIView):
         summary="Demander un complément d'information (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         serializer = StatusActionWithCommentInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -344,7 +360,7 @@ class AdminValidateApi(ApiAuthMixin, APIView):
         ),
     )
     def post(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         try:
             req = document_request_validate(request_obj=req, agent=request.user)
         except ApplicationError as exc:
@@ -362,7 +378,7 @@ class AdminRejectApi(ApiAuthMixin, APIView):
         summary="Rejeter une demande (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         serializer = RejectInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -386,7 +402,7 @@ class AdminDepositApi(ApiAuthMixin, APIView):
         summary="Déposer le document final (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         serializer = DepositDocumentInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -410,7 +426,7 @@ class AdminNotesApi(ApiAuthMixin, APIView):
         summary="Lister les notes internes (admin)",
     )
     def get(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         notes = document_request_internal_note_list(request_obj=req)
         return Response(InternalNoteOutputSerializer(notes, many=True).data)
 
@@ -421,7 +437,7 @@ class AdminNotesApi(ApiAuthMixin, APIView):
         summary="Ajouter une note interne (admin)",
     )
     def post(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         serializer = InternalNoteCreateInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         note = document_request_add_internal_note(
@@ -441,6 +457,6 @@ class AdminLogsApi(ApiAuthMixin, APIView):
         summary="Historique des statuts (admin)",
     )
     def get(self, request, request_id: UUID):
-        req = document_request_get_for_admin(request_id=request_id, user=request.user)
+        req = _get_for_admin_or_404(request_id=request_id, user=request.user)
         logs = document_request_status_log_list(request_obj=req)
         return Response(StatusLogOutputSerializer(logs, many=True).data)

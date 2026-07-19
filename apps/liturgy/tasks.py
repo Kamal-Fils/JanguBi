@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import date, timedelta
 
@@ -8,8 +7,28 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
-@shared_task(name="apps.liturgy.tasks.daily_sync")
-def daily_sync_task(date_str: str | None = None, zones: list[str] | None = None):
+@shared_task(
+    bind=True,
+    name="apps.liturgy.tasks.daily_sync",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=1800,
+    max_retries=3,
+)
+def daily_sync_task(self, date_str: str | None = None, zones: list[str] | None = None):
+    """Synchronise les données AELF du jour pour chaque zone.
+
+    `async_to_sync` et NON `asyncio.run` : sous un worker gevent/eventlet (le cas
+    avec Channels), une boucle d'événements tourne déjà dans le thread et
+    `asyncio.run` lève `RuntimeError: This event loop is already running`.
+
+    Les échecs par zone sont collectés puis relevés en fin de tâche : une zone en
+    erreur n'empêche pas les autres de se synchroniser, mais l'indisponibilité
+    d'AELF fait bien échouer la tâche (donc retry avec backoff) au lieu d'être
+    avalée dans un log — sinon les fidèles n'ont pas les lectures du lendemain.
+    """
+    from asgiref.sync import async_to_sync
+
     from apps.liturgy.services import AelfService  # local import — évite les imports circulaires
 
     if not date_str:
@@ -24,11 +43,17 @@ def daily_sync_task(date_str: str | None = None, zones: list[str] | None = None)
 
     logger.info(f"Starting scheduled daily AELF sync for dates: {date_str} in zones: {zones}")
 
+    failed_zones: list[str] = []
+
     for zone in zones:
         try:
-            asyncio.run(AelfService.sync_daily_data(date_str, zone))
+            async_to_sync(AelfService.sync_daily_data)(date_str, zone)
         except Exception as e:
             logger.error(f"Failed to sync daily data for {date_str} ({zone}): {str(e)}")
+            failed_zones.append(zone)
+
+    if failed_zones:
+        raise RuntimeError(f"AELF sync failed for {date_str} on zones: {', '.join(failed_zones)}")
 
 
 @shared_task(name="apps.liturgy.tasks.bulk_import")

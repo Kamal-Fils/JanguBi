@@ -9,8 +9,11 @@ from apps.api.pagination import LimitOffsetPagination, get_paginated_response
 from apps.core.exceptions import ApplicationError
 from apps.users.enums import PastoralRole, UserRole
 
-from .models import ClergicalInvitation
-from .selectors import invitation_get_by_token, invitation_list
+from .selectors import (
+    invitation_get_by_token,
+    invitation_get_for_creator,
+    invitation_list,
+)
 from .serializers import (
     InvitationAcceptInputSerializer,
     InvitationCreateInputSerializer,
@@ -91,9 +94,8 @@ class InvitationDetailApi(ApiAuthMixin, APIView):
         if not _can_manage_invitations(request.user):
             return Response({"detail": "Accès non autorisé."}, status=status.HTTP_403_FORBIDDEN)
 
-        try:
-            invitation = ClergicalInvitation.objects.get(pk=invitation_id, created_by=request.user)
-        except ClergicalInvitation.DoesNotExist:
+        invitation = invitation_get_for_creator(invitation_id=invitation_id, creator=request.user)
+        if invitation is None:
             return Response({"detail": "Invitation introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
         return Response(InvitationOutputSerializer(invitation).data)
@@ -110,9 +112,8 @@ class InvitationRevokeApi(ApiAuthMixin, APIView):
         if not _can_manage_invitations(request.user):
             return Response({"detail": "Accès non autorisé."}, status=status.HTTP_403_FORBIDDEN)
 
-        try:
-            inv = ClergicalInvitation.objects.get(pk=invitation_id, created_by=request.user)
-        except ClergicalInvitation.DoesNotExist:
+        inv = invitation_get_for_creator(invitation_id=invitation_id, creator=request.user)
+        if inv is None:
             return Response({"detail": "Invitation introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
         try:

@@ -4,6 +4,7 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.users.models import (
     BaseUser,
+    ClergySelfDeclaration,
     Membership,
     Profile,
     RoleAssignment,
@@ -59,6 +60,23 @@ class MembershipAdmin(admin.ModelAdmin):
     list_filter = ("is_primary",)
     search_fields = ("user__email", "church__name", "church__parish__name")
     raw_id_fields = ("user", "church")
+
+
+@admin.register(ClergySelfDeclaration)
+class ClergySelfDeclarationAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "claimed_pastoral_role",
+        "parish",
+        "status",
+        "reviewed_by",
+        "created_at",
+    )
+    list_filter = ("status", "claimed_pastoral_role", "created_at")
+    search_fields = ("user__email", "parish__name")
+    raw_id_fields = ("user", "parish", "justification_file", "reviewed_by")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(SecurityAuditLog)

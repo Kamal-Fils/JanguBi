@@ -1,9 +1,15 @@
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.openapi import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
+from apps.api.pagination import (
+    LimitOffsetPagination,
+    get_paginated_response,
+    paginated_response_serializer,
+)
 from apps.core.exceptions import ApplicationError
 
 
@@ -18,6 +24,18 @@ class CommunityRosaryInputSerializer(serializers.Serializer):
 
 class IntentionInputSerializer(serializers.Serializer):
     text = serializers.CharField()
+
+
+class IntentionOutputSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    text = serializers.CharField()
+    # Même clé que la trame temps réel `intention_submitted` : le front peut
+    # fusionner l'historique et le direct sans transformation.
+    submitted_by = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField()
+
+    def get_submitted_by(self, obj) -> str | None:
+        return obj.submitted_by.email if obj.submitted_by_id else None
 
 
 class CommunityRosaryOutputSerializer(serializers.Serializer):
@@ -85,6 +103,52 @@ class CommunityRosaryJoinApi(ApiAuthMixin, APIView):
 
 
 class CommunityRosaryIntentionApi(ApiAuthMixin, APIView):
+    class Pagination(LimitOffsetPagination):
+        default_limit = 50
+        max_limit = 200
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "limit", OpenApiTypes.INT, description="Nombre de résultats (défaut 50, max 200)"
+            ),
+            OpenApiParameter("offset", OpenApiTypes.INT, description="Décalage de pagination"),
+        ],
+        responses={200: paginated_response_serializer(IntentionOutputSerializer)},
+        tags=["Chapelet"],
+        summary="Intentions déjà déposées dans une session (participants et initiateur)",
+        description=(
+            "Permet à un participant qui rejoint en cours de chapelet de retrouver "
+            "les intentions déposées avant sa connexion — le WebSocket ne diffuse "
+            "que celles émises depuis l'ouverture de son socket."
+        ),
+    )
+    def get(self, request, rosary_id: int):
+        from apps.rosary.community_selectors import (
+            community_rosary_can_read_intentions,
+            community_rosary_intentions_list,
+        )
+        from apps.rosary.community_services import community_rosary_get
+
+        try:
+            rosary = community_rosary_get(rosary_id=rosary_id)
+        except ApplicationError as e:
+            return _error(e)
+
+        if not community_rosary_can_read_intentions(rosary=rosary, user=request.user):
+            return Response(
+                {"detail": "Vous ne participez pas à ce chapelet."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        return get_paginated_response(
+            pagination_class=self.Pagination,
+            serializer_class=IntentionOutputSerializer,
+            queryset=community_rosary_intentions_list(rosary_id=rosary_id),
+            request=request,
+            view=self,
+        )
+
     @extend_schema(
         request=IntentionInputSerializer,
         responses={201: None},

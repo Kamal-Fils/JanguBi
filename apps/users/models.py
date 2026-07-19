@@ -10,6 +10,7 @@ from phonenumber_field.modelfields import PhoneNumberField
 from apps.common.models import BaseModel
 from apps.users.enums import (
     AuditEvent,
+    ClergyValidationStatus,
     PastoralRole,
     RoleScope,
     Title,
@@ -140,6 +141,18 @@ class BaseUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         choices=PastoralRole.choices,
         null=True,
         blank=True,
+        db_index=True,
+    )
+
+    # Validation hiérarchique du compte clergé (chaîne de validation SRS).
+    # Un compte issu d'une INVITATION naît APPROVED (accepter le token vaut
+    # validation) ; une AUTO-DÉCLARATION naît PENDING et attend l'approbation du
+    # supérieur territorial. Les laïcs restent NOT_APPLICABLE.
+    clergy_validation_status = models.CharField(
+        _("validation du compte clergé"),
+        max_length=20,
+        choices=ClergyValidationStatus.choices,
+        default=ClergyValidationStatus.NOT_APPLICABLE,
         db_index=True,
     )
 
@@ -514,3 +527,119 @@ class Membership(BaseModel):
     def __str__(self) -> str:
         flag = " ★" if self.is_primary else ""
         return f"{self.user_id} · église {self.church_id}{flag}"
+
+
+# ---------------------------------------------------------------------------
+# Auto-déclaration de clergé (seconde voie de la chaîne de validation SRS)
+# ---------------------------------------------------------------------------
+
+class ClergySelfDeclaration(BaseModel):
+    """Demande par laquelle un utilisateur inscrit REVENDIQUE un rôle pastoral.
+
+    C'est le maillon qui rend la file de validation atteignable : la voie
+    *invitation* (``apps.clergy_accounts``) naît ``APPROVED`` — accepter le token
+    vaut validation — donc aucun compte n'arrivait jamais en ``PENDING``.
+
+    **Pourquoi le rôle revendiqué vit ICI et non dans ``BaseUser.pastoral_role``**
+    — c'est LE point de sécurité de ce modèle. ``pastoral_role`` n'est pas une
+    simple étiquette : il est lu, seul et sans jamais consulter
+    ``clergy_validation_status``, comme preuve d'appartenance au clergé par au
+    moins douze modules — ``IsOnboardingCompleted`` (garde des écritures
+    territoriales), la signature de documents (``apps.documents.services``), la
+    publication d'actualités (``apps.news.services``), la messagerie inter-clergé,
+    les intentions de messe, les campagnes de dons, la catégorie TV « Formation »,
+    la Liturgie des Heures. Poser ``pastoral_role = PRETRE`` à la seconde où
+    quelqu'un se déclare aurait donc livré, en libre-service et avant toute
+    revue humaine, l'intégralité des capacités cléricales : une escalade de
+    privilèges, pas une demande.
+
+    Tant que la demande est ``PENDING``, l'utilisateur reste donc **strictement un
+    laïc** dans toutes les couches d'autorisation. ``pastoral_role`` n'est écrit
+    qu'à l'approbation, par ``user_validate_clergy_account``. C'est le pendant
+    exact du raisonnement de ``user_reject_clergy_account``, qui RETIRE le rôle
+    au refus pour la même raison.
+    """
+
+    class Status(models.TextChoices):
+        PENDING  = ("pending",  _("En attente de validation"))
+        APPROVED = ("approved", _("Approuvée"))
+        REJECTED = ("rejected", _("Refusée"))
+
+    user = models.ForeignKey(
+        "users.BaseUser",
+        verbose_name=_("demandeur"),
+        on_delete=models.CASCADE,
+        related_name="clergy_declarations",
+    )
+    claimed_pastoral_role = models.CharField(
+        _("rôle pastoral revendiqué"),
+        max_length=20,
+        choices=PastoralRole.choices,
+        db_index=True,
+        help_text=_("Revendication SANS effet tant qu'elle n'est pas approuvée."),
+    )
+    parish = models.ForeignKey(
+        "org.Parish",
+        verbose_name=_("paroisse de rattachement"),
+        on_delete=models.PROTECT,
+        related_name="clergy_declarations",
+        help_text=_("Territoire revendiqué : détermine l'autorité compétente."),
+    )
+    justification_file = models.ForeignKey(
+        "files.File",
+        verbose_name=_("justificatif"),
+        on_delete=models.PROTECT,
+        related_name="clergy_declarations",
+        help_text=_("Pièce justificative — un fichier n'est valide qu'une fois téléversé."),
+    )
+    message = models.TextField(
+        _("message du demandeur"),
+        blank=True,
+        default="",
+        help_text=_("Précisions facultatives adressées à l'autorité validante."),
+    )
+    status = models.CharField(
+        _("statut"),
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    reviewed_by = models.ForeignKey(
+        "users.BaseUser",
+        verbose_name=_("tranchée par"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_clergy_declarations",
+    )
+    reviewed_at = models.DateTimeField(_("date de décision"), null=True, blank=True)
+    rejection_reason = models.CharField(
+        _("motif du refus"),
+        max_length=500,
+        blank=True,
+        default="",
+        help_text=_("Restitué au demandeur : il doit pouvoir corriger et resoumettre."),
+    )
+
+    class Meta:
+        verbose_name = _("auto-déclaration de clergé")
+        verbose_name_plural = _("auto-déclarations de clergé")
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["user", "status"]),
+            models.Index(fields=["parish", "status"]),
+        ]
+        constraints = [
+            # Une seule demande en cours par utilisateur : la re-soumission est
+            # interdite tant que rien n'a été tranché, autorisée après un refus.
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_clergy_declaration_per_user",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Déclaration({self.user_id} → {self.claimed_pastoral_role}) [{self.status}]"

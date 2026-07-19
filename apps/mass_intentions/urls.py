@@ -13,9 +13,19 @@ urlpatterns = [
         name="propose-date",
     ),
     path(
+        "<int:intention_id>/confirm-date/",
+        apis.MassIntentionConfirmDateApi.as_view(),
+        name="confirm-date",
+    ),
+    path(
         "<int:intention_id>/celebrate/",
         apis.MassIntentionCelebrateApi.as_view(),
         name="celebrate",
+    ),
+    path(
+        "<int:intention_id>/receipt/",
+        apis.MassIntentionReceiptApi.as_view(),
+        name="receipt",
     ),
     path(
         "<int:intention_id>/decline/",

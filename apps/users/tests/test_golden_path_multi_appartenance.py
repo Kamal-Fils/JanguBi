@@ -22,12 +22,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from django.http import Http404
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.agenda.models import Event
+from apps.documents.exceptions import DocumentRequestNotFoundError
 from apps.documents.models import DocumentRequest
 from apps.documents.selectors import (
     document_request_get_for_admin,
@@ -276,11 +276,17 @@ def test_step_4_7_document_vers_C_et_cloisonnement_clerge(onboarded):
     assert doc_b not in _list_ids(w.cure_a)
     assert doc_b not in _list_ids(w.cure_c)
 
-    # Detail/actions : 200 pour le curé cible, Http404 pour les autres (pas de fuite par UUID).
+    # Detail/actions : la demande est lisible par le curé CIBLE, introuvable pour
+    # les autres — pas de fuite d'existence par UUID.
+    #
+    # Le sélecteur lève une exception de DOMAINE et non `Http404` : il est
+    # appelable hors HTTP (tâche Celery, commande, test), où une exception web
+    # n'aurait aucun sens. C'est `apis.py` qui la traduit en 404 — et cette
+    # traduction reste vérifiée par les tests d'API de `apps/documents`.
     assert str(document_request_get_for_admin(request_id=doc_c, user=w.cure_c).id) == doc_c
-    with pytest.raises(Http404):
+    with pytest.raises(DocumentRequestNotFoundError):
         document_request_get_for_admin(request_id=doc_c, user=w.cure_a)
-    with pytest.raises(Http404):
+    with pytest.raises(DocumentRequestNotFoundError):
         document_request_get_for_admin(request_id=doc_c, user=w.cure_b)
 
 

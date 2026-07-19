@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 
 from django.db import transaction
@@ -12,6 +13,8 @@ from apps.documents.models import (
 )
 from apps.users.enums import PastoralRole
 from apps.users.models import BaseUser
+
+logger = logging.getLogger(__name__)
 
 # Hiérarchie pastorale de signature (permissions-matrix.md — §Documents).
 # La validation (Niv.2) ET le dépôt du document final sont des actes de SIGNATURE
@@ -552,14 +555,34 @@ def document_request_add_internal_note(
     )
 
 
-@transaction.atomic
+def _run_escalation_step(*, step: str, requests_qs, notify) -> None:
+    """Exécute une étape de relance, **chaque demande dans sa propre transaction**.
+
+    Isolation volontaire : une seule `@transaction.atomic` enveloppant tout le run
+    annulerait les `Email` déjà créés par les étapes précédentes dès qu'une seule
+    demande échoue — le run n'enverrait alors AUCUNE relance. Ici, un échec isolé
+    est journalisé et le reste du run continue.
+    """
+    for req in requests_qs:
+        try:
+            with transaction.atomic():
+                notify(req)
+        except Exception:  # noqa: BLE001 — un échec isolé ne doit pas casser le run
+            logger.exception(
+                "Escalade documents : échec de l'étape %s pour la demande %s", step, req.reference
+            )
+
+
 def document_request_run_escalation(
     *,
     escalate_days: int,
     deposit_reminder_days: int,
     requester_reminder_days: int,
 ) -> None:
-    """Send reminder emails for stale document requests. Called from the Celery Beat task."""
+    """Send reminder emails for stale document requests. Called from the Celery Beat task.
+
+    Pas de `@transaction.atomic` global ici : voir `_run_escalation_step`.
+    """
     from datetime import timedelta
 
     from django.utils import timezone
@@ -568,10 +591,7 @@ def document_request_run_escalation(
 
     now = timezone.now()
 
-    for req in DocumentRequest.objects.filter(
-        status=DocumentRequest.Status.SUBMITTED,
-        updated_at__lt=now - timedelta(days=escalate_days),
-    ).select_related("assigned_to", "requester"):
+    def _notify_stale_submitted(req: DocumentRequest) -> None:
         _send_email(
             to=req.contact_email,
             subject=f"[Jàngu Bi] Votre demande {req.reference} est en attente",
@@ -591,10 +611,7 @@ def document_request_run_escalation(
                 ),
             )
 
-    for req in DocumentRequest.objects.filter(
-        status=DocumentRequest.Status.UNDER_VERIFICATION,
-        updated_at__lt=now - timedelta(days=escalate_days),
-    ).select_related("assigned_to"):
+    def _notify_stale_verification(req: DocumentRequest) -> None:
         for agent in document_request_agent_recipients(request_obj=req):
             _send_email(
                 to=agent.email,
@@ -605,10 +622,7 @@ def document_request_run_escalation(
                 ),
             )
 
-    for req in DocumentRequest.objects.filter(
-        status=DocumentRequest.Status.VALIDATED,
-        updated_at__lt=now - timedelta(days=deposit_reminder_days),
-    ).select_related("assigned_to"):
+    def _notify_deposit_pending(req: DocumentRequest) -> None:
         for agent in document_request_agent_recipients(request_obj=req):
             _send_email(
                 to=agent.email,
@@ -619,10 +633,7 @@ def document_request_run_escalation(
                 ),
             )
 
-    for req in DocumentRequest.objects.filter(
-        status=DocumentRequest.Status.INFO_REQUESTED,
-        updated_at__lt=now - timedelta(days=requester_reminder_days),
-    ).select_related("requester"):
+    def _notify_supplement_pending(req: DocumentRequest) -> None:
         _send_email(
             to=req.contact_email,
             subject=f"[Jàngu Bi] Rappel complément — {req.reference}",
@@ -632,3 +643,39 @@ def document_request_run_escalation(
                 f"<strong>{req.reference}</strong>. Merci de répondre dans les meilleurs délais.</p>"
             ),
         )
+
+    _run_escalation_step(
+        step="submitted",
+        requests_qs=DocumentRequest.objects.filter(
+            status=DocumentRequest.Status.SUBMITTED,
+            updated_at__lt=now - timedelta(days=escalate_days),
+        ).select_related("assigned_to", "requester"),
+        notify=_notify_stale_submitted,
+    )
+
+    _run_escalation_step(
+        step="under_verification",
+        requests_qs=DocumentRequest.objects.filter(
+            status=DocumentRequest.Status.UNDER_VERIFICATION,
+            updated_at__lt=now - timedelta(days=escalate_days),
+        ).select_related("assigned_to"),
+        notify=_notify_stale_verification,
+    )
+
+    _run_escalation_step(
+        step="deposit_reminder",
+        requests_qs=DocumentRequest.objects.filter(
+            status=DocumentRequest.Status.VALIDATED,
+            updated_at__lt=now - timedelta(days=deposit_reminder_days),
+        ).select_related("assigned_to"),
+        notify=_notify_deposit_pending,
+    )
+
+    _run_escalation_step(
+        step="requester_reminder",
+        requests_qs=DocumentRequest.objects.filter(
+            status=DocumentRequest.Status.INFO_REQUESTED,
+            updated_at__lt=now - timedelta(days=requester_reminder_days),
+        ).select_related("requester"),
+        notify=_notify_supplement_pending,
+    )

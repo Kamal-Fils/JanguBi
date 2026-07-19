@@ -41,20 +41,39 @@ def lectio_divina_list(*, user) -> QuerySet:
     return LectioDivinaSession.objects.filter(user=user).select_related("passage").order_by("-updated_at")
 
 
-def reading_plan_list(*, published_only: bool = True) -> QuerySet:
+def _annotate_is_subscribed(qs: QuerySet, user) -> QuerySet:
+    """Ajoute `is_subscribed` en une sous-requête EXISTS (pas de N+1 en liste)."""
+    from django.db.models import Exists, OuterRef, Value
+
+    from apps.bible.models import ReadingPlanSubscription
+
+    if user is None or not getattr(user, "is_authenticated", False):
+        return qs.annotate(is_subscribed=Value(False))
+
+    return qs.annotate(
+        is_subscribed=Exists(
+            ReadingPlanSubscription.objects.filter(plan=OuterRef("pk"), user=user)
+        )
+    )
+
+
+def reading_plan_list(*, published_only: bool = True, user=None) -> QuerySet:
     from apps.bible.models import ReadingPlan
 
     qs = ReadingPlan.objects.select_related("author")
     if published_only:
         qs = qs.filter(is_published=True)
-    return qs.order_by("-created_at")
+    return _annotate_is_subscribed(qs, user).order_by("-created_at")
 
 
-def reading_plan_get(*, plan_id: int) -> "ReadingPlan":
+def reading_plan_get(*, plan_id: int, user=None) -> "ReadingPlan":
     from apps.bible.models import ReadingPlan
     from apps.core.exceptions import ApplicationError
 
+    qs = _annotate_is_subscribed(
+        ReadingPlan.objects.prefetch_related("plan_passages__verse"), user
+    )
     try:
-        return ReadingPlan.objects.prefetch_related("plan_passages__verse").get(pk=plan_id)
+        return qs.get(pk=plan_id)
     except ReadingPlan.DoesNotExist:
         raise ApplicationError("Plan de lecture introuvable.")

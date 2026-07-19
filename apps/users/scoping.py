@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from django.db.models import Q, QuerySet
 
-from apps.org.models import Church, Diocese, Parish
+from apps.org.models import Church, Diocese, Parish, Province
 from apps.users.enums import PastoralRole, RoleScope, UserRole
 from apps.users.models import BaseUser, RoleAssignment
 
@@ -88,6 +88,35 @@ def is_any_admin(user) -> bool:
     if getattr(user, "role", None) in _ANY_ADMIN_ROLES:
         return True
     return active_role_assignments(user).filter(role__in=_ANY_ADMIN_ROLES).exists()
+
+
+def role_assignment_get(*, assignment_id: int) -> RoleAssignment | None:
+    """Une affectation par ID, chaîne église préchargée (``None`` si absente).
+
+    Isole l'accès ORM hors de la couche API (``apis_roles``), conformément à la
+    séparation des couches HackSoft. Sémantique identique à un ``.first()``.
+    """
+    return RoleAssignment.objects.select_related("church").filter(id=assignment_id).first()
+
+
+# Lectures territoriales ponctuelles utilisées par la couche API de ce module.
+# Elles renvoient ``None`` (et non une exception) : les vues distinguent 404
+# « cible introuvable » de 403 « hors périmètre ».
+
+def org_province_get(*, province_id) -> Province | None:
+    return Province.objects.filter(id=province_id).first()
+
+
+def org_diocese_get(*, diocese_id) -> Diocese | None:
+    return Diocese.objects.filter(id=diocese_id).first()
+
+
+def org_parish_get(*, parish_id) -> Parish | None:
+    return Parish.objects.filter(id=parish_id).first()
+
+
+def org_church_get(*, church_id) -> Church | None:
+    return Church.objects.select_related("parish").filter(id=church_id).first()
 
 
 def role_assignment_list(*, user=None) -> QuerySet[RoleAssignment]:

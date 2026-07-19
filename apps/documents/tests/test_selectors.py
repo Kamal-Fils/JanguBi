@@ -438,3 +438,51 @@ def test_document_request_attachment_list_returns_empty_when_none():
 
     # Assert
     assert result.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# document_request_get_for_admin — respect des couches
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_get_for_admin_raises_domain_error_not_http_exception_when_missing():
+    """RÉGRESSION de couche : un sélecteur ne doit jamais lever d'exception HTTP.
+
+    Un appelant non-HTTP (tâche Celery, commande, test) recevait un `Http404`
+    dénué de sens dans son contexte. C'est `apis.py` qui traduit en 404.
+    """
+    from django.http import Http404
+
+    from apps.documents.exceptions import DocumentRequestNotFoundError
+    from apps.documents.selectors import document_request_get_for_admin
+
+    # Arrange
+    admin = AdminUserFactory()
+
+    # Act & Assert
+    with pytest.raises(DocumentRequestNotFoundError):
+        document_request_get_for_admin(request_id=uuid.uuid4(), user=admin)
+
+    with pytest.raises(ApplicationError):  # la hiérarchie domaine est respectée
+        document_request_get_for_admin(request_id=uuid.uuid4(), user=admin)
+
+    try:
+        document_request_get_for_admin(request_id=uuid.uuid4(), user=admin)
+    except Exception as exc:
+        assert not isinstance(exc, Http404)
+
+
+@pytest.mark.django_db
+def test_get_for_admin_returns_request_for_global_admin():
+    # Arrange
+    from apps.documents.selectors import document_request_get_for_admin
+
+    admin = AdminUserFactory()
+    req = DocumentRequestFactory()
+
+    # Act
+    result = document_request_get_for_admin(request_id=req.id, user=admin)
+
+    # Assert
+    assert result.id == req.id

@@ -73,6 +73,22 @@ class Event(BaseModel):
     )
     max_participants = models.PositiveIntegerField(null=True, blank=True)
 
+    # Annulation DOUCE : un événement supprimé garde ses inscriptions (des fidèles
+    # s'y sont engagés et sont prévenus par email) et sort simplement des feeds.
+    # Une suppression sèche cascaderait sur EventRegistration et effacerait la
+    # trace de qui s'était inscrit — inacceptable pour un acte pastoral public.
+    cancelled_at = models.DateTimeField(
+        _("annulé le"), null=True, blank=True, db_index=True
+    )
+    cancelled_by = models.ForeignKey(
+        "users.BaseUser",
+        verbose_name=_("annulé par"),
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cancelled_events",
+    )
+
     class Meta:
         ordering = ["start_at"]
         verbose_name = _("Événement")
@@ -83,6 +99,10 @@ class Event(BaseModel):
             models.Index(fields=["scope_type", "scope_diocese"], name="event_diocese_idx"),
             models.Index(fields=["scope_type", "scope_church"], name="event_church_idx"),
         ]
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self.cancelled_at is not None
 
     def __str__(self) -> str:
         return f"{self.title} ({self.start_at.date()})"

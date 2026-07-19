@@ -23,6 +23,10 @@ Endpoints admin :
   PATCH /api/users/{id}/toggle-active/        Activer / désactiver
   DELETE /api/users/{id}/                     Suppression soft
   DELETE /api/users/{id}/hard/                Suppression définitive
+
+Chaîne de validation des comptes clergé → ``apis_clergy.py``.
+Affectations de rôle scopées → ``apis_roles.py``.
+Appartenances ecclésiales → ``apis_memberships.py``.
 """
 
 from django.http import Http404
@@ -182,22 +186,23 @@ class FideleRegisterApi(APIView):
 # ACTIVATION DE COMPTE
 # ===========================================================================
 
-@extend_schema(
-    tags=["Authentification"],
-    summary="Activer le compte via le lien email",
-    description=(
-        "Valide le token reçu par email et active le compte. "
-        "Le token est à usage unique (anti-replay) et expire après 24h."
-    ),
-    responses={
-        200: OpenApiResponse(description="Compte activé avec succès"),
-        400: OpenApiResponse(description="Token invalide ou expiré"),
-    },
-)
 class EmailVerifyApi(APIView):
     class InputSerializer(serializers.Serializer):
         token = serializers.CharField()
 
+    @extend_schema(
+        tags=["Authentification"],
+        summary="Activer le compte via le lien email",
+        description=(
+            "Valide le token reçu par email et active le compte. "
+            "Le token est à usage unique (anti-replay) et expire après 24h."
+        ),
+        request=InputSerializer,
+        responses={
+            200: OpenApiResponse(description="Compte activé avec succès"),
+            400: OpenApiResponse(description="Token invalide ou expiré"),
+        },
+    )
     def post(self, request):
         s = self.InputSerializer(data=request.data)
         s.is_valid(raise_exception=True)
@@ -408,23 +413,24 @@ class EmailChangeConfirmApi(ApiAuthMixin, APIView):
         })
 
 
-@extend_schema(
-    tags=["Authentification"],
-    summary="Réversion d'urgence du changement d'email",
-    description=(
-        "Accessible sans authentification (l'attaquant a pu changer le mot de passe). "
-        "Restaure l'ancienne adresse, invalide le mot de passe, révoque toutes les sessions. "
-        "Lien valable 7 jours."
-    ),
-    responses={
-        200: OpenApiResponse(description="Email restauré, réinitialisation du mot de passe requise"),
-        400: OpenApiResponse(description="Lien invalide ou expiré"),
-    },
-)
 class EmailChangeRevertApi(APIView):
     class InputSerializer(serializers.Serializer):
         token = serializers.CharField()
 
+    @extend_schema(
+        tags=["Authentification"],
+        summary="Réversion d'urgence du changement d'email",
+        description=(
+            "Accessible sans authentification (l'attaquant a pu changer le mot de passe). "
+            "Restaure l'ancienne adresse, invalide le mot de passe, révoque toutes les sessions. "
+            "Lien valable 7 jours."
+        ),
+        request=InputSerializer,
+        responses={
+            200: OpenApiResponse(description="Email restauré, réinitialisation du mot de passe requise"),
+            400: OpenApiResponse(description="Lien invalide ou expiré"),
+        },
+    )
     def post(self, request):
         s = self.InputSerializer(data=request.data)
         s.is_valid(raise_exception=True)
@@ -560,10 +566,6 @@ class UserListApi(ApiAuthMixin, APIView):
         )
 
 
-@extend_schema(
-    tags=["Admin"],
-    summary="Détail d'un utilisateur",
-)
 class UserDetailApi(ApiAuthMixin, APIView):
     permission_classes = [IsStaffOrAdminUser]
 
@@ -593,13 +595,32 @@ class UserDetailApi(ApiAuthMixin, APIView):
                 "title": p.title,
                 "date_of_birth": str(p.date_of_birth) if p.date_of_birth else None,
                 "phone": str(p.phone) if p.phone else None,
-                "primary_parish": p.primary_parish,
+                # FK Parish → {id, name} (objet brut = non sérialisable JSON, BUG-B1).
+                # Même forme que UserListItemSerializer.get_user_profile : sans cette
+                # projection, GET /users/{id}/ renvoyait 500 pour tout fidèle onboardé.
+                "primary_parish": (
+                    {"id": p.primary_parish_id, "name": p.primary_parish.name}
+                    if p.primary_parish_id
+                    else None
+                ),
                 "avatar": p.avatar.url if p.avatar else None,
             }
 
         def get_address(self, obj):
             return None
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Détail d'un utilisateur",
+        description="Fiche complète d'un compte. Accessible aux administrateurs.",
+        request=None,  # GET : aucun corps de requête lu.
+        responses={
+            200: OutputSerializer,
+            401: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
     def get(self, request, user_id):
         user = user_get_with_profile(user_id)
         if user is None:
@@ -607,15 +628,6 @@ class UserDetailApi(ApiAuthMixin, APIView):
         return Response(self.OutputSerializer(user).data)
 
 
-@extend_schema(
-    tags=["Admin"],
-    summary="Créer un compte staff ou admin",
-    description=(
-        "Crée un compte immédiatement actif et vérifié. "
-        "Un mot de passe temporaire est généré et envoyé par email. "
-        "Accessible aux administrateurs uniquement."
-    ),
-)
 class UserAdminCreateApi(ApiAuthMixin, APIView):
     permission_classes = [IsAdminUser]
 
@@ -632,6 +644,22 @@ class UserAdminCreateApi(ApiAuthMixin, APIView):
         email = serializers.EmailField()
         role = serializers.CharField()
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Créer un compte staff ou admin",
+        description=(
+            "Crée un compte immédiatement actif et vérifié. "
+            "Un mot de passe temporaire est généré et envoyé par email. "
+            "Accessible aux administrateurs uniquement."
+        ),
+        request=InputSerializer,
+        responses={
+            201: OutputSerializer,
+            400: ErrorResponseSerializer,
+            401: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+        },
+    )
     def post(self, request):
         s = self.InputSerializer(data=request.data)
         s.is_valid(raise_exception=True)
@@ -647,16 +675,29 @@ class UserAdminCreateApi(ApiAuthMixin, APIView):
         return Response(self.OutputSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
-@extend_schema(
-    tags=["Admin"],
-    summary="Activer ou désactiver un compte",
-)
 class UserToggleActiveApi(ApiAuthMixin, APIView):
     permission_classes = [IsDioceseAdminOrAbove]
 
     class InputSerializer(serializers.Serializer):
         is_active = serializers.BooleanField()
 
+    class OutputSerializer(serializers.Serializer):
+        detail = serializers.CharField()
+        is_active = serializers.BooleanField()
+
+    @extend_schema(
+        tags=["Admin"],
+        summary="Activer ou désactiver un compte",
+        description="Bascule le statut d'activation d'un compte, dans le périmètre de l'appelant.",
+        request=InputSerializer,
+        responses={
+            200: OutputSerializer,
+            400: ErrorResponseSerializer,
+            401: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
     def patch(self, request, user_id):
         user = user_get(user_id)
         if user is None:
@@ -678,14 +719,22 @@ class UserToggleActiveApi(ApiAuthMixin, APIView):
         return Response({"detail": "Statut mis à jour.", "is_active": s.validated_data["is_active"]})
 
 
-@extend_schema(
-    tags=["Admin"],
-    summary="Suppression soft d'un utilisateur",
-    description="Désactive et anonymise le compte. Les commandes sont conservées.",
-)
 class UserSoftDeleteApi(ApiAuthMixin, APIView):
     permission_classes = [IsDioceseAdminOrAbove]
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Suppression soft d'un utilisateur",
+        description="Désactive et anonymise le compte. Les commandes sont conservées.",
+        request=None,  # DELETE : aucun corps de requête lu.
+        responses={
+            204: OpenApiResponse(description="Compte supprimé (soft)"),
+            400: ErrorResponseSerializer,
+            401: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
     def delete(self, request, user_id):
         user = user_get(user_id)
         if user is None:
@@ -699,14 +748,22 @@ class UserSoftDeleteApi(ApiAuthMixin, APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-@extend_schema(
-    tags=["Admin"],
-    summary="Suppression définitive d'un utilisateur",
-    description="IRRÉVERSIBLE. Réservé aux administrateurs. L'audit log est conservé.",
-)
 class UserHardDeleteApi(ApiAuthMixin, APIView):
     permission_classes = [IsAdminUser]
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Suppression définitive d'un utilisateur",
+        description="IRRÉVERSIBLE. Réservé aux administrateurs. L'audit log est conservé.",
+        request=None,  # DELETE : aucun corps de requête lu.
+        responses={
+            204: OpenApiResponse(description="Compte supprimé définitivement"),
+            400: ErrorResponseSerializer,
+            401: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
     def delete(self, request, user_id):
         user = user_get(user_id)
         if user is None:
@@ -720,23 +777,57 @@ class UserHardDeleteApi(ApiAuthMixin, APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-@extend_schema(
-    tags=["Admin"],
-    summary="Journal d'audit d'un utilisateur",
-)
+class AuditLogItemSerializer(serializers.Serializer):
+    event = serializers.CharField()
+    ip_address = serializers.CharField(allow_null=True)
+    metadata = serializers.DictField()
+    created_at = serializers.DateTimeField()
+
+
+class AuditLogPaginatedResponseSerializer(serializers.Serializer):
+    limit = serializers.IntegerField()
+    offset = serializers.IntegerField()
+    count = serializers.IntegerField()
+    next = serializers.URLField(allow_null=True)
+    previous = serializers.URLField(allow_null=True)
+    results = AuditLogItemSerializer(many=True)
+
+
 class UserAuditLogApi(ApiAuthMixin, APIView):
     permission_classes = [IsDioceseAdminOrAbove]
 
-    class OutputSerializer(serializers.Serializer):
-        event = serializers.CharField()
-        ip_address = serializers.CharField(allow_null=True)
-        metadata = serializers.DictField()
-        created_at = serializers.DateTimeField()
+    class Pagination(LimitOffsetPagination):
+        default_limit = 50
 
+    @extend_schema(
+        tags=["Admin"],
+        summary="Journal d'audit d'un utilisateur (paginé)",
+        description=(
+            "Historique des événements de sécurité, du plus récent au plus ancien. "
+            "Paginé : un compte ancien peut porter des milliers d'entrées."
+        ),
+        request=None,  # GET : aucun corps de requête lu.
+        parameters=[
+            OpenApiParameter("limit", int, description="Nombre d'éléments par page (défaut 50)"),
+            OpenApiParameter("offset", int, description="Index de début"),
+        ],
+        responses={
+            200: AuditLogPaginatedResponseSerializer,
+            401: ErrorResponseSerializer,
+            403: ErrorResponseSerializer,
+            404: ErrorResponseSerializer,
+        },
+    )
     def get(self, request, user_id):
         user = user_get(user_id)
         if user is None:
             raise Http404
 
         logs = audit_log_list(user=user)
-        return Response(self.OutputSerializer(logs, many=True).data)
+        return get_paginated_response(
+            pagination_class=self.Pagination,
+            serializer_class=AuditLogItemSerializer,
+            queryset=logs,
+            request=request,
+            view=self,
+        )

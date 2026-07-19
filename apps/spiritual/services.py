@@ -149,10 +149,105 @@ def reflection_upsert(
     return reflection
 
 
+def _check_manage_authority(*, reflection: PastoralReflection, editor: BaseUser) -> None:
+    """Qui peut modifier/supprimer une réflexion DÉJÀ publiée.
+
+    Deux titres seulement : en être l'AUTEUR, ou porter l'autorité territoriale sur
+    la portée de la réflexion (modération descendante — matrice §16 « Dépublier » :
+    le prêtre sur son contenu, l'évêque sur son diocèse, l'archevêque sur sa
+    province, le super-admin partout).
+
+    On vérifie l'autorité sur la portée RÉELLE de la réflexion, et non un simple
+    « est admin quelque part » : sinon l'admin de la paroisse A pourrait réécrire
+    la réflexion de la paroisse B.
+    """
+    if reflection.author_id == editor.id:
+        return
+    _check_scope_authority(
+        user=editor,
+        scope_type=reflection.scope_type,
+        scope_parish_id=reflection.scope_parish_id,
+        scope_diocese_id=reflection.scope_diocese_id,
+        scope_church_id=reflection.scope_church_id,
+    )
+
+
+@transaction.atomic
+def reflection_update(
+    *,
+    reflection: PastoralReflection,
+    editor: BaseUser,
+    title: str | None = None,
+    content: str | None = None,
+    scope_type: str | None = None,
+    scope_parish_id: int | None = None,
+    scope_diocese_id: int | None = None,
+    scope_church_id: int | None = None,
+) -> PastoralReflection:
+    """Édition d'une réflexion existante (auteur ou autorité sur sa portée).
+
+    Seuls les champs fournis changent. L'auteur et la date ne sont jamais
+    réattribués : ils forment l'identité de la réflexion (unique auteur+jour).
+    Déplacer la portée exige l'autorité sur la NOUVELLE portée (fail-closed).
+    """
+    _check_manage_authority(reflection=reflection, editor=editor)
+
+    if content is not None:
+        if not content.strip():
+            raise ApplicationError("Le contenu de la réflexion est obligatoire.")
+        reflection.content = content
+    if title is not None:
+        reflection.title = title
+
+    scope_changed = any(
+        value is not None
+        for value in (scope_type, scope_parish_id, scope_diocese_id, scope_church_id)
+    )
+    if scope_changed:
+        ST = PastoralReflection.ScopeType
+        new_scope_type = scope_type or reflection.scope_type
+
+        # Une seule FK de portée peut être renseignée : celle du niveau courant.
+        # Toute autre est remise à NULL, même si le client l'a envoyée — sinon une
+        # réflexion « diocèse » pourrait repartir avec un scope_parish résiduel et
+        # fuiter dans le feed d'une paroisse qui n'est plus la sienne.
+        new_parish_id = new_diocese_id = new_church_id = None
+        if new_scope_type == ST.PARISH:
+            new_parish_id = (
+                scope_parish_id if scope_parish_id is not None else reflection.scope_parish_id
+            )
+        elif new_scope_type == ST.DIOCESE:
+            new_diocese_id = (
+                scope_diocese_id if scope_diocese_id is not None else reflection.scope_diocese_id
+            )
+        elif new_scope_type == ST.CHURCH:
+            new_church_id = (
+                scope_church_id if scope_church_id is not None else reflection.scope_church_id
+            )
+
+        _check_scope_consistency(new_scope_type, new_parish_id, new_diocese_id, new_church_id)
+        _check_scope_authority(
+            user=editor,
+            scope_type=new_scope_type,
+            scope_parish_id=new_parish_id,
+            scope_diocese_id=new_diocese_id,
+            scope_church_id=new_church_id,
+        )
+        parish, diocese, church = _resolve_scope_targets(
+            scope_parish_id=new_parish_id,
+            scope_diocese_id=new_diocese_id,
+            scope_church_id=new_church_id,
+        )
+        reflection.scope_type = new_scope_type
+        reflection.scope_parish = parish
+        reflection.scope_diocese = diocese
+        reflection.scope_church = church
+
+    reflection.save()
+    return reflection
+
+
 @transaction.atomic
 def reflection_delete(*, reflection: PastoralReflection, editor: BaseUser) -> None:
-    from apps.users.scoping import is_any_admin
-
-    if reflection.author_id != editor.id and not is_any_admin(editor):
-        raise ApplicationError("Vous ne pouvez supprimer que vos propres réflexions.")
+    _check_manage_authority(reflection=reflection, editor=editor)
     reflection.delete()

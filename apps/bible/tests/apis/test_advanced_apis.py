@@ -131,3 +131,159 @@ def test_reading_plan_list_public(clergy_client, db):
     resp = clergy_client.get(url)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.data["count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Lectio Divina — sauvegarde sans verset (contrat front « lecture du jour »)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_lectio_divina_upsert_without_passage_id_returns_200(fidele_client):
+    """CONTRAT : `passage_id` est OPTIONNEL. Le client peut l'omettre."""
+    url = reverse("api:bible:lectio-divina")
+    resp = fidele_client.post(url, {"lectio": "Lecture du jour"}, format="json")
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["passage_id"] is None
+    assert LectioDivinaSession.objects.filter(user=fidele_client._user).count() == 1
+
+
+@pytest.mark.django_db
+def test_lectio_divina_upsert_with_null_passage_id_returns_200(fidele_client):
+    url = reverse("api:bible:lectio-divina")
+    resp = fidele_client.post(url, {"passage_id": None, "lectio": "Sans verset"}, format="json")
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["passage_id"] is None
+
+
+@pytest.mark.django_db
+def test_lectio_divina_upsert_with_passage_id_zero_returns_200(fidele_client):
+    """RÉGRESSION : `passage_id=0` (convention historique du client web)
+    renvoyait 400 « Verset introuvable » à CHAQUE sauvegarde."""
+    url = reverse("api:bible:lectio-divina")
+    resp = fidele_client.post(url, {"passage_id": 0, "lectio": "Zéro"}, format="json")
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["passage_id"] is None
+
+
+@pytest.mark.django_db
+def test_lectio_divina_upsert_with_unknown_passage_still_returns_400(fidele_client):
+    """Un id de verset non nul mais inexistant reste une erreur métier."""
+    url = reverse("api:bible:lectio-divina")
+    resp = fidele_client.post(url, {"passage_id": 999999, "lectio": "x"}, format="json")
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
+# ---------------------------------------------------------------------------
+# Parcours de lecture — inscription / désinscription
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_reading_plan_subscribe_returns_200_and_flags_subscription(fidele_client, clergy_client):
+    plan = ReadingPlan.objects.create(
+        author=clergy_client._user, title="Parcours Carême", is_published=True
+    )
+    url = reverse("api:bible:reading-plan-subscribe", kwargs={"plan_id": plan.pk})
+
+    resp = fidele_client.post(url, {}, format="json")
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["is_subscribed"] is True
+
+
+@pytest.mark.django_db
+def test_reading_plan_subscribe_twice_is_idempotent(fidele_client, clergy_client):
+    plan = ReadingPlan.objects.create(
+        author=clergy_client._user, title="Parcours Avent", is_published=True
+    )
+    url = reverse("api:bible:reading-plan-subscribe", kwargs={"plan_id": plan.pk})
+
+    fidele_client.post(url, {}, format="json")
+    resp = fidele_client.post(url, {}, format="json")
+
+    assert resp.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.django_db
+def test_reading_plan_subscribe_unpublished_returns_400(fidele_client, clergy_client):
+    plan = ReadingPlan.objects.create(
+        author=clergy_client._user, title="Brouillon", is_published=False
+    )
+    url = reverse("api:bible:reading-plan-subscribe", kwargs={"plan_id": plan.pk})
+
+    resp = fidele_client.post(url, {}, format="json")
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_reading_plan_unsubscribe_returns_200(fidele_client, clergy_client):
+    plan = ReadingPlan.objects.create(
+        author=clergy_client._user, title="Parcours Psaumes", is_published=True
+    )
+    subscribe_url = reverse("api:bible:reading-plan-subscribe", kwargs={"plan_id": plan.pk})
+    unsubscribe_url = reverse("api:bible:reading-plan-unsubscribe", kwargs={"plan_id": plan.pk})
+    fidele_client.post(subscribe_url, {}, format="json")
+
+    resp = fidele_client.post(unsubscribe_url, {}, format="json")
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["is_subscribed"] is False
+
+
+@pytest.mark.django_db
+def test_reading_plan_unsubscribe_without_subscription_returns_200(fidele_client, clergy_client):
+    plan = ReadingPlan.objects.create(
+        author=clergy_client._user, title="Parcours libre", is_published=True
+    )
+    url = reverse("api:bible:reading-plan-unsubscribe", kwargs={"plan_id": plan.pk})
+
+    resp = fidele_client.post(url, {}, format="json")
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["is_subscribed"] is False
+
+
+@pytest.mark.django_db
+def test_reading_plan_subscribe_requires_auth(clergy_client):
+    plan = ReadingPlan.objects.create(
+        author=clergy_client._user, title="Parcours privé", is_published=True
+    )
+    url = reverse("api:bible:reading-plan-subscribe", kwargs={"plan_id": plan.pk})
+
+    resp = APIClient().post(url, {}, format="json")
+
+    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_reading_plan_list_exposes_is_subscribed(fidele_client, clergy_client):
+    plan = ReadingPlan.objects.create(
+        author=clergy_client._user, title="Parcours listé", is_published=True
+    )
+    subscribe_url = reverse("api:bible:reading-plan-subscribe", kwargs={"plan_id": plan.pk})
+    fidele_client.post(subscribe_url, {}, format="json")
+
+    resp = fidele_client.get(reverse("api:bible:reading-plan-list-create"))
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["results"][0]["is_subscribed"] is True
+
+
+@pytest.mark.django_db
+def test_reading_plan_list_is_not_subscribed_for_another_user(fidele_client, diacre_client, clergy_client):
+    plan = ReadingPlan.objects.create(
+        author=clergy_client._user, title="Parcours partagé", is_published=True
+    )
+    subscribe_url = reverse("api:bible:reading-plan-subscribe", kwargs={"plan_id": plan.pk})
+    fidele_client.post(subscribe_url, {}, format="json")
+
+    resp = diacre_client.get(reverse("api:bible:reading-plan-list-create"))
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["results"][0]["is_subscribed"] is False

@@ -39,6 +39,9 @@ class EventOutputSerializer(serializers.Serializer):
     # Inscription de l'utilisateur courant : pilote le toggle du bouton côté front.
     # Vient de l'annotation `is_registered` posée par le selector (False si non annoté).
     is_registered = serializers.SerializerMethodField()
+    # Annulation douce : un lien profond vers un événement annulé doit pouvoir
+    # l'afficher comme tel plutôt que comme un événement normal.
+    cancelled_at = serializers.DateTimeField(allow_null=True)
     created_at = serializers.DateTimeField()
 
     def get_scope_id(self, obj):

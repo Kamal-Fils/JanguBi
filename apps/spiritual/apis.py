@@ -20,11 +20,13 @@ from apps.spiritual.selectors import (
 )
 from apps.spiritual.serializers import (
     ReflectionOutputSerializer,
+    ReflectionUpdateInputSerializer,
     ReflectionUpsertInputSerializer,
 )
 from apps.spiritual.services import (
     is_reflection_editor,
     reflection_delete,
+    reflection_update,
     reflection_upsert,
 )
 
@@ -125,9 +127,35 @@ class ReflectionDetailApi(ApiAuthMixin, APIView):
         return Response(ReflectionOutputSerializer(reflection).data)
 
     @extend_schema(
+        request=ReflectionUpdateInputSerializer,
+        responses={200: ReflectionOutputSerializer},
+        tags=["spiritual"],
+        summary="Modifier une réflexion (auteur ou autorité sur sa portée)",
+        description=(
+            "Édition partielle : seuls les champs fournis changent. L'auteur et la "
+            "date ne sont pas modifiables. Déplacer la portée exige l'autorité sur "
+            "la nouvelle portée."
+        ),
+    )
+    def patch(self, request, reflection_id):
+        reflection = reflection_get(reflection_id=reflection_id)
+        if reflection is None:
+            return Response({"detail": "Réflexion introuvable."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = ReflectionUpdateInputSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        try:
+            reflection = reflection_update(
+                reflection=reflection, editor=request.user, **serializer.validated_data
+            )
+        except ApplicationError as exc:
+            return _error(exc)
+        return Response(ReflectionOutputSerializer(reflection).data)
+
+    @extend_schema(
         responses={204: None},
         tags=["spiritual"],
-        summary="Supprimer une réflexion (auteur ou admin)",
+        summary="Supprimer une réflexion (auteur ou autorité sur sa portée)",
     )
     def delete(self, request, reflection_id):
         reflection = reflection_get(reflection_id=reflection_id)

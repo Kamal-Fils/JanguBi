@@ -4,6 +4,7 @@ from uuid import UUID
 from django.db.models import Count, Prefetch, Q, QuerySet
 
 from apps.core.exceptions import ApplicationError
+from apps.documents.exceptions import DocumentRequestNotFoundError
 from apps.documents.models import (
     DocumentRequest,
     DocumentRequestAttachment,
@@ -126,12 +127,12 @@ def document_request_get_for_admin(*, request_id: UUID, user: BaseUser) -> Docum
     """Récupère une demande pour un agent back-office, **scopée à son autorité
     territoriale réelle** (RoleAssignment).
 
-    Hors de la portée de l'agent → ``Http404`` (mappé en 404 par le handler ;
-    pas de fuite d'existence inter-paroisses). Ferme le trou : un parish_admin
-    de A ne peut plus lire/agir sur une demande de B par UUID.
+    Hors de la portée de l'agent → ``DocumentRequestNotFoundError`` (exception
+    DOMAINE, pas ``Http404`` : ce sélecteur est appelable hors HTTP). `apis.py`
+    la mappe en **404** — inexistante et hors périmètre restent indiscernables,
+    donc pas de fuite d'existence inter-paroisses. Ferme le trou : un
+    parish_admin de A ne peut plus lire/agir sur une demande de B par UUID.
     """
-    from django.http import Http404
-
     from apps.users.scoping import accessible_parish_ids, is_global_admin
 
     obj = (
@@ -143,7 +144,7 @@ def document_request_get_for_admin(*, request_id: UUID, user: BaseUser) -> Docum
         .first()
     )
     if obj is None:
-        raise Http404
+        raise DocumentRequestNotFoundError(f"Demande {request_id} introuvable.")
 
     if is_global_admin(user):
         return obj
@@ -151,7 +152,7 @@ def document_request_get_for_admin(*, request_id: UUID, user: BaseUser) -> Docum
     parish_ids = accessible_parish_ids(user)  # set (jamais None ici : global admin déjà traité)
     eff_parish_id = _request_effective_parish_id(obj)
     if parish_ids is None or eff_parish_id is None or eff_parish_id not in parish_ids:
-        raise Http404
+        raise DocumentRequestNotFoundError(f"Demande {request_id} introuvable.")
     return obj
 
 

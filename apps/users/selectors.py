@@ -6,11 +6,18 @@ Aucune logique d'écriture ici.
 import uuid
 from typing import Optional
 
+from django.db.models import Prefetch, Q
 from django.db.models.query import QuerySet
 
 from apps.common.utils import get_object
+from apps.users.enums import ClergyValidationStatus, UserRole
 from apps.users.filters import BaseUserFilter
-from apps.users.models import BaseUser, Profile, SecurityAuditLog
+from apps.users.models import (
+    BaseUser,
+    ClergySelfDeclaration,
+    Profile,
+    SecurityAuditLog,
+)
 
 # ---------------------------------------------------------------------------
 # Données de connexion (réponse /me/)
@@ -127,14 +134,125 @@ def user_is_in_scope_of(*, target: BaseUser, admin: BaseUser) -> bool:
     return target_parish_id in parish_ids
 
 
+def clergy_pending_validation_list(*, admin: BaseUser) -> QuerySet[BaseUser]:
+    """Comptes clergé en attente de validation hiérarchique, dans le périmètre
+    territorial de ``admin``.
+
+    La file est adossée aux **auto-déclarations** (``ClergySelfDeclaration``), et
+    non à ``pastoral_role`` : un candidat en attente est délibérément encore un
+    laïc côté autorisations (cf. la docstring du modèle — écrire le rôle avant
+    revue serait une escalade de privilèges). Les comptes issus d'une invitation
+    naissent ``APPROVED`` : ils ne remontent jamais ici.
+
+    Le cloisonnement porte sur la **paroisse revendiquée dans la demande**, pas
+    sur la paroisse du profil : un candidat dont l'onboarding fidèle n'est pas
+    terminé n'a pas de paroisse principale et serait sinon invisible de sa propre
+    autorité — la file resterait vide côté évêque.
+
+    **Fail-CLOSED**, cohérent avec ``user_is_in_scope_of`` et ``user_list`` : hors
+    admin global, un validateur sans affectation territoriale ne voit RIEN.
+    """
+    from apps.users.scoping import accessible_parish_ids, is_global_admin
+
+    pending_declarations = (
+        ClergySelfDeclaration.objects
+        .filter(status=ClergySelfDeclaration.Status.PENDING)
+        .select_related("parish", "parish__diocese", "justification_file")
+    )
+
+    qs = (
+        BaseUser.objects
+        .select_related("profile", "profile__primary_parish", "diocese")
+        .prefetch_related(
+            Prefetch(
+                "clergy_declarations",
+                queryset=pending_declarations,
+                to_attr="pending_declarations",
+            )
+        )
+        .filter(
+            clergy_declarations__status=ClergySelfDeclaration.Status.PENDING,
+            clergy_validation_status=ClergyValidationStatus.PENDING,
+        )
+        .distinct()
+        .order_by("created_at")
+    )
+
+    if is_global_admin(admin):
+        return qs
+
+    parish_ids = accessible_parish_ids(admin)  # set (jamais None : global déjà traité)
+    if not parish_ids:
+        return qs.none()
+    return qs.filter(clergy_declarations__parish_id__in=parish_ids)
+
+
+def clergy_declaration_current(*, user: BaseUser) -> Optional["ClergySelfDeclaration"]:
+    """Dernière auto-déclaration du demandeur (état de suivi affiché côté fidèle).
+
+    ``None`` s'il n'a jamais rien déposé. Une demande refusée reste visible : le
+    demandeur doit pouvoir lire le motif pour corriger et resoumettre.
+    """
+    return (
+        ClergySelfDeclaration.objects
+        .filter(user=user)
+        .select_related("parish", "parish__diocese", "justification_file")
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def clergy_declaration_validator_emails(*, diocese_id: int | None) -> list[str]:
+    """Emails des autorités compétentes pour trancher une demande de ce diocèse.
+
+    Miroir de ``user_can_validate_clergy`` : les super_admins (compétents partout)
+    et les évêques/archevêques porteurs d'une affectation active couvrant le
+    diocèse concerné. Fail-closed : un évêque sans affectation territoriale ne
+    reçoit rien, exactement comme il ne verrait rien dans la file.
+    """
+    from apps.users.enums import PastoralRole, RoleScope
+    from apps.users.models import RoleAssignment
+
+    emails = set(
+        BaseUser.objects.filter(
+            role=UserRole.SUPER_ADMIN, is_active=True
+        ).values_list("email", flat=True)
+    )
+
+    if diocese_id is not None:
+        from apps.org.models import Diocese
+
+        province_id = (
+            Diocese.objects.filter(pk=diocese_id)
+            .values_list("province_id", flat=True)
+            .first()
+        )
+        covering = Q(scope=RoleScope.DIOCESE, diocese_id=diocese_id)
+        if province_id:
+            covering |= Q(scope=RoleScope.PROVINCE, province_id=province_id)
+
+        emails |= set(
+            RoleAssignment.objects.filter(covering, is_active=True)
+            .filter(
+                user__is_active=True,
+                user__pastoral_role__in=[PastoralRole.EVEQUE, PastoralRole.ARCHEVEQUE],
+            )
+            .values_list("user__email", flat=True)
+        )
+
+    return sorted(emails)
+
+
 def user_get_by_email(email: str) -> Optional[BaseUser]:
     return get_object(BaseUser, email__iexact=email)
 
 
 def user_get_with_profile(user_id: uuid.UUID | str | int) -> Optional[BaseUser]:
+    # profile__primary_parish : la fiche détail sérialise la paroisse principale
+    # en {id, name} → select_related évite une requête supplémentaire.
     return (
         BaseUser.objects
-        .select_related("profile")
+        .select_related("profile", "profile__primary_parish")
         .filter(id=user_id)  # type: ignore[misc]  # django-stubs limite le lookup UUIDField à UUID|str ; Django accepte aussi int (uuid.UUID(int=...))
         .first()
     )
@@ -186,13 +304,50 @@ def profile_get(*, user: BaseUser) -> Optional[Profile]:
 
 
 # ---------------------------------------------------------------------------
+# Appartenances (lectures consommées par la couche API)
+# ---------------------------------------------------------------------------
+
+def membership_get(*, membership_id: int):
+    """Une appartenance par ID, chaîne territoriale préchargée (``None`` si absente)."""
+    from apps.users.models import Membership
+
+    return (
+        Membership.objects
+        .select_related("church__parish__diocese")
+        .filter(pk=membership_id)
+        .first()
+    )
+
+
+def membership_list_by_ids(*, membership_ids: list[int]) -> QuerySet:
+    """Recharge un lot d'appartenances avec leur chaîne territoriale.
+
+    Les objets renvoyés par ``membership_create`` n'ont pas les FK préchargées :
+    sans ce rechargement groupé, ``membership_ref`` déclenche un N+1.
+    """
+    from apps.users.models import Membership
+
+    return (
+        Membership.objects
+        .select_related("church__parish__diocese")
+        .filter(pk__in=membership_ids)
+        .order_by("-is_primary", "created_at")
+    )
+
+
+# ---------------------------------------------------------------------------
 # Audit logs
 # ---------------------------------------------------------------------------
 
-def audit_log_list(*, user: BaseUser, limit: int = 50) -> QuerySet[SecurityAuditLog]:
-    """Historique des événements de sécurité d'un utilisateur."""
+def audit_log_list(*, user: BaseUser) -> QuerySet[SecurityAuditLog]:
+    """Historique des événements de sécurité d'un utilisateur.
+
+    Renvoie un QuerySet NON tronqué : la pagination est du ressort de la couche
+    API (``get_paginated_response``). Un slice ici empêcherait tout filtrage /
+    pagination en aval (« Cannot filter a query once a slice has been taken »).
+    """
     return (
         SecurityAuditLog.objects
         .filter(user=user)
-        .order_by("-created_at")[:limit]
+        .order_by("-created_at")
     )

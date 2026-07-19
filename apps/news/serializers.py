@@ -1,6 +1,47 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from apps.news.models import Article, ArticleCategory
+from apps.news.models import Article, ArticleCategory, ArticleReaction
+
+_REACTION_TYPES: tuple[str, ...] = tuple(ArticleReaction.ReactionType.values)
+
+
+class ArticleReactionsOutputSerializer(serializers.Serializer):
+    """Bloc `reactions` embarqué dans la liste ET le détail d'article.
+
+    Le front a besoin des deux d'un coup — combien, et est-ce que MOI j'ai
+    réagi — sinon il repart chercher l'état article par article et le fil paie
+    une requête réseau par carte.
+    """
+
+    counts = serializers.DictField(
+        child=serializers.IntegerField(),
+        help_text="Nombre de réactions par type : pray / amen / attend.",
+    )
+    mine = serializers.ListField(
+        child=serializers.ChoiceField(choices=ArticleReaction.ReactionType.choices),
+        help_text="Types déjà posés par l'utilisateur courant (vide si anonyme).",
+    )
+
+
+def _reactions_payload(obj) -> dict:
+    """Lit les ANNOTATIONS posées par `annotate_reactions` — jamais la relation.
+
+    Le repli à 0 / [] est volontairement muet : un accès à `obj.reactions` ici
+    déclencherait une requête par article et réintroduirait exactement le N+1
+    que l'annotation existe pour éviter.
+    """
+    return {
+        "counts": {
+            reaction_type: getattr(obj, f"reaction_{reaction_type}_count", 0) or 0
+            for reaction_type in _REACTION_TYPES
+        },
+        "mine": [
+            reaction_type
+            for reaction_type in _REACTION_TYPES
+            if getattr(obj, f"reaction_{reaction_type}_mine", False)
+        ],
+    }
 
 
 def _author_display(user) -> str:
@@ -64,6 +105,22 @@ class ArticleUnpublishInputSerializer(serializers.Serializer):
     reason = serializers.CharField(required=False, allow_blank=True, default="")
 
 
+class ArticleReactionSetInputSerializer(serializers.Serializer):
+    """État VOULU d'une réaction — pas une bascule.
+
+    `active` est explicite pour que rejouer la requête soit sans effet : une
+    bascule implicite ferait repartir un double-clic dans l'autre sens.
+    """
+
+    reaction_type = serializers.ChoiceField(
+        choices=ArticleReaction.ReactionType.choices,
+        help_text="pray (Je prie) · amen (Amen) · attend (Je participe).",
+    )
+    active = serializers.BooleanField(
+        help_text="true pour poser la réaction, false pour la retirer.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Output serializers
 # ---------------------------------------------------------------------------
@@ -86,6 +143,7 @@ class ArticleListOutputSerializer(serializers.ModelSerializer):
     scope_parish_id = serializers.IntegerField(read_only=True, allow_null=True)
     scope_diocese_id = serializers.IntegerField(read_only=True, allow_null=True)
     scope_church_id = serializers.IntegerField(read_only=True, allow_null=True)
+    reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = Article
@@ -95,6 +153,7 @@ class ArticleListOutputSerializer(serializers.ModelSerializer):
             "slug",
             "excerpt",
             "cover_image_url",
+            "reactions",
             "category",
             "author_name",
             "content_type",
@@ -120,6 +179,10 @@ class ArticleListOutputSerializer(serializers.ModelSerializer):
             return None
         return obj.cover_image.url
 
+    @extend_schema_field(ArticleReactionsOutputSerializer)
+    def get_reactions(self, obj) -> dict:
+        return _reactions_payload(obj)
+
 
 class ArticleDetailOutputSerializer(serializers.ModelSerializer):
     category = ArticleCategoryOutputSerializer(read_only=True)
@@ -133,6 +196,7 @@ class ArticleDetailOutputSerializer(serializers.ModelSerializer):
     scope_parish_id = serializers.IntegerField(read_only=True, allow_null=True)
     scope_diocese_id = serializers.IntegerField(read_only=True, allow_null=True)
     scope_church_id = serializers.IntegerField(read_only=True, allow_null=True)
+    reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = Article
@@ -144,6 +208,7 @@ class ArticleDetailOutputSerializer(serializers.ModelSerializer):
             "content",
             "content_format",
             "cover_image_url",
+            "reactions",
             "category",
             "author_name",
             "content_type",
@@ -177,3 +242,7 @@ class ArticleDetailOutputSerializer(serializers.ModelSerializer):
         if obj.unpublished_by is None:
             return None
         return _author_display(obj.unpublished_by)
+
+    @extend_schema_field(ArticleReactionsOutputSerializer)
+    def get_reactions(self, obj) -> dict:
+        return _reactions_payload(obj)

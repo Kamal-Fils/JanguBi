@@ -1,8 +1,26 @@
+from typing import Any
+
 from django.db import transaction
 
 from apps.core.exceptions import ApplicationError
+from apps.rosary.community_events import (
+    broadcast_frame_sync,
+    decade_advanced_frame,
+    intention_submitted_frame,
+    rosary_ended_frame,
+)
 
 CLERGY_ROLES = {"religieux", "diacre", "pretre", "eveque", "archeveque"}
+
+
+def _broadcast_on_commit(*, rosary_id: int, frame: dict[str, Any]) -> None:
+    """Diffuse la trame APRÈS commit.
+
+    Diffuser dans la transaction exposerait les clients à un événement dont
+    l'écriture peut encore être annulée (participant voyant une décade qui
+    n'existe pas en base). Même règle que les emails du projet.
+    """
+    transaction.on_commit(lambda: broadcast_frame_sync(rosary_id=rosary_id, frame=frame))
 
 
 @transaction.atomic
@@ -39,7 +57,40 @@ def community_rosary_submit_intention(*, rosary, user, text: str):
         raise ApplicationError("Ce chapelet n'est plus actif.")
     if not text.strip():
         raise ApplicationError("L'intention ne peut pas être vide.")
-    return RosaryIntention.objects.create(rosary=rosary, submitted_by=user, text=text)
+    intention = RosaryIntention.objects.create(rosary=rosary, submitted_by=user, text=text)
+    _broadcast_on_commit(
+        rosary_id=rosary.pk,
+        frame=intention_submitted_frame(text=intention.text, submitted_by=user.email),
+    )
+    return intention
+
+
+@transaction.atomic
+def community_rosary_advance_decade(*, rosary, user):
+    """Passe à la décade suivante (initiateur uniquement).
+
+    Appelée par le consumer WebSocket, qui ne touche plus l'ORM.
+
+    Volontairement **sans endpoint REST**, contrairement à ``end`` et
+    ``submit_intention``. Ces deux-là ont un repli HTTP parce qu'ils répondent à
+    un besoin de durabilité : clore une session dont le socket est mort, déposer
+    une intention hors direct. Avancer la décade n'a pas d'équivalent — si le
+    socket de l'initiateur est tombé, plus personne ne mène le chapelet et
+    l'action utile est ``end``, déjà exposée. Un POST « décade suivante » sans
+    numéro de décade attendu serait par ailleurs non idempotent : un double
+    envoi ou un rejeu sauterait une dizaine sans que le client puisse le voir.
+    """
+    if rosary.initiator_id != user.pk:
+        raise ApplicationError("Seul l'initiateur peut faire avancer le chapelet.")
+    if rosary.status != "active":
+        raise ApplicationError("Ce chapelet n'est plus actif.")
+    rosary.current_decade += 1
+    rosary.save(update_fields=["current_decade", "updated_at"])
+    _broadcast_on_commit(
+        rosary_id=rosary.pk,
+        frame=decade_advanced_frame(current_decade=rosary.current_decade),
+    )
+    return rosary
 
 
 @transaction.atomic
@@ -48,9 +99,14 @@ def community_rosary_end(*, rosary, user):
 
     if rosary.initiator_id != user.pk:
         raise ApplicationError("Seul l'initiateur peut terminer le chapelet.")
+    if rosary.status != "active":
+        raise ApplicationError("Ce chapelet n'est plus actif.")
     rosary.status = "completed"
     rosary.ended_at = timezone.now()
     rosary.save(update_fields=["status", "ended_at", "updated_at"])
+    # Sans cette diffusion, une clôture REST (socket de l'initiateur coupé)
+    # laissait les autres participants devant une session morte.
+    _broadcast_on_commit(rosary_id=rosary.pk, frame=rosary_ended_frame())
     return rosary
 
 

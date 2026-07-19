@@ -576,21 +576,45 @@ def clerical_message_send(
 ) -> "ClergicalMessage":
     from apps.core.exceptions import ApplicationError
     from apps.messaging.models import ClergicalMessage
-    from apps.users.enums import PastoralRole
+    from apps.messaging.selectors import clerical_message_territory_ids
+    from apps.users.enums import CLERGY_PASTORAL_ROLES, PastoralRole
 
-    clergy_roles = {
-        PastoralRole.PRETRE,
-        PastoralRole.DIACRE,
-        PastoralRole.EVEQUE,
-        PastoralRole.ARCHEVEQUE,
-        PastoralRole.RELIGIEUX,
-    }
-    if sender.pastoral_role not in clergy_roles:
+    if sender.pastoral_role not in CLERGY_PASTORAL_ROLES:
         raise ApplicationError("Seul le clergé peut envoyer des messages inter-clergé.")
 
     if recipient_scope == ClergicalMessage.RecipientScope.PROVINCE_BISHOPS:
         if sender.pastoral_role not in (PastoralRole.EVEQUE, PastoralRole.ARCHEVEQUE):
             raise ApplicationError("Seuls les évêques et archevêques peuvent diffuser aux évêques de province.")
+
+    # Cloisonnement territorial des diffusions.
+    #
+    # Seul le RÔLE était vérifié, jamais le territoire visé : `scope_id` venait
+    # du client sans contrôle. Un curé pouvait donc diffuser au clergé de
+    # n'importe quel diocèse en changeant un identifiant — il suffisait de
+    # l'incrémenter. On exige désormais que la portée demandée fasse partie des
+    # territoires auxquels l'expéditeur appartient réellement.
+    # Clés en `str` : `recipient_scope` arrive de la couche HTTP sous forme de
+    # chaîne (valeur du TextChoices), pas d'instance d'énumération.
+    _BROADCAST_TERRITORY_KEY: dict[str, tuple[str, str]] = {
+        ClergicalMessage.RecipientScope.PARISH_CLERGY.value: ("parish_ids", "cette paroisse"),
+        ClergicalMessage.RecipientScope.DIOCESE_CLERGY.value: ("diocese_ids", "ce diocèse"),
+        ClergicalMessage.RecipientScope.PROVINCE_BISHOPS.value: ("province_ids", "cette province"),
+    }
+
+    if recipient_scope in _BROADCAST_TERRITORY_KEY:
+        territory_key, label = _BROADCAST_TERRITORY_KEY[recipient_scope]
+
+        if scope_id is None:
+            raise ApplicationError("Une diffusion doit préciser le territoire visé.")
+
+        if scope_id not in clerical_message_territory_ids(sender)[territory_key]:
+            raise ApplicationError(f"Vous ne pouvez pas diffuser à {label}.")
+
+    elif recipient_scope == ClergicalMessage.RecipientScope.INDIVIDUAL and individual_recipient_id is None:
+        # Sans destinataire ni portée, le message n'atteindrait personne et
+        # partirait pourtant en 201 — exactement le mode d'échec silencieux que
+        # cette correction élimine.
+        raise ApplicationError("Un message individuel doit préciser son destinataire.")
 
     msg = ClergicalMessage.objects.create(
         sender=sender,

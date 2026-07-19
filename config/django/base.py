@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/3.0/ref/settings/
 """
 
 import os
+
 from celery.schedules import crontab
 
 from config.env import APPS_DIR, BASE_DIR, env
@@ -272,7 +273,21 @@ REST_FRAMEWORK = {
         'anon': '60/min',
         'user': '240/min',
         'rag': '20/min',
+        'login': env.str("LOGIN_THROTTLE_RATE", default="10/min"),
     },
+    # Nombre de proxys de confiance DEVANT l'application. Réglage de SÉCURITÉ,
+    # pas de confort : sans lui, DRF laissé à `None` construit l'identité de
+    # throttling à partir de TOUT l'en-tête X-Forwarded-For, que le client
+    # contrôle. Un attaquant fait varier l'en-tête à chaque requête, tombe dans
+    # un seau différent à chaque fois, et le quota de login ne s'applique
+    # jamais — la force brute passait outre les 10 tentatives/minute annoncées.
+    # Avec N, DRF prend la N-ième adresse EN PARTANT DE LA DROITE, seule partie
+    # que nos propres proxys ont écrite et qu'un client ne peut pas forger.
+    # 1 = Traefik seul (topologie de production actuelle) ; 0 = aucun proxy,
+    # on lit REMOTE_ADDR directement (exécution en local sans reverse proxy).
+    # ⚠️ Doit correspondre à la topologie réelle : trop grand, on lit une valeur
+    # forgée par le client ; trop petit, on limite le proxy au lieu du client.
+    'NUM_PROXIES': env.int("NUM_PROXIES", default=1),
 }
 
 YOUTUBE_API_KEY = env.str("YOUTUBE_API_KEY", default="")

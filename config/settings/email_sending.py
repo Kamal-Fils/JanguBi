@@ -1,5 +1,5 @@
-from config.env import env, env_to_enum
 from apps.emails.enums import EmailSendingStrategy
+from config.env import env, env_to_enum
 
 # local | mailtrap
 EMAIL_SENDING_STRATEGY = env_to_enum(EmailSendingStrategy, env("EMAIL_SENDING_STRATEGY", default="local"))

@@ -1041,3 +1041,115 @@ def test_escalation_does_nothing_when_no_stale_requests():
 
     # Assert
     assert not mock_send.called
+
+# ---------------------------------------------------------------------------
+# document_request_run_escalation — isolation transactionnelle
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_escalation_partial_failure_keeps_emails_of_previous_steps():
+    """RÉGRESSION : une seule @transaction.atomic autour du run entier annulait
+    les Email des étapes déjà exécutées dès qu'UNE étape échouait — le run
+    n'envoyait alors aucune relance. Chaque demande a désormais sa transaction.
+    """
+    # Arrange — une demande stale par étape ; les deux premières doivent aboutir.
+    agent = StaffUserFactory()
+    submitted = DocumentRequestFactory(status=DocumentRequest.Status.SUBMITTED)
+    verifying = DocumentRequestFactory(
+        status=DocumentRequest.Status.UNDER_VERIFICATION, assigned_to=agent
+    )
+    validated = DocumentRequestFactory(status=DocumentRequest.Status.VALIDATED, assigned_to=agent)
+    info_req = DocumentRequestFactory(status=DocumentRequest.Status.INFO_REQUESTED)
+
+    past = timezone.now() - timedelta(days=30)
+    DocumentRequest.objects.filter(
+        id__in=[submitted.id, verifying.id, validated.id, info_req.id]
+    ).update(updated_at=past)
+
+    # L'étape « rappel dépôt » (3e boucle) explose.
+    def _fail_on_deposit_reminder(*, to, subject, body_html):
+        if "Rappel dépôt" in subject:
+            raise RuntimeError("SMTP indisponible")
+
+    # Act
+    with patch("apps.documents.services._send_email", side_effect=_fail_on_deposit_reminder) as mock_send:
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert — les étapes 1, 2 ET 4 ont bien été notifiées malgré l'échec de la 3e.
+    subjects = [call.kwargs["subject"] for call in mock_send.call_args_list]
+    assert any("est en attente" in s for s in subjects), "étape 1 (submitted) perdue"
+    assert any("Vérification en attente" in s for s in subjects), "étape 2 perdue"
+    assert any("Rappel complément" in s for s in subjects), "étape 4 non atteinte après l'échec"
+
+
+@pytest.mark.django_db
+def test_escalation_failure_on_one_request_does_not_stop_the_others():
+    # Arrange — deux demandes stale au même statut ; la première échoue.
+    past = timezone.now() - timedelta(days=30)
+    first = DocumentRequestFactory(
+        status=DocumentRequest.Status.INFO_REQUESTED, contact_email="boom@example.com"
+    )
+    second = DocumentRequestFactory(
+        status=DocumentRequest.Status.INFO_REQUESTED, contact_email="ok@example.com"
+    )
+    DocumentRequest.objects.filter(id__in=[first.id, second.id]).update(updated_at=past)
+
+    def _fail_for_first(*, to, subject, body_html):
+        if to == "boom@example.com":
+            raise RuntimeError("SMTP indisponible")
+
+    # Act
+    with patch("apps.documents.services._send_email", side_effect=_fail_for_first) as mock_send:
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert — la seconde demande est bien relancée
+    sent_tos = [call.kwargs["to"] for call in mock_send.call_args_list]
+    assert "ok@example.com" in sent_tos
+
+
+@pytest.mark.django_db
+def test_escalation_persists_email_records_of_successful_steps():
+    """L'Email des étapes réussies doit être COMMITÉ malgré l'échec d'une autre."""
+    from apps.emails.models import Email
+
+    # Arrange
+    past = timezone.now() - timedelta(days=30)
+    ok_req = DocumentRequestFactory(
+        status=DocumentRequest.Status.INFO_REQUESTED, contact_email="persist@example.com"
+    )
+    ko_req = DocumentRequestFactory(status=DocumentRequest.Status.SUBMITTED)
+    DocumentRequest.objects.filter(id__in=[ok_req.id, ko_req.id]).update(updated_at=past)
+
+    # Act — l'étape « submitted » (1re) échoue APRÈS création de l'Email ;
+    # l'étape « rappel complément » (4e) doit tout de même persister le sien.
+    from apps.documents import services as documents_services
+
+    real_send_email = documents_services._send_email
+
+    def _send_then_maybe_fail(*, to, subject, body_html):
+        real_send_email(to=to, subject=subject, body_html=body_html)
+        if "est en attente" in subject:
+            raise RuntimeError("Échec après création de l'Email")
+
+    with (
+        patch("apps.documents.services._send_email", side_effect=_send_then_maybe_fail),
+        patch("apps.documents.services.transaction.on_commit"),
+    ):
+        document_request_run_escalation(
+            escalate_days=7,
+            deposit_reminder_days=3,
+            requester_reminder_days=5,
+        )
+
+    # Assert — l'Email de l'étape réussie survit ; celui de l'étape échouée a été annulé.
+    assert Email.objects.filter(to="persist@example.com").exists()
+    assert not Email.objects.filter(to=ko_req.contact_email).exists()

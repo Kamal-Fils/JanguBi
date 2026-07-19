@@ -9,19 +9,24 @@ from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
 from apps.core.exceptions import ApplicationError
-from apps.org.models import Church, Diocese, Parish, Province
 from apps.users.enums import RoleScope, UserRole
-from apps.users.models import BaseUser, RoleAssignment
+from apps.users.models import RoleAssignment
 from apps.users.scoping import (
     accessible_diocese_ids,
     accessible_parish_ids,
     accessible_province_ids,
     is_global_admin,
+    org_church_get,
+    org_diocese_get,
+    org_parish_get,
+    org_province_get,
+    role_assignment_get,
     role_assignment_list,
     user_can_admin_diocese,
     user_can_admin_parish,
     user_can_admin_province,
 )
+from apps.users.selectors import user_get
 from apps.users.services_roles import role_assignment_create, role_assignment_revoke
 
 
@@ -91,7 +96,7 @@ class RoleAssignmentListApi(ApiAuthMixin, APIView):
     )
     def get(self, request):
         user_id = request.query_params.get("user")
-        target = BaseUser.objects.filter(id=user_id).first() if user_id else None
+        target = user_get(user_id) if user_id else None
         qs = role_assignment_list(user=target)
 
         if not is_global_admin(request.user):
@@ -117,7 +122,7 @@ class RoleAssignmentListApi(ApiAuthMixin, APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        target = BaseUser.objects.filter(id=data["user_id"]).first()
+        target = user_get(data["user_id"])
         if target is None:
             return _not_found("Utilisateur")
 
@@ -128,25 +133,25 @@ class RoleAssignmentListApi(ApiAuthMixin, APIView):
             if not is_global_admin(request.user):
                 return _forbidden()
         elif scope == RoleScope.PROVINCE:
-            province = Province.objects.filter(id=data.get("province_id")).first()
+            province = org_province_get(province_id=data.get("province_id"))
             if province is None:
                 return _not_found("Province")
             if not user_can_admin_province(request.user, province.id):
                 return _forbidden()
         elif scope == RoleScope.DIOCESE:
-            diocese = Diocese.objects.filter(id=data.get("diocese_id")).first()
+            diocese = org_diocese_get(diocese_id=data.get("diocese_id"))
             if diocese is None:
                 return _not_found("Diocèse")
             if not user_can_admin_diocese(request.user, diocese.id):
                 return _forbidden()
         elif scope == RoleScope.PARISH:
-            parish = Parish.objects.filter(id=data.get("parish_id")).first()
+            parish = org_parish_get(parish_id=data.get("parish_id"))
             if parish is None:
                 return _not_found("Paroisse")
             if not user_can_admin_parish(request.user, parish.id):
                 return _forbidden()
         elif scope == RoleScope.CHURCH:
-            church = Church.objects.select_related("parish").filter(id=data.get("church_id")).first()
+            church = org_church_get(church_id=data.get("church_id"))
             if church is None:
                 return _not_found("Église")
             if not user_can_admin_parish(request.user, church.parish_id):
@@ -178,7 +183,7 @@ class RoleAssignmentRevokeApi(ApiAuthMixin, APIView):
         summary="Révoquer une affectation de rôle",
     )
     def post(self, request, assignment_id: int):
-        ra = RoleAssignment.objects.select_related("church").filter(id=assignment_id).first()
+        ra = role_assignment_get(assignment_id=assignment_id)
         if ra is None:
             return _not_found("Affectation")
         if not _can_manage_assignment(request.user, ra):

@@ -158,3 +158,102 @@ class TvApiTests(APITestCase):
         url = reverse("api:tv:tv-category-list")
         response = self.client.get(url)
         self.assertIn("is_clergy_only", response.data["results"][0])
+
+    def test_create_clergy_only_category_persists_the_flag(self):
+        # Régression : le serializer expose `is_clergy_only` en écriture mais le
+        # service ne l'acceptait pas → TypeError → 500 sur toute création de
+        # catégorie réservée au clergé (la seule qui compte : « Formation »).
+        self.client.force_authenticate(user=self.admin)
+        url = reverse("api:tv:tv-category-list")
+
+        response = self.client.post(
+            url, {"name": "Formation", "order": 9, "is_clergy_only": True}, format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data["is_clergy_only"])
+        self.assertTrue(Category.objects.get(slug="formation").is_clergy_only)
+
+    def test_create_category_defaults_to_public(self):
+        self.client.force_authenticate(user=self.admin)
+        url = reverse("api:tv:tv-category-list")
+
+        response = self.client.post(url, {"name": "Reportages", "order": 4}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(Category.objects.get(slug="reportages").is_clergy_only)
+
+    def test_update_category_toggles_clergy_only(self):
+        # Même rupture côté écriture partielle : PATCH is_clergy_only doit prendre.
+        self.client.force_authenticate(user=self.admin)
+        url = reverse("api:tv:tv-category-detail", args=[self.category.slug])
+
+        response = self.client.patch(url, {"is_clergy_only": True}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.category.refresh_from_db()
+        self.assertTrue(self.category.is_clergy_only)
+
+    def test_clergy_only_category_visible_to_religieux(self):
+        # `religieux` fait partie du clergé canonique (CLERGY_PASTORAL_ROLES) :
+        # il doit voir les catégories réservées, comme un prêtre.
+        Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        religieux = _make_user("religieux-tv@test.com", pastoral_role="religieux")
+        self.client.force_authenticate(user=religieux)
+
+        response = self.client.get(reverse("api:tv:tv-category-list"))
+
+        self.assertIn("formation", [c["slug"] for c in response.data["results"]])
+
+    def test_clergy_only_video_not_reachable_by_id_for_fidele(self):
+        # Cloisonnement clergé : la liste filtrait, PAS la route de détail — une
+        # vidéo « Formation » restait lisible en devinant son id.
+        clergy_cat = Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        clergy_video = Video.objects.create(
+            title="Formation prêtres",
+            youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            category=clergy_cat,
+        )
+        url = reverse("api:tv:tv-video-detail", args=[clergy_video.id])
+
+        anonymous = self.client.get(url)
+        self.client.force_authenticate(user=_make_user("fidele-tv@test.com"))
+        fidele = self.client.get(url)
+
+        self.assertEqual(anonymous.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(fidele.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_clergy_only_video_reachable_by_id_for_clergy(self):
+        clergy_cat = Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        clergy_video = Video.objects.create(
+            title="Formation prêtres",
+            youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            category=clergy_cat,
+        )
+        self.client.force_authenticate(user=_make_user("pretre-detail@test.com", pastoral_role="pretre"))
+
+        response = self.client.get(reverse("api:tv:tv-video-detail", args=[clergy_video.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["title"], "Formation prêtres")
+
+    def test_clergy_only_category_not_reachable_by_slug_for_fidele(self):
+        Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        url = reverse("api:tv:tv-category-detail", args=["formation"])
+
+        anonymous = self.client.get(url)
+
+        self.assertEqual(anonymous.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_super_admin_can_still_manage_clergy_only_category(self):
+        # Le filtre de lecture ne doit pas enfermer le Super Admin hors de la
+        # catégorie réservée (il n'a pas de pastoral_role).
+        Category.objects.create(name="Formation", slug="formation", order=2, is_clergy_only=True)
+        self.client.force_authenticate(user=self.admin)
+        url = reverse("api:tv:tv-category-detail", args=["formation"])
+
+        renamed = self.client.patch(url, {"name": "Formation continue"}, format="json")
+        removed = self.client.delete(url)
+
+        self.assertEqual(renamed.status_code, status.HTTP_200_OK)
+        self.assertEqual(removed.status_code, status.HTTP_204_NO_CONTENT)

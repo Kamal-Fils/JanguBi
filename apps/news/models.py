@@ -204,3 +204,72 @@ class Article(BaseModel):
 
     def __str__(self) -> str:
         return f"[{self.get_scope_type_display()}] {self.title} ({self.get_status_display()})"
+
+
+class ArticleReaction(BaseModel):
+    """Réaction communautaire d'un fidèle à un article (SRS : prier / amen / participer).
+
+    Le seul geste communautaire du module Actualités : un fidèle qui lit une
+    annonce paroissiale peut manifester qu'il prie, qu'il adhère, ou qu'il sera
+    présent.
+
+    UNICITÉ (article, user, reaction_type) garantie **en base** et pas seulement
+    dans le service : sans la contrainte, un double-clic ou un rejeu réseau
+    insère deux lignes et le compteur ment définitivement. Le service passe par
+    ``get_or_create``, qui s'appuie sur cette contrainte pour rester idempotent
+    même quand deux requêtes concurrentes arrivent en même temps.
+
+    Les trois types sont indépendants : « je prie » et « je participe » peuvent
+    coexister pour un même fidèle sur un même article — d'où le ``reaction_type``
+    DANS la clé d'unicité, et non une réaction unique par article.
+    """
+
+    class ReactionType(models.TextChoices):
+        PRAY = "pray", _("Je prie")
+        AMEN = "amen", _("Amen")
+        ATTEND = "attend", _("Je participe")
+
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.CASCADE,
+        related_name="reactions",
+        verbose_name=_("Article"),
+    )
+    user = models.ForeignKey(
+        BaseUser,
+        on_delete=models.CASCADE,
+        related_name="article_reactions",
+        verbose_name=_("Utilisateur"),
+    )
+    reaction_type = models.CharField(
+        max_length=20,
+        choices=ReactionType.choices,
+        db_index=True,
+        verbose_name=_("Type de réaction"),
+    )
+
+    class Meta:
+        verbose_name = _("Réaction à un article")
+        verbose_name_plural = _("Réactions aux articles")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["article", "user", "reaction_type"],
+                name="unique_article_reaction_per_user_and_type",
+            ),
+        ]
+        indexes = [
+            # Sert les compteurs par type (sous-requête agrégée du fil).
+            models.Index(
+                fields=["article", "reaction_type"],
+                name="article_reaction_count_idx",
+            ),
+            # Sert l'état « ai-je réagi ? » de l'utilisateur courant (EXISTS).
+            models.Index(
+                fields=["user", "article"],
+                name="article_reaction_mine_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} → {self.get_reaction_type_display()} sur {self.article_id}"

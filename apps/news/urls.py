@@ -10,6 +10,11 @@ urlpatterns = [
     path("my-parish/", apis.ArticleMyParishListApi.as_view(), name="my-parish-list"),
     path("parish/<int:parish_id>/", apis.ArticleParishListApi.as_view(), name="parish-list"),
     path("diocese/<int:diocese_id>/", apis.ArticleDioceseListApi.as_view(), name="diocese-list"),
+    path(
+        "<uuid:article_id>/reactions/",
+        apis.ArticleReactionSetApi.as_view(),
+        name="reaction-set",
+    ),
     path("<uuid:article_id>/", apis.ArticleDetailApi.as_view(), name="detail"),
 
     # Administration

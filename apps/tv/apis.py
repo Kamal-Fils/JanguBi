@@ -18,8 +18,7 @@ from apps.tv.services import (
     video_delete,
     video_update,
 )
-
-CLERGY_ROLES = {"diacre", "pretre", "eveque", "archeveque", "religieux"}
+from apps.users.enums import CLERGY_PASTORAL_ROLES
 
 
 def _error(exc: ApplicationError) -> Response:
@@ -27,7 +26,12 @@ def _error(exc: ApplicationError) -> Response:
 
 
 def _is_clergy(user) -> bool:
-    return getattr(user, "pastoral_role", None) in CLERGY_ROLES
+    """Accès au catalogue réservé (catégorie « Formation »).
+
+    L'ensemble de référence est ``CLERGY_PASTORAL_ROLES`` (apps.users.enums) : une
+    liste de chaînes recopiée ici dériverait au premier rôle pastoral ajouté.
+    """
+    return getattr(user, "pastoral_role", None) in CLERGY_PASTORAL_ROLES
 
 
 class CategoryListApi(APIView):
@@ -84,7 +88,10 @@ class CategoryDetailApi(APIView):
         responses={200: CategorySerializer, 404: OpenApiResponse(description="Not found")},
     )
     def get(self, request, slug):
-        category = category_get_by_slug(slug=slug)
+        # Lecture publique : une catégorie réservée au clergé n'est pas révélée à
+        # un fidèle, même en visant son slug directement (cf. category_list).
+        clergy = _is_clergy(request.user) if request.user.is_authenticated else False
+        category = category_get_by_slug(slug=slug, include_clergy_only=clergy)
         if not category:
             return Response({"error": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(CategorySerializer(category).data)
@@ -200,7 +207,10 @@ class VideoDetailApi(APIView):
         responses={200: VideoListSerializer, 404: OpenApiResponse(description="Not found")},
     )
     def get(self, request, video_id):
-        video = video_get_by_id(video_id=video_id)
+        # Même cloisonnement que la liste : sans ce filtre, une vidéo « Formation »
+        # (clergé) restait atteignable en devinant son id.
+        clergy = _is_clergy(request.user) if request.user.is_authenticated else False
+        video = video_get_by_id(video_id=video_id, include_clergy_only=clergy)
         if not video:
             return Response({"error": "Video not found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(VideoListSerializer(video).data)

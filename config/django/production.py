@@ -1,3 +1,5 @@
+from django.core.exceptions import ImproperlyConfigured
+
 from config.env import env
 
 from .base import *  # noqa
@@ -5,6 +7,34 @@ from .base import *  # noqa
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 
 SECRET_KEY = env("SECRET_KEY")
+
+# Chiffrement des conversations pastorales (apps/messaging/fields.py).
+#
+# En base, ce réglage retombe silencieusement sur SECRET_KEY faute de mieux.
+# C'est acceptable en développement, mais dangereux en production : SECRET_KEY
+# est un secret que l'on ROTE (fuite, départ d'un prestataire, hygiène). Le
+# jour où on la roterait, toute la messagerie chiffrée deviendrait illisible —
+# de façon définitive et silencieuse, sans erreur au démarrage, jusqu'à ce
+# qu'un fidèle ouvre une conversation.
+#
+# On refuse donc de démarrer en production sans clé dédiée, et on refuse
+# qu'elle soit égale à SECRET_KEY : mieux vaut un déploiement qui échoue tout
+# de suite qu'un historique pastoral perdu plus tard.
+MESSAGING_ENCRYPTION_KEY = env.str("MESSAGING_ENCRYPTION_KEY", default="")
+
+if not MESSAGING_ENCRYPTION_KEY:
+    raise ImproperlyConfigured(
+        "MESSAGING_ENCRYPTION_KEY est obligatoire en production. Sans clé dédiée, "
+        "les conversations sont chiffrées avec SECRET_KEY : toute rotation de "
+        "celle-ci rendrait l'historique définitivement illisible. "
+        "Générer : python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+
+if MESSAGING_ENCRYPTION_KEY == SECRET_KEY:
+    raise ImproperlyConfigured(
+        "MESSAGING_ENCRYPTION_KEY doit être DIFFÉRENTE de SECRET_KEY : la première "
+        "ne doit jamais être rotée, la seconde doit pouvoir l'être."
+    )
 
 # En production, les statiques sont servis par WhiteNoise avec MANIFEST
 # (cache-busting via noms hashés) + compression gzip/brotli. Le collectstatic
@@ -39,6 +69,28 @@ WS_ALLOWED_ORIGINS = env.list(
 )
 
 SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=True)
+# Le cookie CSRF doit lui aussi être réservé à HTTPS : sans ce réglage il partait
+# en clair, ce qui annule l'intérêt d'un cookie de session sécurisé.
+CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=True)
+
+# Anti-clickjacking : l'API sert aussi l'admin Django et les pages d'erreur.
+X_FRAME_OPTIONS = "DENY"
+# Ne pas fuiter le chemin complet (qui peut contenir un identifiant de demande)
+# vers un site tiers quand un utilisateur suit un lien sortant.
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+
+# HSTS — impose HTTPS côté NAVIGATEUR, en plus de SECURE_SSL_REDIRECT côté serveur.
+# Différence importante : la redirection serveur se désactive instantanément, alors
+# qu'un en-tête HSTS reste mémorisé par le navigateur pendant toute sa durée. Une
+# valeur longue posée trop tôt rend le domaine inaccessible en HTTP pour cette durée
+# si le certificat casse.
+# D'où la rampe : 1 heure par défaut, sans risque. Une fois TLS confirmé stable en
+# production, passer SECURE_HSTS_SECONDS à 31536000 (1 an) dans l'environnement.
+# `includeSubDomains` et `preload` restent opt-in : ils engagent TOUS les
+# sous-domaines, y compris ceux qui ne sont pas encore en HTTPS.
+SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=3600)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False)
+SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)
 
 # https://docs.djangoproject.com/en/dev/ref/settings/#secure-proxy-ssl-header
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

@@ -6,6 +6,8 @@ from apps.bible.apis import (
     LectioDivinaSessionApi,
     ReadingPlanDetailApi,
     ReadingPlanListCreateApi,
+    ReadingPlanSubscribeApi,
+    ReadingPlanUnsubscribeApi,
 )
 from apps.bible.views import (
     BookDetailApi,
@@ -46,4 +48,6 @@ urlpatterns = [
     path("reading-plans/", ReadingPlanListCreateApi.as_view(), name="reading-plan-list-create"),
     path("reading-plans/<int:plan_id>/", ReadingPlanDetailApi.as_view(), name="reading-plan-detail"),
     path("reading-plans/<int:plan_id>/publish/", ReadingPlanDetailApi.as_view(), name="reading-plan-publish"),
+    path("reading-plans/<int:plan_id>/subscribe/", ReadingPlanSubscribeApi.as_view(), name="reading-plan-subscribe"),
+    path("reading-plans/<int:plan_id>/unsubscribe/", ReadingPlanUnsubscribeApi.as_view(), name="reading-plan-unsubscribe"),
 ]

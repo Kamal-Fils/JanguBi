@@ -15,19 +15,32 @@ _DEFAULT_CATEGORIES = [
 
 
 @transaction.atomic
-def category_create(*, name: str, order: int = 0) -> Category:
-    category = Category(name=name, slug=slugify(name), order=order)
+def category_create(*, name: str, order: int = 0, is_clergy_only: bool = False) -> Category:
+    category = Category(
+        name=name,
+        slug=slugify(name),
+        order=order,
+        is_clergy_only=is_clergy_only,
+    )
     category.full_clean()
     category.save()
     return category
 
 
 @transaction.atomic
-def category_update(*, category: Category, name: str | None = None, order: int | None = None) -> Category:
+def category_update(
+    *,
+    category: Category,
+    name: str | None = None,
+    order: int | None = None,
+    is_clergy_only: bool | None = None,
+) -> Category:
     if name is not None:
         category.name = name
     if order is not None:
         category.order = order
+    if is_clergy_only is not None:
+        category.is_clergy_only = is_clergy_only
     category.full_clean()
     category.save()
     return category
