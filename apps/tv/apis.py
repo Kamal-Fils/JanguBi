@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 
 from apps.api.pagination import LimitOffsetPagination, get_paginated_response
 from apps.core.exceptions import ApplicationError
-from apps.tv.permissions import IsAdminOrReadOnly
+from apps.tv.permissions import IsSuperAdminOrReadOnly
 from apps.tv.selectors import category_get_by_slug, category_list, video_get_by_id, video_list
 from apps.tv.serializers import CategorySerializer, VideoCreateUpdateSerializer, VideoListSerializer
 from apps.tv.services import (
@@ -33,8 +33,8 @@ def _is_clergy(user) -> bool:
 class CategoryListApi(APIView):
     def get_permissions(self):
         if self.request.method in ("POST",):
-            return [IsAuthenticated(), IsAdminOrReadOnly()]
-        return [IsAdminOrReadOnly()]
+            return [IsAuthenticated(), IsSuperAdminOrReadOnly()]
+        return [IsSuperAdminOrReadOnly()]
 
     @extend_schema(
         tags=["TV"],
@@ -75,8 +75,8 @@ class CategoryListApi(APIView):
 class CategoryDetailApi(APIView):
     def get_permissions(self):
         if self.request.method in ("PUT", "PATCH", "DELETE"):
-            return [IsAuthenticated(), IsAdminOrReadOnly()]
-        return [IsAdminOrReadOnly()]
+            return [IsAuthenticated(), IsSuperAdminOrReadOnly()]
+        return [IsSuperAdminOrReadOnly()]
 
     @extend_schema(
         tags=["TV"],
@@ -141,8 +141,8 @@ class CategoryDetailApi(APIView):
 class VideoListApi(APIView):
     def get_permissions(self):
         if self.request.method in ("POST",):
-            return [IsAuthenticated(), IsAdminOrReadOnly()]
-        return [IsAdminOrReadOnly()]
+            return [IsAuthenticated(), IsSuperAdminOrReadOnly()]
+        return [IsSuperAdminOrReadOnly()]
 
     @extend_schema(
         tags=["TV"],
@@ -191,8 +191,8 @@ class VideoListApi(APIView):
 class VideoDetailApi(APIView):
     def get_permissions(self):
         if self.request.method in ("PUT", "PATCH", "DELETE"):
-            return [IsAuthenticated(), IsAdminOrReadOnly()]
-        return [IsAdminOrReadOnly()]
+            return [IsAuthenticated(), IsSuperAdminOrReadOnly()]
+        return [IsSuperAdminOrReadOnly()]
 
     @extend_schema(
         tags=["TV"],

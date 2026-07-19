@@ -17,6 +17,14 @@ _CLERGY_PASTORAL_ROLES = {
     PastoralRole.ARCHEVEQUE,
 }
 
+# Administration de niveau diocèse et au-dessus. Strictement plus restrictif que
+# ``IsAnyAdmin`` : exclut parish_admin / church_admin (curé, diacre, vicaire).
+_DIOCESE_AND_ABOVE_ROLES = {
+    UserRole.SUPER_ADMIN,
+    UserRole.PROVINCE_ADMIN,
+    UserRole.DIOCESE_ADMIN,
+}
+
 
 class IsSuperAdmin(BasePermission):
     """Réservé au rôle super_admin uniquement."""
@@ -43,6 +51,29 @@ class IsAnyAdmin(BasePermission):
         from apps.users.scoping import is_any_admin
 
         return is_any_admin(request.user)
+
+
+class IsDioceseAdminOrAbove(BasePermission):
+    """Réservé aux administrateurs de niveau diocèse et au-dessus.
+
+    Autorise ``role ∈ {super_admin, province_admin, diocese_admin}`` — par
+    ``user.role`` OU par une ``RoleAssignment`` active de ce niveau (source de
+    vérité, comme ``IsAnyAdmin``). Exclut explicitement parish_admin et
+    church_admin : la gestion des comptes utilisateurs (liste, activation,
+    suppression soft, journaux d'audit) n'est pas une compétence paroissiale.
+    """
+
+    message = "Accès réservé aux administrateurs de diocèse et au-dessus."
+
+    def has_permission(self, request, view) -> bool:
+        from apps.users.scoping import active_role_assignments
+
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.role in _DIOCESE_AND_ABOVE_ROLES:
+            return True
+        return active_role_assignments(user).filter(role__in=_DIOCESE_AND_ABOVE_ROLES).exists()
 
 
 class IsFidele(BasePermission):

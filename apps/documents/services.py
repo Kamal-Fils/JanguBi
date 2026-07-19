@@ -3,13 +3,40 @@ from datetime import date
 from django.db import transaction
 
 from apps.core.exceptions import ApplicationError
+from apps.documents.constants import allowed_reasons_for, is_reason_allowed
 from apps.documents.models import (
     DocumentRequest,
     DocumentRequestAttachment,
     DocumentRequestStatusLog,
     InternalNote,
 )
+from apps.users.enums import PastoralRole
 from apps.users.models import BaseUser
+
+# Hiérarchie pastorale de signature (permissions-matrix.md — §Documents).
+# La validation (Niv.2) ET le dépôt du document final sont des actes de SIGNATURE
+# réservés au clergé prêtre et au-dessus. Un diacre ou un administrateur digital
+# non-clergé (pastoral_role absent, ex. un parish_admin laïc) NE PEUT PAS signer,
+# même s'il franchit le gate view-level IsAnyAdmin et l'autorité territoriale.
+_SIGNATORY_ROLES = {
+    PastoralRole.PRETRE,
+    PastoralRole.EVEQUE,
+    PastoralRole.ARCHEVEQUE,
+}
+
+# Niv.3 — autorité épiscopale. Documents diocésains réservés à l'évêque et au-dessus.
+_BISHOP_ROLES = {
+    PastoralRole.EVEQUE,
+    PastoralRole.ARCHEVEQUE,
+}
+
+# Types de documents diocésains / épiscopaux (Niv.3 — SRS « ordinations_cert »).
+# La confirmation est le sacrement conféré par l'évêque : son attestation relève de
+# l'autorité épiscopale. Les certificats d'ordination rejoindront ce set dès que le
+# type de document existera dans le modèle.
+_DIOCESAN_DOCUMENT_TYPES = {
+    DocumentRequest.DocumentType.CONFIRMATION,
+}
 
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     DocumentRequest.Status.SUBMITTED: {DocumentRequest.Status.UNDER_VERIFICATION},
@@ -44,6 +71,43 @@ def _generate_reference() -> str:
     return f"DOC-{date_str}-{suffix}"
 
 
+def _validate_free_text_precisions(
+    *, document_type: str, document_type_free: str, reason: str, reason_free: str
+) -> None:
+    """« Autre » n'est un choix valide qu'accompagné de sa précision libre.
+
+    Sans cette garde, une demande « Autre document / Autre motif » arriverait à la
+    paroisse sans dire de quoi il s'agit — donc impossible à traiter.
+    """
+    if document_type == DocumentRequest.DocumentType.OTHER and not document_type_free.strip():
+        raise ApplicationError(
+            "Veuillez préciser le document demandé lorsque vous choisissez « Autre document »."
+        )
+    if reason == DocumentRequest.RequestReason.OTHER and not reason_free.strip():
+        raise ApplicationError(
+            "Veuillez préciser le motif de votre demande lorsque vous choisissez « Autre »."
+        )
+
+
+def _validate_reason_matches_document_type(*, document_type: str, reason: str) -> None:
+    """Cohérence pastorale type ↔ motif (apps.documents.constants).
+
+    Contrôle SERVEUR : le filtrage du formulaire n'est qu'un confort d'usage et
+    reste contournable (appel direct à l'API).
+    """
+    if is_reason_allowed(document_type=document_type, reason=reason):
+        return
+
+    labels = dict(DocumentRequest.RequestReason.choices)
+    permitted = ", ".join(
+        str(labels[value]) for value in allowed_reasons_for(document_type) if value in labels
+    )
+    raise ApplicationError(
+        f"Le motif « {labels.get(reason, reason)} » ne correspond pas au document demandé. "
+        f"Motifs possibles : {permitted}."
+    )
+
+
 def _validate_document_details(document_type: str, details: dict) -> None:
     required = _REQUIRED_DETAILS.get(document_type, [])
     missing = [f for f in required if not details.get(f)]
@@ -59,6 +123,30 @@ def _check_status_transition(current: str, target: str) -> None:
         raise ApplicationError(
             f"Transition invalide : {current} → {target}. "
             f"Transitions autorisées : {', '.join(allowed) or 'aucune'}"
+        )
+
+
+def _check_signing_authority(*, agent: BaseUser, document_type: str) -> None:
+    """Garde pastorale des actes de signature (validate / deposit).
+
+    La signature d'une demande est un acte pastoral réservé au clergé : prêtre et
+    au-dessus pour les documents courants, évêque et au-dessus pour les documents
+    diocésains. Lève ``ApplicationError`` (→ HTTP 400) pour tout autre acteur, y
+    compris un diacre, un administrateur digital non-clergé ou un super-admin
+    (``pastoral_role`` absent).
+    """
+    role = getattr(agent, "pastoral_role", None)
+    if document_type in _DIOCESAN_DOCUMENT_TYPES:
+        if role not in _BISHOP_ROLES:
+            raise ApplicationError(
+                "Acte réservé à l'autorité épiscopale : ce document diocésain ne peut "
+                "être signé que par un évêque ou un archevêque."
+            )
+        return
+    if role not in _SIGNATORY_ROLES:
+        raise ApplicationError(
+            "Acte de signature réservé au clergé : seul un prêtre (ou un rang "
+            "supérieur) peut valider et déposer une demande de document."
         )
 
 
@@ -196,7 +284,18 @@ def _attach_file(
 @transaction.atomic
 def document_request_create(*, requester: BaseUser, data: dict) -> DocumentRequest:
     document_type = data["document_type"]
+    document_type_free = data.get("document_type_free", "") or ""
+    reason = data["reason"]
+    reason_free = data.get("reason_free", "") or ""
     document_details = data.get("document_details", {})
+
+    _validate_free_text_precisions(
+        document_type=document_type,
+        document_type_free=document_type_free,
+        reason=reason,
+        reason_free=reason_free,
+    )
+    _validate_reason_matches_document_type(document_type=document_type, reason=reason)
     _validate_document_details(document_type, document_details)
 
     attachment_file_id = data.get("attachment_file_id")
@@ -225,8 +324,18 @@ def document_request_create(*, requester: BaseUser, data: dict) -> DocumentReque
         reference=_generate_reference(),
         requester=requester,
         document_type=document_type,
-        reason=data["reason"],
-        reason_free=data.get("reason_free", ""),
+        # Les précisions ne sont conservées que si « Autre » est bien le choix
+        # retenu : un texte laissé par un aller-retour du formulaire ne doit pas
+        # se retrouver stocké à côté d'un type/motif normalisé qui le contredit.
+        document_type_free=(
+            document_type_free.strip()
+            if document_type == DocumentRequest.DocumentType.OTHER
+            else ""
+        ),
+        reason=reason,
+        reason_free=(
+            reason_free.strip() if reason == DocumentRequest.RequestReason.OTHER else ""
+        ),
         requester_last_name=data["requester_last_name"],
         requester_first_names=data["requester_first_names"],
         date_of_birth=data["date_of_birth"],
@@ -348,6 +457,7 @@ def document_request_request_info(
 def document_request_validate(
     *, request_obj: DocumentRequest, agent: BaseUser
 ) -> DocumentRequest:
+    _check_signing_authority(agent=agent, document_type=request_obj.document_type)
     _check_status_transition(request_obj.status, DocumentRequest.Status.VALIDATED)
 
     prev_status = request_obj.status
@@ -400,6 +510,7 @@ def document_request_deposit_document(
     file_id: int,
     label: str = "Document officiel",
 ) -> DocumentRequest:
+    _check_signing_authority(agent=agent, document_type=request_obj.document_type)
     _check_status_transition(request_obj.status, DocumentRequest.Status.DOCUMENT_DEPOSITED)
 
     _attach_file(

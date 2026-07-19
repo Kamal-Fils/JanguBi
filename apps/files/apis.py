@@ -53,7 +53,9 @@ class FileDirectUploadLocalApi(ApiAuthMixin, APIView):
         summary="Upload local pour le mode direct (dev uniquement)",
     )
     def post(self, request, file_id):
-        file = get_object_or_404(File, id=file_id)
+        # Ownership: on ne peut finaliser/téléverser que SON propre fichier
+        # (créé via /start/). Le filtre uploaded_by évite l'IDOR (404 sinon).
+        file = get_object_or_404(File, id=file_id, uploaded_by=request.user)
 
         file_obj = request.FILES["file"]
 
@@ -79,7 +81,9 @@ class FileDirectUploadFinishApi(ApiAuthMixin, APIView):
 
         file_id = serializer.validated_data["file_id"]
 
-        file = get_object_or_404(File, id=file_id)
+        # Ownership: seul le propriétaire (créateur via /start/) peut finaliser
+        # son upload. Le filtre uploaded_by ferme l'IDOR (404 si non-propriétaire).
+        file = get_object_or_404(File, id=file_id, uploaded_by=request.user)
 
         service = FileDirectUploadService(request.user)
         service.finish(file=file)

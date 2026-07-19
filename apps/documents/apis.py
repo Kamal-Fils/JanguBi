@@ -15,6 +15,7 @@ from apps.api.pagination import (
     paginated_response_serializer,
 )
 from apps.core.exceptions import ApplicationError
+from apps.documents.constants import allowed_reasons_for
 from apps.documents.models import DocumentRequest
 from apps.documents.permissions import IsDocumentRequester, IsDocumentRequesterOrAdmin
 from apps.documents.selectors import (
@@ -30,6 +31,7 @@ from apps.documents.serializers import (
     DocumentRequestCreateInputSerializer,
     DocumentRequestDetailOutputSerializer,
     DocumentRequestListOutputSerializer,
+    DocumentRequestOptionsOutputSerializer,
     DocumentRequestStatusCountsOutputSerializer,
     DocumentRequestSupplementInputSerializer,
     InternalNoteCreateInputSerializer,
@@ -118,6 +120,40 @@ class DocumentRequestListCreateApi(ApiAuthMixin, APIView):
             DocumentRequestDetailOutputSerializer(req).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class DocumentRequestOptionsApi(ApiAuthMixin, APIView):
+    """Référentiel du formulaire : types, motifs, et la règle qui les relie.
+
+    Le frontend consomme cette réponse plutôt que de redéclarer la table en dur —
+    une copie côté client finirait par diverger de la règle appliquée au serveur.
+    """
+
+    def get_permissions(self):
+        return [IsAuthenticated()]
+
+    @extend_schema(
+        responses={200: DocumentRequestOptionsOutputSerializer},
+        tags=["documents"],
+        summary="Options du formulaire de demande (types, motifs, compatibilités)",
+    )
+    def get(self, request):
+        reason_labels = dict(DocumentRequest.RequestReason.choices)
+        payload = {
+            "document_types": [
+                {
+                    "value": value,
+                    "label": str(label),
+                    "requires_precision": value == DocumentRequest.DocumentType.OTHER,
+                    "allowed_reasons": list(allowed_reasons_for(value)),
+                }
+                for value, label in DocumentRequest.DocumentType.choices
+            ],
+            "reasons": [
+                {"value": value, "label": str(label)} for value, label in reason_labels.items()
+            ],
+        }
+        return Response(DocumentRequestOptionsOutputSerializer(payload).data)
 
 
 class DocumentRequestDetailApi(ApiAuthMixin, APIView):

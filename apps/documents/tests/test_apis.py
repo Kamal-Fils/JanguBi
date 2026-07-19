@@ -74,6 +74,17 @@ def admin_client():
 
 
 @pytest.fixture
+def priest_admin_client():
+    # Admin GLOBAL + clergé prêtre : franchit IsAnyAdmin, le scope territorial ET le
+    # gate pastoral de signature (validate/deposit — Niv.2).
+    client = APIClient()
+    user = AdminUserFactory(pastoral_role=PastoralRole.PRETRE)
+    client.force_authenticate(user=user)
+    client._user = user
+    return client
+
+
+@pytest.fixture
 def anon_client():
     return APIClient()
 
@@ -164,6 +175,121 @@ def test_document_request_create_returns_201(fidele_client):
     assert response.data["status"] == DocumentRequest.Status.SUBMITTED
     assert response.data["document_type"] == "baptism"
     assert "reference" in response.data
+
+
+@pytest.mark.django_db
+def test_incoherent_reason_for_document_type_returns_400(fidele_client):
+    """Le filtrage du formulaire est contournable : le serveur tranche aussi."""
+    # Arrange — mariage religieux demandé « pour être parrain/marraine »
+    url = reverse("api:documents:document-request-list-create")
+    payload = {
+        **VALID_CREATE_PAYLOAD,
+        "parish_id": ParishFactory().id,
+        "document_type": "religious_marriage",
+        "reason": "godparent",
+        "document_details": {
+            "spouse_full_name_groom": "Jean Diop",
+            "spouse_full_name_bride": "Marie Faye",
+        },
+    }
+
+    # Act
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = fidele_client.post(url, payload, format="json")
+
+    # Assert
+    assert response.status_code == 400
+    assert "ne correspond pas au document" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_other_document_type_without_precision_returns_400(fidele_client):
+    # Arrange
+    url = reverse("api:documents:document-request-list-create")
+    payload = {**VALID_CREATE_PAYLOAD, "parish_id": ParishFactory().id, "document_type": "other"}
+
+    # Act
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = fidele_client.post(url, payload, format="json")
+
+    # Assert
+    assert response.status_code == 400
+    assert "préciser le document" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_other_document_type_with_precision_returns_201(fidele_client):
+    # Arrange
+    url = reverse("api:documents:document-request-list-create")
+    payload = {
+        **VALID_CREATE_PAYLOAD,
+        "parish_id": ParishFactory().id,
+        "document_type": "other",
+        "document_type_free": "Certificat de profession religieuse",
+    }
+
+    # Act
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = fidele_client.post(url, payload, format="json")
+
+    # Assert
+    assert response.status_code == 201
+    assert response.data["document_type"] == "other"
+    assert response.data["document_type_free"] == "Certificat de profession religieuse"
+
+
+# ---------------------------------------------------------------------------
+# DocumentRequestOptionsApi — référentiel du formulaire
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_document_request_options_returns_types_with_allowed_reasons(fidele_client):
+    # Arrange
+    url = reverse("api:documents:document-request-options")
+
+    # Act
+    response = fidele_client.get(url)
+
+    # Assert
+    assert response.status_code == 200
+    types = {t["value"]: t for t in response.data["document_types"]}
+    # Les six types, y compris « Autre document ».
+    assert set(types) == {
+        "baptism",
+        "first_communion",
+        "confirmation",
+        "religious_marriage",
+        "godparent",
+        "other",
+    }
+    # La règle exposée est bien celle appliquée à la création.
+    assert "godparent" not in types["religious_marriage"]["allowed_reasons"]
+    assert "godparent" in types["baptism"]["allowed_reasons"]
+    assert types["other"]["requires_precision"] is True
+    assert types["baptism"]["requires_precision"] is False
+    # « Autre » (motif) reste proposé partout — échappatoire.
+    assert all("other" in t["allowed_reasons"] for t in types.values())
+    assert {r["value"] for r in response.data["reasons"]} == {
+        "religious_marriage",
+        "godparent",
+        "catechism",
+        "parish_file",
+        "personal",
+        "other",
+    }
+
+
+@pytest.mark.django_db
+def test_document_request_options_requires_auth(anon_client):
+    # Arrange
+    url = reverse("api:documents:document-request-options")
+
+    # Act
+    response = anon_client.get(url)
+
+    # Assert
+    assert response.status_code == 401
 
 
 @pytest.mark.django_db
@@ -715,8 +841,8 @@ def test_admin_request_info_returns_400_on_invalid_transition(admin_client):
 
 
 @pytest.mark.django_db
-def test_admin_validate_returns_200(admin_client):
-    # Arrange
+def test_admin_validate_returns_200(priest_admin_client):
+    # Arrange — la signature (Niv.2) exige un agent prêtre.
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.UNDER_VERIFICATION)
     url = reverse(
         "api:documents:admin-document-validate", kwargs={"request_id": doc_request.id}
@@ -724,11 +850,28 @@ def test_admin_validate_returns_200(admin_client):
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):
-        response = admin_client.post(url)
+        response = priest_admin_client.post(url)
 
     # Assert
     assert response.status_code == 200
     assert response.data["status"] == DocumentRequest.Status.VALIDATED
+
+
+@pytest.mark.django_db
+def test_admin_validate_returns_400_for_lay_admin(admin_client):
+    # Un admin digital SANS pastoral_role (ici super_admin) ne peut PAS signer :
+    # la validation est un acte pastoral réservé au clergé prêtre+.
+    doc_request = DocumentRequestFactory(status=DocumentRequest.Status.UNDER_VERIFICATION)
+    url = reverse(
+        "api:documents:admin-document-validate", kwargs={"request_id": doc_request.id}
+    )
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        response = admin_client.post(url)
+
+    assert response.status_code == 400
+    doc_request.refresh_from_db()
+    assert doc_request.status == DocumentRequest.Status.UNDER_VERIFICATION
 
 
 @pytest.mark.django_db
@@ -763,8 +906,8 @@ def test_admin_validate_returns_403_for_fidele(fidele_client):
 
 
 @pytest.mark.django_db
-def test_admin_validate_returns_400_on_invalid_transition(admin_client):
-    # Arrange
+def test_admin_validate_returns_400_on_invalid_transition(priest_admin_client):
+    # Arrange — agent prêtre (franchit le gate pastoral) ; échec attendu = transition.
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.SUBMITTED)
     url = reverse(
         "api:documents:admin-document-validate", kwargs={"request_id": doc_request.id}
@@ -772,7 +915,7 @@ def test_admin_validate_returns_400_on_invalid_transition(admin_client):
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):
-        response = admin_client.post(url)
+        response = priest_admin_client.post(url)
 
     # Assert
     assert response.status_code == 400
@@ -861,15 +1004,15 @@ def test_admin_reject_returns_400_on_invalid_transition(admin_client):
 
 
 @pytest.mark.django_db
-def test_admin_deposit_returns_200(admin_client):
-    # Arrange
+def test_admin_deposit_returns_200(priest_admin_client):
+    # Arrange — le dépôt final (signature) exige un agent prêtre.
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.VALIDATED)
-    valid_file = ValidFileFactory(uploaded_by=admin_client._user)
+    valid_file = ValidFileFactory(uploaded_by=priest_admin_client._user)
     url = reverse("api:documents:admin-document-deposit", kwargs={"request_id": doc_request.id})
 
     # Act
     with patch("apps.documents.services.transaction.on_commit"):
-        response = admin_client.post(
+        response = priest_admin_client.post(
             url,
             {"file_id": str(valid_file.id), "label": "Certificat de baptême"},
             format="json",

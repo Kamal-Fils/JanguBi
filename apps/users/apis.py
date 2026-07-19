@@ -44,7 +44,7 @@ from apps.core.exceptions import (
     TokenInvalidError,
 )
 from apps.users.enums import UserRole
-from apps.users.permissions import IsAdminUser, IsStaffOrAdminUser
+from apps.users.permissions import IsAdminUser, IsDioceseAdminOrAbove, IsStaffOrAdminUser
 from apps.users.selectors import (
     audit_log_list,
     user_get,
@@ -532,7 +532,7 @@ class UserMeDeleteApi(ApiAuthMixin, APIView):
     },
 )
 class UserListApi(ApiAuthMixin, APIView):
-    permission_classes = [IsStaffOrAdminUser]
+    permission_classes = [IsDioceseAdminOrAbove]
 
     class Pagination(LimitOffsetPagination):
         default_limit = 20
@@ -652,7 +652,7 @@ class UserAdminCreateApi(ApiAuthMixin, APIView):
     summary="Activer ou désactiver un compte",
 )
 class UserToggleActiveApi(ApiAuthMixin, APIView):
-    permission_classes = [IsStaffOrAdminUser]
+    permission_classes = [IsDioceseAdminOrAbove]
 
     class InputSerializer(serializers.Serializer):
         is_active = serializers.BooleanField()
@@ -684,7 +684,7 @@ class UserToggleActiveApi(ApiAuthMixin, APIView):
     description="Désactive et anonymise le compte. Les commandes sont conservées.",
 )
 class UserSoftDeleteApi(ApiAuthMixin, APIView):
-    permission_classes = [IsStaffOrAdminUser]
+    permission_classes = [IsDioceseAdminOrAbove]
 
     def delete(self, request, user_id):
         user = user_get(user_id)
@@ -725,7 +725,7 @@ class UserHardDeleteApi(ApiAuthMixin, APIView):
     summary="Journal d'audit d'un utilisateur",
 )
 class UserAuditLogApi(ApiAuthMixin, APIView):
-    permission_classes = [IsStaffOrAdminUser]
+    permission_classes = [IsDioceseAdminOrAbove]
 
     class OutputSerializer(serializers.Serializer):
         event = serializers.CharField()
