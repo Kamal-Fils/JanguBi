@@ -4,6 +4,7 @@ from apps.documents.apis import (
     AdminDepositApi,
     AdminDocumentRequestDetailApi,
     AdminDocumentRequestListApi,
+    AdminDocumentRequestStatusCountsApi,
     AdminLogsApi,
     AdminNotesApi,
     AdminRejectApi,
@@ -22,6 +23,8 @@ urlpatterns = [
     path("requests/<uuid:request_id>/supplement/", DocumentRequestSupplementApi.as_view(), name="document-request-supplement"),
     # Admin back-office
     path("admin/requests/", AdminDocumentRequestListApi.as_view(), name="admin-document-request-list"),
+    # Littéral avant la route <uuid:request_id> — lisibilité, et ne peut pas être capturé par le convertisseur uuid.
+    path("admin/requests/counts/", AdminDocumentRequestStatusCountsApi.as_view(), name="admin-document-request-counts"),
     path("admin/requests/<uuid:request_id>/", AdminDocumentRequestDetailApi.as_view(), name="admin-document-request-detail"),
     path("admin/requests/<uuid:request_id>/start-verification/", AdminStartVerificationApi.as_view(), name="admin-document-start-verification"),
     path("admin/requests/<uuid:request_id>/request-info/", AdminRequestInfoApi.as_view(), name="admin-document-request-info"),

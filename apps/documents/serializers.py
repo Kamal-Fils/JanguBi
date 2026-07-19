@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.documents import sla
 from apps.documents.models import (
     DocumentRequest,
     DocumentRequestAttachment,
@@ -119,6 +120,14 @@ class DocumentRequestListOutputSerializer(_FkParishDisplayMixin, serializers.Mod
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     parish_name = serializers.SerializerMethodField()
     diocese = serializers.SerializerMethodField()
+    # Délais : calculés côté serveur (apps.documents.sla) pour que le client
+    # n'ait pas à dupliquer les seuils ni la façon de mesurer l'ancienneté.
+    sla_days = serializers.SerializerMethodField()
+    sla_threshold_days = serializers.SerializerMethodField()
+    is_escalated = serializers.SerializerMethodField()
+    # Document final déposé : exposé dès la liste pour que le coffre-fort n'ait
+    # pas à charger le détail de chaque demande juste pour obtenir ce lien.
+    final_document_url = serializers.SerializerMethodField()
 
     class Meta:
         model = DocumentRequest
@@ -138,7 +147,38 @@ class DocumentRequestListOutputSerializer(_FkParishDisplayMixin, serializers.Mod
             "target_parish",
             "created_at",
             "updated_at",
+            "sla_days",
+            "sla_threshold_days",
+            "is_escalated",
+            "final_document_url",
         ]
+
+    def get_sla_days(self, obj) -> int | None:
+        return sla.sla_days(obj)
+
+    def get_sla_threshold_days(self, obj) -> int | None:
+        return sla.sla_threshold_days(obj.status)
+
+    def get_is_escalated(self, obj) -> bool:
+        return sla.is_escalated(obj)
+
+    def get_final_document_url(self, obj) -> str | None:
+        # `obj.attachments` est préchargé par le selector : on filtre en Python
+        # pour ne pas relancer une requête par demande (N+1).
+        for attachment in obj.attachments.all():
+            if attachment.attachment_type != DocumentRequest.AttachmentType.PARISH_FINAL:
+                continue
+            if not attachment.file_id or not attachment.file.file:
+                continue
+            return attachment.file.url
+        return None
+
+
+class DocumentRequestStatusCountsOutputSerializer(serializers.Serializer):
+    """Comptages par statut sur le périmètre d'autorité du demandeur."""
+
+    counts = serializers.DictField(child=serializers.IntegerField())
+    total = serializers.IntegerField()
 
 
 class StatusLogOutputSerializer(serializers.ModelSerializer):
