@@ -18,6 +18,17 @@ def invitation_list(*, created_by: BaseUser | None = None, status: str | None = 
     return qs
 
 
+def invitation_get_for_creator(*, invitation_id: int, creator: BaseUser) -> ClergicalInvitation | None:
+    """Une invitation par ID, restreinte à son émetteur (``None`` si absente/étrangère).
+
+    Isole l'accès ORM hors de la couche API. Sémantique identique au
+    ``ClergicalInvitation.objects.get(pk=…, created_by=…)`` qu'elle remplace :
+    une invitation créée par quelqu'un d'autre est traitée comme introuvable
+    (pas de fuite d'existence).
+    """
+    return ClergicalInvitation.objects.filter(pk=invitation_id, created_by=creator).first()
+
+
 def invitation_get_by_token(*, token: str) -> ClergicalInvitation:
     from apps.core.exceptions import ApplicationError
 

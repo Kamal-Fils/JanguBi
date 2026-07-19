@@ -20,6 +20,12 @@ from .apis import (
     UserSoftDeleteApi,
     UserToggleActiveApi,
 )
+from .apis_clergy import (
+    ClergyAccountRejectApi,
+    ClergyAccountValidateApi,
+    ClergyDeclarationMeApi,
+    PendingClergyListApi,
+)
 from .apis_memberships import (
     MembershipMeDeleteApi,
     MembershipMeListCreateApi,
@@ -59,6 +65,14 @@ urlpatterns = [
     path("me/delete/", UserMeDeleteApi.as_view(), name="me-delete"),
 
     # Appartenances ecclésiales (multi-appartenance) — propriétaire uniquement
+    # Auto-déclaration de clergé — la voie par laquelle un compte entre en file
+    # d'attente (l'invitation, elle, naît déjà validée).
+    path(
+        "me/clergy-declaration/",
+        ClergyDeclarationMeApi.as_view(),
+        name="me-clergy-declaration",
+    ),
+
     path(
         "me/memberships/",
         MembershipMeListCreateApi.as_view(),
@@ -80,7 +94,26 @@ urlpatterns = [
     # -------------------------------------------------------------------------
     path("", UserListApi.as_view(), name="list"),
     path("admin/create/", UserAdminCreateApi.as_view(), name="admin-create"),
+
+    # Chaîne de validation des comptes clergé (auto-déclaration).
+    # Le littéral doit précéder <uuid:user_id>/ pour ne pas être capturé par lui.
+    path(
+        "pending-validation/",
+        PendingClergyListApi.as_view(),
+        name="clergy-pending-validation",
+    ),
+
     path("<uuid:user_id>/", UserDetailApi.as_view(), name="detail"),
+    path(
+        "<uuid:user_id>/validate-account/",
+        ClergyAccountValidateApi.as_view(),
+        name="clergy-validate-account",
+    ),
+    path(
+        "<uuid:user_id>/reject-account/",
+        ClergyAccountRejectApi.as_view(),
+        name="clergy-reject-account",
+    ),
     path("<uuid:user_id>/toggle-active/", UserToggleActiveApi.as_view(), name="toggle-active"),
     path("<uuid:user_id>/delete/", UserSoftDeleteApi.as_view(), name="soft-delete"),
     path("<uuid:user_id>/hard-delete/", UserHardDeleteApi.as_view(), name="hard-delete"),

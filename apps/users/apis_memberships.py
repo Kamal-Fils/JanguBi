@@ -12,8 +12,12 @@ from rest_framework.views import APIView
 
 from apps.api.mixins import ApiAuthMixin
 from apps.core.exceptions import ApplicationError
-from apps.users.models import Membership
-from apps.users.selectors import membership_ref
+from apps.users.scoping import org_church_get
+from apps.users.selectors import (
+    membership_get,
+    membership_list_by_ids,
+    membership_ref,
+)
 from apps.users.serializers import MembershipMeSerializer
 from apps.users.services_memberships import (
     membership_create,
@@ -30,9 +34,7 @@ def _error(exc: ApplicationError) -> Response:
 def _get_own_membership_or_response(request, membership_id: int):
     """Renvoie (membership, None) si l'appelant en est propriétaire, sinon
     (None, Response) avec 404 (inexistante) ou 403 (appartient à un autre)."""
-    membership = Membership.objects.select_related("church__parish__diocese").filter(
-        pk=membership_id
-    ).first()
+    membership = membership_get(membership_id=membership_id)
     if membership is None:
         return None, Response(
             {"detail": "Appartenance introuvable."}, status=status.HTTP_404_NOT_FOUND
@@ -91,9 +93,7 @@ class MembershipMeListCreateApi(ApiAuthMixin, APIView):
                     user=request.user, church_ids=data["church_ids"]
                 )
             else:
-                from apps.org.models import Church
-
-                church = Church.objects.filter(pk=data["church_id"]).first()
+                church = org_church_get(church_id=data["church_id"])
                 if church is None:
                     raise ApplicationError(f"Église {data['church_id']} introuvable.")
                 created = [
@@ -108,12 +108,8 @@ class MembershipMeListCreateApi(ApiAuthMixin, APIView):
 
         # Les objets renvoyés par membership_create n'ont pas la chaîne territoriale
         # préchargée → on recharge en une requête pour éviter le N+1 dans membership_ref.
-        created = list(
-            Membership.objects.select_related("church__parish__diocese")
-            .filter(pk__in=[m.pk for m in created])
-            .order_by("-is_primary", "created_at")
-        )
-        payload = [membership_ref(m) for m in created]
+        reloaded = membership_list_by_ids(membership_ids=[m.pk for m in created])
+        payload = [membership_ref(m) for m in reloaded]
         return Response(
             MembershipMeSerializer(payload, many=True).data, status=status.HTTP_201_CREATED
         )

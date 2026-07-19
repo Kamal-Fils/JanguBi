@@ -3,6 +3,7 @@ import logging
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
 from django.db import models
+from django.utils import timezone
 from django.utils.text import slugify
 from pgvector.django import HnswIndex, VectorField
 
@@ -173,7 +174,13 @@ class HomilieNote(BaseModel):
 
 
 class LectioDivinaSession(BaseModel):
-    """Personal Lectio Divina session linked to a Bible verse."""
+    """Personal Lectio Divina session, optionnellement liée à un verset.
+
+    `passage` est NULLABLE : une Lectio faite sur la **lecture du jour** (parcours
+    depuis l'accueil Bible) n'est rattachée à aucun verset précis. Dans ce cas la
+    session est identifiée par le **jour** (`session_date`) — sinon un fidèle
+    écraserait sa Lectio de la veille, ou accumulerait une ligne par sauvegarde.
+    """
 
     user = models.ForeignKey(
         "users.BaseUser",
@@ -182,9 +189,12 @@ class LectioDivinaSession(BaseModel):
     )
     passage = models.ForeignKey(
         Verse,
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="lectio_sessions",
     )
+    session_date = models.DateField(default=timezone.localdate, db_index=True)
     lectio = models.TextField(blank=True)
     meditatio = models.TextField(blank=True)
     oratio = models.TextField(blank=True)
@@ -194,10 +204,27 @@ class LectioDivinaSession(BaseModel):
         ordering = ["-created_at"]
         verbose_name = "Session Lectio Divina"
         verbose_name_plural = "Sessions Lectio Divina"
-        unique_together = [["user", "passage"]]
+        constraints = [
+            # Session rattachée à un verset : une seule par (fidèle, verset).
+            models.UniqueConstraint(
+                fields=["user", "passage"],
+                condition=models.Q(passage__isnull=False),
+                name="uniq_lectio_user_passage",
+            ),
+            # Session « lecture du jour » : une seule par (fidèle, jour).
+            # Contrainte partielle obligatoire : en SQL, NULL != NULL, donc un
+            # unique_together classique n'empêcherait AUCUN doublon sans verset.
+            models.UniqueConstraint(
+                fields=["user", "session_date"],
+                condition=models.Q(passage__isnull=True),
+                name="uniq_lectio_user_day_without_passage",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return f"LectioDivina({self.user_id}, v{self.passage_id})"
+        if self.passage_id:
+            return f"LectioDivina({self.user_id}, v{self.passage_id})"
+        return f"LectioDivina({self.user_id}, {self.session_date})"
 
 
 class ReadingPlan(BaseModel):
@@ -219,6 +246,34 @@ class ReadingPlan(BaseModel):
 
     def __str__(self) -> str:
         return f"ReadingPlan({self.title})"
+
+
+class ReadingPlanSubscription(BaseModel):
+    """Inscription d'un fidèle à un parcours de lecture."""
+
+    user = models.ForeignKey(
+        "users.BaseUser",
+        on_delete=models.CASCADE,
+        related_name="reading_plan_subscriptions",
+    )
+    plan = models.ForeignKey(
+        ReadingPlan,
+        on_delete=models.CASCADE,
+        related_name="subscriptions",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Inscription à un parcours"
+        verbose_name_plural = "Inscriptions aux parcours"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "plan"], name="uniq_reading_plan_subscription"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"ReadingPlanSubscription(user={self.user_id}, plan={self.plan_id})"
 
 
 class ReadingPlanPassage(BaseModel):

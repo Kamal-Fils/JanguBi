@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.exceptions import ApplicationError
-from apps.users.enums import PastoralRole, RoleScope, UserRole
+from apps.users.enums import ClergyValidationStatus, PastoralRole, RoleScope, UserRole
 from apps.users.models import BaseUser
 from apps.users.services_roles import role_assignment_create
 
@@ -231,11 +231,21 @@ def invitation_accept(*, token: str, user: BaseUser) -> ClergicalInvitation:
 
     ra_kwargs, diocese_id = _resolve_capacity(invitation)
 
-    # Accepter une invitation clergé vérifie et active le compte.
+    # Accepter une invitation clergé vérifie et active le compte. L'invitation
+    # ÉMANE de l'autorité supérieure : l'accepter vaut validation hiérarchique,
+    # le compte naît donc APPROVED et ne rejoint jamais la file d'attente de
+    # validation (réservée aux auto-déclarations).
     user.pastoral_role = invitation.pastoral_role
+    user.clergy_validation_status = ClergyValidationStatus.APPROVED
     user.is_verified = True
     user.is_active = True
-    update_fields = ["pastoral_role", "is_verified", "is_active", "updated_at"]
+    update_fields = [
+        "pastoral_role",
+        "clergy_validation_status",
+        "is_verified",
+        "is_active",
+        "updated_at",
+    ]
     if diocese_id:
         from apps.org.models import Diocese
 

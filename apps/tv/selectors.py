@@ -10,12 +10,27 @@ def category_list(*, clergy_only: bool = False) -> QuerySet[Category]:
     return qs
 
 
-def category_get_by_slug(*, slug: str) -> Category | None:
-    return Category.objects.filter(slug=slug).first()
+def category_get_by_slug(*, slug: str, include_clergy_only: bool = True) -> Category | None:
+    """Une catégorie par slug.
+
+    ``include_clergy_only=False`` applique le même cloisonnement que la liste :
+    sans ce garde-fou, un accès direct par slug contournerait la restriction
+    clergé que ``category_list`` applique.
+    """
+    qs = Category.objects.filter(slug=slug)
+    if not include_clergy_only:
+        qs = qs.filter(is_clergy_only=False)
+    return qs.first()
 
 
-def video_get_by_id(*, video_id: int) -> Video | None:
-    return Video.objects.select_related("category").filter(id=video_id).first()
+def video_get_by_id(*, video_id: int, include_clergy_only: bool = True) -> Video | None:
+    """Une vidéo par id, avec le même cloisonnement clergé que ``video_list`` :
+    une vidéo de catégorie réservée ne doit pas être atteignable en devinant son
+    id depuis la route de détail."""
+    qs = Video.objects.select_related("category").filter(id=video_id)
+    if not include_clergy_only:
+        qs = qs.filter(category__is_clergy_only=False)
+    return qs.first()
 
 
 def video_list(

@@ -1,5 +1,5 @@
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_serializer
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,8 +12,23 @@ from apps.files.services import (
 )
 
 
+# Corps multipart des deux endpoints d'upload. Sans déclaration explicite,
+# drf-spectacular ne sait pas deviner le corps d'une vue qui lit `request.FILES`
+# et IGNORE la vue : elle disparaissait du schéma publié, donc du client
+# TypeScript généré — le front devait inventer son propre appel, sans garde.
+#
+# `component_name` explicite : plusieurs apps déclarent une classe imbriquée
+# nommée `InputSerializer`, et leurs composants entrent en collision dans le
+# schéma (le cas s'est déjà produit entre `apps/bible` et `apps/files`, avec un
+# corps de requête FAUX à l'arrivée).
+@extend_schema_serializer(component_name="FileUploadInput")
+class FileUploadInputSerializer(serializers.Serializer):
+    file = serializers.FileField(help_text="Fichier à téléverser (multipart/form-data).")
+
+
 class FileStandardUploadApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request={"multipart/form-data": FileUploadInputSerializer},
         responses={201: {"type": "object", "properties": {"id": {"type": "integer"}}}},
         tags=["files"],
         summary="Upload standard (multipart/form-data)",
@@ -48,6 +63,7 @@ class FileDirectUploadStartApi(ApiAuthMixin, APIView):
 
 class FileDirectUploadLocalApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request={"multipart/form-data": FileUploadInputSerializer},
         responses={200: {"type": "object", "properties": {"id": {"type": "integer"}}}},
         tags=["files"],
         summary="Upload local pour le mode direct (dev uniquement)",

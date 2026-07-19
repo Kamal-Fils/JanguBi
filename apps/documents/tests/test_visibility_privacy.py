@@ -11,8 +11,8 @@ orpheline), la paroisse principale du demandeur fait foi.
 from unittest.mock import patch
 
 import pytest
-from django.http import Http404
 
+from apps.documents.exceptions import DocumentRequestNotFoundError
 from apps.documents.models import DocumentRequest
 from apps.documents.selectors import document_request_get_for_admin, document_request_list
 from apps.documents.services import document_request_create
@@ -74,8 +74,8 @@ def test_document_request_to_C_not_visible_to_home_parish_curate():
     cure_a = _cure(parish_a, "cure_home_a@test.com")
     # LISTE : invisible au curé de la paroisse home.
     assert not _in_list(cure_a, req)
-    # DETAIL/ACTIONS : 404 pour le curé de la paroisse home.
-    with pytest.raises(Http404):
+    # DETAIL/ACTIONS : hors périmètre → exception DOMAINE (mappée en 404 par apis.py).
+    with pytest.raises(DocumentRequestNotFoundError):
         document_request_get_for_admin(request_id=req.id, user=cure_a)
 
 

@@ -11,10 +11,44 @@ class PastoralRole(models.TextChoices):
     ARCHEVEQUE = ("archeveque", _("Archevêque"))
 
 
+# Rôles pastoraux relevant du clergé / de la vie consacrée : ce sont les seuls
+# dont le compte passe par la chaîne de validation hiérarchique. Un FIDELE n'est
+# jamais concerné.
+CLERGY_PASTORAL_ROLES = frozenset({
+    PastoralRole.RELIGIEUX,
+    PastoralRole.DIACRE,
+    PastoralRole.PRETRE,
+    PastoralRole.EVEQUE,
+    PastoralRole.ARCHEVEQUE,
+})
+
+
 class UserOnboardingState(models.TextChoices):
     PENDING_EMAIL_VERIFICATION = ("pending_email",  _("Email à vérifier"))
     PENDING_PARISH_SELECTION   = ("pending_parish", _("Paroisse à sélectionner"))
     COMPLETED                  = ("completed",      _("Complété"))
+
+
+class ClergyValidationStatus(models.TextChoices):
+    """État de la validation hiérarchique d'un compte clergé.
+
+    Deux voies mènent à un compte clergé (SRS — chaîne de validation) :
+    - **Invitation** : l'autorité supérieure invite ; accepter le token VAUT
+      validation → le compte naît directement ``APPROVED``.
+    - **Auto-déclaration** : l'utilisateur se déclare clergé ; son compte reste
+      ``PENDING`` jusqu'à approbation/refus par son supérieur territorial.
+
+    ``NOT_APPLICABLE`` est l'état de tout compte laïc : il n'a jamais demandé de
+    capacité clergé et ne doit donc jamais apparaître dans la file d'attente.
+    Sans ce champ, rien ne distinguait « clergé en attente » de « clergé validé »
+    (``is_verified`` / ``is_active`` étant déjà consommés par la vérification
+    d'email), et l'écran de validation ne pouvait pas exister.
+    """
+
+    NOT_APPLICABLE = ("not_applicable", _("Sans objet (laïc)"))
+    PENDING        = ("pending",        _("En attente de validation"))
+    APPROVED       = ("approved",       _("Validé"))
+    REJECTED       = ("rejected",       _("Refusé"))
 
 
 class UserRole(models.TextChoices):
@@ -66,3 +100,6 @@ class AuditEvent(models.TextChoices):
     ACCOUNT_HARD_DELETED    = ("ACCOUNT_HARD_DELETED",    _("Compte supprimé (définitif)"))
     ADMIN_CREATED_ACCOUNT   = ("ADMIN_CREATED",           _("Compte créé par admin"))
     PROFILE_UPDATED         = ("PROFILE_UPDATED",         _("Profil mis à jour"))
+    CLERGY_DECLARATION_SUBMITTED = ("CLERGY_DECLARED",    _("Auto-déclaration clergé déposée"))
+    CLERGY_ACCOUNT_APPROVED = ("CLERGY_APPROVED",         _("Compte clergé validé"))
+    CLERGY_ACCOUNT_REJECTED = ("CLERGY_REJECTED",         _("Compte clergé refusé"))

@@ -30,7 +30,10 @@ class HomilieNoteOutputSerializer(serializers.Serializer):
 
 
 class LectioDivinaInputSerializer(serializers.Serializer):
-    passage_id = serializers.IntegerField()
+    # Optionnel : une Lectio sur la LECTURE DU JOUR n'est rattachée à aucun
+    # verset. `null` est la forme canonique ; `0` reste accepté (convention
+    # historique du client web) et vaut « pas de verset ».
+    passage_id = serializers.IntegerField(required=False, allow_null=True, default=None)
     lectio = serializers.CharField(allow_blank=True, default="")
     meditatio = serializers.CharField(allow_blank=True, default="")
     oratio = serializers.CharField(allow_blank=True, default="")
@@ -39,7 +42,8 @@ class LectioDivinaInputSerializer(serializers.Serializer):
 
 class LectioDivinaOutputSerializer(serializers.Serializer):
     id = serializers.IntegerField()
-    passage_id = serializers.IntegerField()
+    passage_id = serializers.IntegerField(allow_null=True)
+    session_date = serializers.DateField()
     lectio = serializers.CharField()
     meditatio = serializers.CharField()
     oratio = serializers.CharField()
@@ -57,10 +61,13 @@ class ReadingPlanOutputSerializer(serializers.Serializer):
     title = serializers.CharField()
     description = serializers.CharField()
     is_published = serializers.BooleanField()
+    # Annoté par le sélecteur (sous-requête EXISTS) — `default` couvre les
+    # instances non annotées renvoyées directement par un service.
+    is_subscribed = serializers.BooleanField(default=False)
     author_email = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField()
 
-    def get_author_email(self, obj):
+    def get_author_email(self, obj) -> str | None:
         return obj.author.email if obj.author_id else None
 
 
@@ -196,7 +203,7 @@ class ReadingPlanListCreateApi(ApiAuthMixin, APIView):
     def get(self, request):
         from apps.bible.selectors import reading_plan_list
 
-        plans = reading_plan_list(published_only=True)
+        plans = reading_plan_list(published_only=True, user=request.user)
         return get_paginated_response(
             pagination_class=LimitOffsetPagination,
             serializer_class=ReadingPlanOutputSerializer,
@@ -225,7 +232,7 @@ class ReadingPlanListCreateApi(ApiAuthMixin, APIView):
 
 class ReadingPlanDetailApi(ApiAuthMixin, APIView):
     @extend_schema(
-        responses={200: ReadingPlanOutputSerializer},
+        responses={200: ReadingPlanOutputSerializer, 400: None},
         tags=["Bible — Avancé"],
         summary="Détail d'un plan de lecture",
     )
@@ -233,24 +240,78 @@ class ReadingPlanDetailApi(ApiAuthMixin, APIView):
         from apps.bible.selectors import reading_plan_get
 
         try:
-            plan = reading_plan_get(plan_id=plan_id)
+            plan = reading_plan_get(plan_id=plan_id, user=request.user)
         except ApplicationError as e:
             return _error(e)
         return Response(ReadingPlanOutputSerializer(plan).data)
 
     @extend_schema(
         request=None,
-        responses={200: ReadingPlanOutputSerializer},
+        responses={200: ReadingPlanOutputSerializer, 400: None},
         tags=["Bible — Avancé"],
         summary="Publier un plan de lecture",
+        description=(
+            "Aucun corps de requête : publier est une simple bascule d'état, "
+            "réservée à l'auteur du parcours."
+        ),
     )
     def post(self, request, plan_id: int):
         from apps.bible.selectors import reading_plan_get
         from apps.bible.services.bible_advanced import reading_plan_publish
 
         try:
-            plan = reading_plan_get(plan_id=plan_id)
+            plan = reading_plan_get(plan_id=plan_id, user=request.user)
             plan = reading_plan_publish(plan=plan, user=request.user)
         except ApplicationError as e:
             return _error(e)
+        return Response(ReadingPlanOutputSerializer(plan).data)
+
+
+class ReadingPlanSubscribeApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        request=None,
+        responses={200: ReadingPlanOutputSerializer, 400: None},
+        tags=["Bible — Avancé"],
+        summary="S'inscrire à un parcours de lecture",
+        description=(
+            "Aucun corps de requête. Idempotent : une ré-inscription renvoie 200 "
+            "sans créer de doublon. Le parcours doit être publié."
+        ),
+    )
+    def post(self, request, plan_id: int):
+        from apps.bible.selectors import reading_plan_get
+        from apps.bible.services.bible_advanced import reading_plan_subscribe
+
+        try:
+            plan = reading_plan_get(plan_id=plan_id, user=request.user)
+            plan = reading_plan_subscribe(plan=plan, user=request.user)
+        except ApplicationError as e:
+            return _error(e)
+        # L'annotation date d'AVANT l'écriture : on reflète l'état post-inscription
+        # sans refaire un aller-retour DB.
+        plan.is_subscribed = True
+        return Response(ReadingPlanOutputSerializer(plan).data)
+
+
+class ReadingPlanUnsubscribeApi(ApiAuthMixin, APIView):
+    @extend_schema(
+        request=None,
+        responses={200: ReadingPlanOutputSerializer, 400: None},
+        tags=["Bible — Avancé"],
+        summary="Se désinscrire d'un parcours de lecture",
+        description=(
+            "Aucun corps de requête. Idempotent : se désinscrire d'un parcours "
+            "auquel on n'est pas inscrit renvoie 200."
+        ),
+    )
+    def post(self, request, plan_id: int):
+        from apps.bible.selectors import reading_plan_get
+        from apps.bible.services.bible_advanced import reading_plan_unsubscribe
+
+        try:
+            plan = reading_plan_get(plan_id=plan_id, user=request.user)
+            plan = reading_plan_unsubscribe(plan=plan, user=request.user)
+        except ApplicationError as e:
+            return _error(e)
+        plan.is_subscribed = False
         return Response(ReadingPlanOutputSerializer(plan).data)

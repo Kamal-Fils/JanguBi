@@ -34,6 +34,21 @@ class ReflectionOutputSerializer(serializers.ModelSerializer):
         return obj.author.email
 
 
+class ReflectionUpdateInputSerializer(serializers.Serializer):
+    """Édition partielle : tout est optionnel, seuls les champs fournis changent.
+    ``author`` et ``reflection_date`` sont volontairement absents — ils forment
+    l'identité de la réflexion (contrainte unique auteur+jour)."""
+
+    content = serializers.CharField(required=False)
+    title = serializers.CharField(required=False, allow_blank=True)
+    scope_type = serializers.ChoiceField(
+        choices=PastoralReflection.ScopeType.choices, required=False
+    )
+    scope_parish_id = serializers.IntegerField(required=False, allow_null=True)
+    scope_diocese_id = serializers.IntegerField(required=False, allow_null=True)
+    scope_church_id = serializers.IntegerField(required=False, allow_null=True)
+
+
 class ReflectionUpsertInputSerializer(serializers.Serializer):
     content = serializers.CharField()
     reflection_date = serializers.DateField(required=False)

@@ -6,7 +6,8 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from apps.core.exceptions import ApplicationError
-from apps.news.models import Article, ArticleCategory
+from apps.news.models import Article, ArticleCategory, ArticleReaction
+from apps.news.selectors import article_get_reactable, article_reaction_summary
 from apps.users.enums import PastoralRole, UserRole
 from apps.users.models import BaseUser
 
@@ -452,3 +453,48 @@ def article_delete(*, article: Article, editor: BaseUser) -> None:
 @transaction.atomic
 def article_increment_views(*, article: Article) -> None:
     Article.objects.filter(pk=article.pk).update(views_count=models.F("views_count") + 1)
+
+
+@transaction.atomic
+def article_reaction_set(
+    *,
+    article_id: str,
+    user: BaseUser,
+    reaction_type: str,
+    active: bool,
+) -> dict:
+    """Pose (``active=True``) ou retire (``active=False``) une réaction.
+
+    IDEMPOTENT PAR CONSTRUCTION — et c'est délibérément un « set », pas un
+    « toggle ». Une bascule aveugle est non-idempotente : un double-clic ou un
+    rejeu réseau la fait repasser dans l'autre sens, et l'utilisateur se retrouve
+    avec l'inverse de ce qu'il a demandé. Le client envoie donc l'état VOULU ;
+    rejouer la même requête laisse le système dans le même état.
+
+    ``get_or_create`` s'appuie sur la contrainte d'unicité en base : deux
+    requêtes concurrentes ne peuvent pas créer deux lignes (la seconde retombe
+    sur le ``get``), donc le compteur ne peut pas doubler.
+
+    Retourne l'état réconcilié (compteurs + réactions du lecteur) pour que le
+    client remplace sa mise à jour optimiste par la vérité serveur.
+    """
+    if reaction_type not in ArticleReaction.ReactionType.values:
+        raise ApplicationError("Type de réaction inconnu.")
+
+    # Autorisation : réagir suppose de pouvoir lire — même cloisonnement que le
+    # fil, pas une règle parallèle qui dériverait. Message unique (et donc non
+    # énumérant) que l'article n'existe pas ou soit hors portée.
+    article = article_get_reactable(article_id=article_id, user=user)
+    if article is None:
+        raise ApplicationError("Article introuvable ou hors de votre portée.")
+
+    if active:
+        ArticleReaction.objects.get_or_create(
+            article=article, user=user, reaction_type=reaction_type
+        )
+    else:
+        ArticleReaction.objects.filter(
+            article=article, user=user, reaction_type=reaction_type
+        ).delete()
+
+    return article_reaction_summary(article=article, user=user)

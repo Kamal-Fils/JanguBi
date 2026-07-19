@@ -85,6 +85,38 @@ class EventDetailApi(ApiAuthMixin, APIView):
             return _error(e)
         return Response(EventOutputSerializer(event).data)
 
+    @extend_schema(
+        request=None,
+        responses={204: None},
+        tags=["Agenda"],
+        summary="Annuler un événement (organisateur ou autorité sur sa portée)",
+        description=(
+            "Annulation DOUCE : l'événement sort des feeds et n'accepte plus "
+            "d'inscription, mais ses inscriptions sont conservées et chaque "
+            "inscrit est prévenu par email."
+        ),
+    )
+    def delete(self, request, event_id: int):
+        from apps.agenda.selectors import event_get
+        from apps.agenda.services import can_manage_event, event_cancel
+
+        try:
+            event = event_get(event_id=event_id)
+        except ApplicationError as e:
+            return _error(e)
+
+        if not can_manage_event(user=request.user, event=event):
+            return Response(
+                {"detail": "Réservé à l'organisateur ou à une autorité sur cet événement."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            event_cancel(event=event, actor=request.user)
+        except ApplicationError as e:
+            return _error(e)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class EventRegisterApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsOnboardingCompleted]  # A1 — écriture territoriale

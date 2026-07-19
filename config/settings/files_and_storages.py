@@ -1,12 +1,38 @@
 import os
 
-from config.env import BASE_DIR, env, env_to_enum
 from apps.files.enums import FileUploadStorage, FileUploadStrategy
+from config.env import BASE_DIR, env, env_to_enum
 
 FILE_UPLOAD_STRATEGY = env_to_enum(FileUploadStrategy, env("FILE_UPLOAD_STRATEGY", default="standard"))
 FILE_UPLOAD_STORAGE = env_to_enum(FileUploadStorage, env("FILE_UPLOAD_STORAGE", default="local"))
 
 FILE_MAX_SIZE = env.int("FILE_MAX_SIZE", default=10485760)  # 10 MiB
+
+# Liste blanche des types de fichiers acceptés à l'upload.
+#
+# Pourquoi une liste BLANCHE et pas une liste noire : seule la taille était
+# vérifiée, donc n'importe quel utilisateur authentifié pouvait déposer un
+# fichier arbitraire. Les fichiers sont ensuite servis depuis MinIO/S3 avec le
+# type déclaré ; un `.html` ou un `.svg` (qui peut porter un `<script>`)
+# redistribué sous ce type devient un XSS stocké, sur un lien que le fidèle a
+# toute raison de croire officiel. Une liste noire se contourne toujours par le
+# type qu'on n'a pas pensé à interdire.
+#
+# Le périmètre correspond aux usages réels : pièces justificatives des demandes
+# de documents (scans), photos de profil, et audio pour les contenus spirituels.
+# `image/svg+xml` est délibérément ABSENT : c'est un document exécutable
+# déguisé en image. Ajouter un type ici, c'est accepter qu'un utilisateur
+# quelconque le fasse servir par notre domaine — le faire en connaissance.
+FILE_UPLOAD_ALLOWED_TYPES: dict[str, tuple[str, ...]] = {
+    "application/pdf": (".pdf",),
+    "image/jpeg": (".jpg", ".jpeg"),
+    "image/png": (".png",),
+    "image/webp": (".webp",),
+    "image/heic": (".heic",),  # format par défaut des iPhone
+    "audio/mpeg": (".mp3",),
+    "audio/mp4": (".m4a",),
+    "audio/ogg": (".ogg",),
+}
 
 # Réglage unifié des backends de stockage (Django 4.2+ ; remplace les
 # STATICFILES_STORAGE / DEFAULT_FILE_STORAGE SUPPRIMÉS en Django 5.1).

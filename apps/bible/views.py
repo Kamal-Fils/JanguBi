@@ -4,7 +4,13 @@ from django.conf import settings
 from django.db.models import Count, Prefetch
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, OpenApiTypes, extend_schema
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    OpenApiTypes,
+    extend_schema,
+    extend_schema_serializer,
+)
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -289,6 +295,10 @@ class DailyTextListApi(APIView):
 class ImportApi(ApiAuthMixin, APIView):
     """Admin-only endpoint to trigger a background import."""
 
+    # `component_name` explicite : sans lui, drf-spectacular nomme le composant
+    # « Input » comme les serializers imbriqués de apps/files — collision de
+    # composants, donc un corps de requête FAUX dans le schéma publié.
+    @extend_schema_serializer(component_name="BibleImportInput")
     class InputSerializer(serializers.Serializer):
         filename = serializers.CharField()
         source = serializers.CharField()  # type: ignore[assignment]  # drf-stubs: serializer field named "source" collides with Field.source attribute

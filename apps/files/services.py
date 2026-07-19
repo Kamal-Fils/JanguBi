@@ -1,4 +1,5 @@
 import mimetypes
+import pathlib
 from typing import Any, Dict, Tuple
 
 from django.conf import settings
@@ -23,6 +24,49 @@ def _validate_file_size(file_obj):
 
     if file_obj.size > max_size:
         raise ApplicationError(f"Fichier trop volumineux. Taille maximum : {bytes_to_mib(max_size)} MiB.")
+
+
+def _allowed_extensions() -> set[str]:
+    return {ext for extensions in settings.FILE_UPLOAD_ALLOWED_TYPES.values() for ext in extensions}
+
+
+def validate_file_type(*, file_name: str, file_type: str) -> None:
+    """
+    Refuse tout fichier hors liste blanche (`FILE_UPLOAD_ALLOWED_TYPES`).
+
+    Le contrôle porte sur TROIS points, car chacun se contourne seul :
+
+    1. l'extension, parce qu'elle détermine le nom stocké et ce que servira S3 ;
+    2. le type MIME déclaré, parce qu'il est repris tel quel dans l'URL
+       présignée — un client peut annoncer `text/html` pour un `.pdf` et obtenir
+       que son fichier soit ensuite servi comme une page ;
+    3. la COHÉRENCE entre les deux, sans quoi il suffit de déclarer
+       `application/pdf` sur un `.html` pour passer les deux premiers.
+
+    Ces valeurs viennent du client (y compris sur le chemin présigné, où le
+    serveur ne voit jamais l'octet uploadé) : elles sont donc à traiter comme
+    une saisie utilisateur, pas comme une description fiable du contenu.
+    """
+    extension = pathlib.Path(file_name or "").suffix.lower()
+
+    if not extension:
+        raise ApplicationError("Le nom du fichier doit comporter une extension.")
+
+    if extension not in _allowed_extensions():
+        raise ApplicationError(f"Type de fichier non autorisé : « {extension} ».")
+
+    normalized_type = (file_type or "").split(";")[0].strip().lower()
+
+    if not normalized_type:
+        raise ApplicationError("Le type du fichier n'a pas pu être déterminé.")
+
+    expected_extensions = settings.FILE_UPLOAD_ALLOWED_TYPES.get(normalized_type)
+
+    if expected_extensions is None:
+        raise ApplicationError(f"Type de fichier non autorisé : « {normalized_type} ».")
+
+    if extension not in expected_extensions:
+        raise ApplicationError(f"L'extension « {extension} » ne correspond pas au type « {normalized_type} ».")
 
 
 class FileStandardUploadService:
@@ -59,6 +103,7 @@ class FileStandardUploadService:
         _validate_file_size(self.file_obj)
 
         file_name, file_type = self._infer_file_name_and_type(file_name, file_type)
+        validate_file_type(file_name=file_name, file_type=file_type)
 
         obj = File(
             file=self.file_obj,
@@ -79,6 +124,7 @@ class FileStandardUploadService:
         _validate_file_size(self.file_obj)
 
         file_name, file_type = self._infer_file_name_and_type(file_name, file_type)
+        validate_file_type(file_name=file_name, file_type=file_type)
 
         file.file = self.file_obj
         file.original_file_name = file_name
@@ -108,6 +154,12 @@ class FileDirectUploadService:
 
     @transaction.atomic
     def start(self, *, file_name: str, file_type: str) -> Dict[str, Any]:
+        # Chemin le plus exposé : le serveur ne verra JAMAIS l'octet uploadé —
+        # le client poste directement sur S3 avec l'URL présignée qu'on lui
+        # remet, et le `file_type` ci-dessous est celui qui sera renvoyé plus
+        # tard à chaque téléchargement. Valider ici est donc la seule occasion.
+        validate_file_type(file_name=file_name, file_type=file_type)
+
         file = File(
             original_file_name=file_name,
             file_name=file_generate_name(file_name),

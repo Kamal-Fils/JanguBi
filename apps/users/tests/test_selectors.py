@@ -9,7 +9,7 @@ Couvre :
   - user_list : sans filtre, filtre role, filtre is_active, filtre email
   - user_list_for_admin : liste complète (actifs + inactifs)
   - profile_get : trouvé / non trouvé
-  - audit_log_list : renvoie les logs du bon utilisateur, tri desc, limit
+  - audit_log_list : renvoie les logs du bon utilisateur, tri desc, non tronqué
 """
 
 import pytest
@@ -433,17 +433,20 @@ def test_audit_log_list_ordered_by_created_at_desc():
 
 
 @pytest.mark.django_db
-def test_audit_log_list_respects_limit():
+def test_audit_log_list_returns_unsliced_queryset_so_api_can_paginate():
+    # Le selector ne tronque plus : la pagination appartient à la couche API
+    # (get_paginated_response). Un slice ici rendrait le QuerySet non filtrable.
     # Arrange
     user = BaseUserFactory()
     for _ in range(10):
         SecurityAuditLog.objects.create(user=user, event=AuditEvent.LOGIN)
 
     # Act
-    result = list(audit_log_list(user=user, limit=3))
+    qs = audit_log_list(user=user)
 
     # Assert
-    assert len(result) == 3
+    assert qs.count() == 10
+    assert list(qs[:3]) == list(qs)[:3]  # sliçable en aval → paginable
 
 
 @pytest.mark.django_db

@@ -8,6 +8,7 @@ from apps.bible.models import (
     LectioDivinaSession,
     ReadingPlan,
     ReadingPlanPassage,
+    ReadingPlanSubscription,
     Testament,
     Verse,
 )
@@ -58,8 +59,16 @@ class HomilieNoteAdmin(admin.ModelAdmin):
 
 @admin.register(LectioDivinaSession)
 class LectioDivinaSessionAdmin(admin.ModelAdmin):
-    list_display = ("user", "passage", "updated_at")
+    list_display = ("user", "passage", "session_date", "updated_at")
+    list_filter = ("session_date",)
     raw_id_fields = ("user", "passage")
+
+
+@admin.register(ReadingPlanSubscription)
+class ReadingPlanSubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("user", "plan", "created_at")
+    search_fields = ("user__email", "plan__title")
+    raw_id_fields = ("user", "plan")
 
 
 @admin.register(ReadingPlan)

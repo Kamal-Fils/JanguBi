@@ -55,3 +55,29 @@ class TaskTests(TestCase):
         from apps.bible.tasks import fetch_aelf_daily
         fetch_aelf_daily()
         mock_fetch.assert_called_once()
+
+    def test_tasks_module_does_not_call_asyncio_run_directly(self):
+        """RÉGRESSION : sous un worker gevent/eventlet une boucle tourne déjà —
+        `asyncio.run` lève `RuntimeError: This event loop is already running` et
+        le fetch AELF nocturne échoue silencieusement. Utiliser `async_to_sync`.
+
+        Garde au niveau de la SOURCE : `asgiref.async_to_sync` appelle lui-même
+        `asyncio.run` dans son propre thread, donc patcher `asyncio.run` ne
+        distinguerait pas les deux implémentations.
+        """
+        import inspect
+
+        from apps.bible import tasks
+
+        source = inspect.getsource(tasks)
+
+        self.assertNotIn("asyncio.run(", source, "utiliser async_to_sync, pas asyncio.run")
+        self.assertIn("async_to_sync", source)
+
+    def test_aelf_and_import_tasks_have_bounded_retries(self):
+        """Une indisponibilité AELF nocturne doit être retentée, pas perdue."""
+        from apps.bible.tasks import fetch_aelf_daily, import_file_task, populate_tsv_task
+
+        for task in (fetch_aelf_daily, import_file_task, populate_tsv_task):
+            self.assertIsNotNone(task.max_retries, f"{task.name} sans max_retries")
+            self.assertGreater(task.max_retries, 0)

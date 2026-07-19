@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.news.models import Article, ArticleCategory
+from apps.news.models import Article, ArticleCategory, ArticleReaction
 
 
 @admin.register(ArticleCategory)
@@ -43,3 +43,14 @@ class ArticleAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+
+@admin.register(ArticleReaction)
+class ArticleReactionAdmin(admin.ModelAdmin):
+    list_display = ["id", "article", "user", "reaction_type", "created_at"]
+    list_filter = ["reaction_type", "created_at"]
+    search_fields = ["article__title", "user__email"]
+    raw_id_fields = ["article", "user"]
+    readonly_fields = ["created_at", "updated_at"]
+    date_hierarchy = "created_at"
+    ordering = ["-created_at"]

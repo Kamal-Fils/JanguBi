@@ -76,6 +76,26 @@ class IsDioceseAdminOrAbove(BasePermission):
         return active_role_assignments(user).filter(role__in=_DIOCESE_AND_ABOVE_ROLES).exists()
 
 
+class IsClergyValidator(BasePermission):
+    """Autorité habilitée à trancher les demandes de compte clergé.
+
+    Miroir backend de ``canManageClergy`` côté front et de
+    ``_can_manage_invitations`` (apps.clergy_accounts.apis) : super_admin OU
+    évêque/archevêque. C'est un filtre de niveau vue — l'autorité territoriale
+    fine (le diocèse concerné) reste tranchée dans les services, fail-closed.
+    """
+
+    message = "Accès réservé aux autorités habilitées à valider le clergé."
+
+    def has_permission(self, request, view) -> bool:
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.role == UserRole.SUPER_ADMIN:
+            return True
+        return user.pastoral_role in {PastoralRole.EVEQUE, PastoralRole.ARCHEVEQUE}
+
+
 class IsFidele(BasePermission):
     """Autorise tout utilisateur authentifié (fidèle ou admin)."""
 

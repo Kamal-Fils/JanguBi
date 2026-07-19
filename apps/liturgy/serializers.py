@@ -1,3 +1,4 @@
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.bible.serializers import VerseOutputSerializer
@@ -69,12 +70,14 @@ class LiturgicalDateSerializer(serializers.ModelSerializer):
             "offices"
         )
 
+    @extend_schema_field(ReadingSerializer(many=True))
     def get_readings(self, obj):
         # Prevent N+1 queries by relying on explicit prefetching in the view
         if hasattr(obj, "_prefetched_objects_cache") and "readings" in obj._prefetched_objects_cache:
             return ReadingSerializer(obj.readings.all(), many=True).data
         return []
 
+    @extend_schema_field(OfficeSerializer(many=True))
     def get_offices(self, obj):
         # Prevent N+1 queries by relying on explicit prefetching in the view
         if hasattr(obj, "_prefetched_objects_cache") and "offices" in obj._prefetched_objects_cache:

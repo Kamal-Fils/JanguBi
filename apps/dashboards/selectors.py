@@ -217,9 +217,14 @@ def global_dashboard() -> dict:
     from apps.clergy_accounts.models import ClergicalInvitation
     from apps.news.models import Article
     from apps.org.models import Province
+
+    # Ensemble canonique (apps/users/enums.py) plutôt qu'une liste de chaînes
+    # recopiée : dupliquée, elle dérive au premier rôle pastoral ajouté et fait
+    # basculer silencieusement le clergé concerné dans le compteur « fidèles ».
+    from apps.users.enums import CLERGY_PASTORAL_ROLES
     from apps.users.models import BaseUser
 
-    clergy_roles = ["religieux", "diacre", "pretre", "eveque", "archeveque"]
+    clergy_roles = list(CLERGY_PASTORAL_ROLES)
     month_ago = timezone.now() - datetime.timedelta(days=30)
     users = BaseUser.objects.filter(is_active=True)
 

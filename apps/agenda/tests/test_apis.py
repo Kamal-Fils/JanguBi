@@ -235,3 +235,201 @@ def test_event_unregister_not_registered_returns_400(fidele_client, pretre_clien
     resp = fidele_client.delete(url)
 
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
+# ---------------------------------------------------------------------------
+# Autorité PASTORALE de création (dimension orthogonale au UserRole admin)
+# ---------------------------------------------------------------------------
+
+def _priest_of_church(church, email="cure-pastoral@example.com"):
+    """Curé « nu » : rôle PASTORAL prêtre + appartenance réelle, AUCUNE
+    RoleAssignment admin. C'est l'état d'un curé validé par invitation sans cible
+    territoriale, ou par auto-déclaration (cf. clergy_accounts._resolve_capacity)."""
+    from apps.users.enums import PastoralRole
+    from apps.users.services_memberships import membership_create
+
+    user = _make_user(email, PastoralRole.PRETRE)
+    membership_create(user=user, church=church, is_primary=True)
+    return user
+
+
+@pytest.mark.django_db
+def test_event_create_by_priest_without_role_assignment_201():
+    # Régression : le curé est l'acteur naturel d'un événement paroissial, mais
+    # l'autorité n'était résolue que par RoleAssignment (dimension admin) → 400.
+    from apps.org.tests.factories import ChurchFactory
+
+    church = ChurchFactory()
+    cure = _priest_of_church(church)
+    client = APIClient()
+    client.force_authenticate(user=cure)
+    data = {**_event_data(), "scope_type": "parish", "scope_id": church.parish_id}
+
+    resp = client.post(reverse("api:agenda:event-list-create"), data, format="json")
+
+    assert resp.status_code == status.HTTP_201_CREATED
+    assert Event.objects.get(organizer=cure).scope_parish_id == church.parish_id
+
+
+@pytest.mark.django_db
+def test_event_create_by_priest_on_foreign_parish_400():
+    # Fail-closed : l'autorité pastorale ne vaut que sur SON territoire, jamais
+    # sur un identifiant arbitraire envoyé par le client.
+    from apps.org.tests.factories import ChurchFactory, ParishFactory
+
+    church = ChurchFactory()
+    foreign_parish = ParishFactory()
+    cure = _priest_of_church(church, "cure-a@example.com")
+    client = APIClient()
+    client.force_authenticate(user=cure)
+    data = {**_event_data(), "scope_type": "parish", "scope_id": foreign_parish.id}
+
+    resp = client.post(reverse("api:agenda:event-list-create"), data, format="json")
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_event_create_by_priest_on_diocese_scope_400():
+    # Matrice §16 AGENDA : le prêtre crée au niveau PAROISSE, l'évêque au diocèse.
+    from apps.org.tests.factories import ChurchFactory
+
+    church = ChurchFactory()
+    cure = _priest_of_church(church, "cure-diocese@example.com")
+    client = APIClient()
+    client.force_authenticate(user=cure)
+    data = {**_event_data(), "scope_type": "diocese", "scope_id": church.parish.diocese_id}
+
+    resp = client.post(reverse("api:agenda:event-list-create"), data, format="json")
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_event_create_by_bishop_on_own_diocese_201():
+    from apps.org.tests.factories import ChurchFactory
+    from apps.users.enums import PastoralRole
+    from apps.users.services_memberships import membership_create
+
+    church = ChurchFactory()
+    bishop = _make_user("eveque-agenda@example.com", PastoralRole.EVEQUE)
+    membership_create(user=bishop, church=church, is_primary=True)
+    client = APIClient()
+    client.force_authenticate(user=bishop)
+    data = {**_event_data(), "scope_type": "diocese", "scope_id": church.parish.diocese_id}
+
+    resp = client.post(reverse("api:agenda:event-list-create"), data, format="json")
+
+    assert resp.status_code == status.HTTP_201_CREATED
+
+
+@pytest.mark.django_db
+def test_event_create_by_priest_on_global_scope_400():
+    # La portée globale reste réservée aux administrateurs province / national :
+    # la voie pastorale ne l'ouvre jamais.
+    from apps.org.tests.factories import ChurchFactory
+
+    church = ChurchFactory()
+    cure = _priest_of_church(church, "cure-global@example.com")
+    client = APIClient()
+    client.force_authenticate(user=cure)
+
+    resp = client.post(reverse("api:agenda:event-list-create"), _event_data(), format="json")
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
+# ---------------------------------------------------------------------------
+# Suppression d'un événement (annulation douce)
+# ---------------------------------------------------------------------------
+
+def _parish_event(organizer, parish):
+    now = timezone.now()
+    return Event.objects.create(
+        organizer=organizer,
+        title="Messe de rentrée",
+        event_type="mass",
+        start_at=now + datetime.timedelta(days=1),
+        end_at=now + datetime.timedelta(days=1, hours=2),
+        scope_type="parish",
+        scope_parish=parish,
+    )
+
+
+@pytest.mark.django_db
+def test_event_delete_by_organizer_cancels_and_notifies(fidele_client):
+    from apps.emails.models import Email
+    from apps.org.tests.factories import ChurchFactory
+
+    church = ChurchFactory()
+    cure = _priest_of_church(church, "cure-del@example.com")
+    event = _parish_event(cure, church.parish)
+    assert fidele_client.post(
+        reverse("api:agenda:event-register", kwargs={"event_id": event.pk})
+    ).status_code == status.HTTP_201_CREATED
+    client = APIClient()
+    client.force_authenticate(user=cure)
+
+    resp = client.delete(reverse("api:agenda:event-detail", kwargs={"event_id": event.pk}))
+
+    assert resp.status_code == status.HTTP_204_NO_CONTENT
+    event.refresh_from_db()
+    assert event.cancelled_at is not None
+    assert event.cancelled_by_id == cure.id
+    # L'inscription survit (trace) et l'inscrit est prévenu par email.
+    assert event.registrations.count() == 1
+    assert Email.objects.filter(to=fidele_client._user.email).exists()
+
+
+@pytest.mark.django_db
+def test_event_delete_by_stranger_403():
+    from apps.org.tests.factories import ChurchFactory
+
+    church = ChurchFactory()
+    cure = _priest_of_church(church, "cure-del2@example.com")
+    event = _parish_event(cure, church.parish)
+    intruder = _make_user("intrus@example.com", "pretre")
+    client = APIClient()
+    client.force_authenticate(user=intruder)
+
+    resp = client.delete(reverse("api:agenda:event-detail", kwargs={"event_id": event.pk}))
+
+    assert resp.status_code == status.HTTP_403_FORBIDDEN
+    event.refresh_from_db()
+    assert event.cancelled_at is None
+
+
+@pytest.mark.django_db
+def test_cancelled_event_leaves_the_feed_and_refuses_registration(fidele_client):
+    from apps.agenda.services import event_cancel
+    from apps.org.tests.factories import ChurchFactory
+
+    church = ChurchFactory()
+    cure = _priest_of_church(church, "cure-del3@example.com")
+    event = _parish_event(cure, church.parish)
+    event_cancel(event=event, actor=cure)
+
+    listing = fidele_client.get(reverse("api:agenda:event-list-create"))
+    register = fidele_client.post(
+        reverse("api:agenda:event-register", kwargs={"event_id": event.pk})
+    )
+
+    assert event.pk not in [e["id"] for e in listing.data["results"]]
+    assert register.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_event_delete_is_idempotent():
+    from apps.org.tests.factories import ChurchFactory
+
+    church = ChurchFactory()
+    cure = _priest_of_church(church, "cure-del4@example.com")
+    event = _parish_event(cure, church.parish)
+    client = APIClient()
+    client.force_authenticate(user=cure)
+    url = reverse("api:agenda:event-detail", kwargs={"event_id": event.pk})
+
+    assert client.delete(url).status_code == status.HTTP_204_NO_CONTENT
+    second = client.delete(url)
+
+    assert second.status_code == status.HTTP_400_BAD_REQUEST
