@@ -16,9 +16,31 @@ _DEFAULT_CATEGORIES = [
 
 @transaction.atomic
 def category_create(*, name: str, order: int = 0, is_clergy_only: bool = False) -> Category:
+    """Crée une catégorie et lui attribue son slug — une fois pour toutes.
+
+    Le slug est dérivé du nom À LA CRÉATION SEULEMENT (cf. ``category_update``).
+    C'est donc le seul endroit où l'unicité doit être tranchée : deux noms
+    distincts peuvent produire le même slug (« Messes » et « messes ! »), et
+    laisser parler la contrainte d'unicité renverrait au client une erreur sur
+    un champ ``slug`` qu'il n'a jamais envoyé (il est en lecture seule).
+    """
+    from apps.tv.selectors import category_get_by_slug
+
+    slug = slugify(name)
+    if not slug:
+        raise ApplicationError(
+            f"Le nom « {name} » ne permet pas de construire un identifiant d'URL. "
+            "Utilisez au moins une lettre ou un chiffre."
+        )
+    if category_get_by_slug(slug=slug):
+        raise ApplicationError(
+            f"Le nom « {name} » entre en conflit avec une catégorie existante "
+            f"(identifiant « {slug} »)."
+        )
+
     category = Category(
         name=name,
-        slug=slugify(name),
+        slug=slug,
         order=order,
         is_clergy_only=is_clergy_only,
     )
@@ -35,6 +57,20 @@ def category_update(
     order: int | None = None,
     is_clergy_only: bool | None = None,
 ) -> Category:
+    """Met à jour une catégorie. Le renommage NE régénère PAS le slug — voulu.
+
+    Le slug est un identifiant stable, pas un reflet du nom. Il sert de clé
+    d'URL (``/tv/categories/<slug>/``, y compris pour PATCH et DELETE) et de
+    référence dans les payloads vidéo (``category_slug``). Le régénérer au
+    renommage déplacerait la ressource au milieu de son propre cycle
+    d'édition : le PATCH qui renomme rendrait 404 le PATCH suivant, et le
+    ``get_or_create(slug=...)`` de ``category_ensure_defaults`` recréerait un
+    doublon de la catégorie renommée au prochain amorçage.
+
+    Rien n'expose le slug à l'utilisateur final (le front affiche ``name`` et
+    relit les slugs à chaque ``GET /tv/categories/``) : le régénérer ne
+    gagnerait donc aucune lisibilité, pour ce coût-là.
+    """
     if name is not None:
         category.name = name
     if order is not None:

@@ -10,6 +10,7 @@ Couvre :
   - Logout-all tourne le jwt_key
 """
 
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -25,6 +26,11 @@ CACHE_SETTINGS = {
 @override_settings(**CACHE_SETTINGS)
 class UserJwtLoginTests(TestCase):
     def setUp(self):
+        # Le compteur de LoginRateThrottle (10/min par IP) vit dans le cache, que
+        # LocMemCache conserve d'un test à l'autre. Sans ce reset, ces tests
+        # dépendent du nombre de logins effectués par les autres fichiers de la
+        # suite et cassent en 429 dès qu'on en ajoute un.
+        cache.clear()
         self.client = APIClient()
         self.jwt_login_url = reverse("api:authentication:jwt-login")
         self.jwt_logout_url = reverse("api:authentication:jwt-logout")

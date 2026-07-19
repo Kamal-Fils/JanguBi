@@ -3,9 +3,16 @@ from django.db.models import QuerySet
 from apps.tv.models import Category, Video
 
 
-def category_list(*, clergy_only: bool = False) -> QuerySet[Category]:
+def category_list(*, include_clergy_only: bool = False) -> QuerySet[Category]:
+    """Les catégories visibles par l'appelant.
+
+    Le paramètre s'appelle ``include_clergy_only`` comme dans les trois autres
+    selectors : il ÉLARGIT la vue au catalogue réservé, il ne la restreint pas.
+    L'ancien nom ``clergy_only`` se lisait exactement à l'envers, sur le
+    paramètre même qui porte le cloisonnement.
+    """
     qs = Category.objects.all().order_by("order", "name")
-    if not clergy_only:
+    if not include_clergy_only:
         qs = qs.filter(is_clergy_only=False)
     return qs
 

@@ -1,5 +1,17 @@
-from django.db.models import BooleanField, Exists, OuterRef, QuerySet, Value
+from django.db.models import BooleanField, Count, Exists, OuterRef, QuerySet, Value
 from django.utils import timezone
+
+
+def _annotate_registration_count(qs: QuerySet) -> QuerySet:
+    """Annote le nombre d'inscrits en UNE seule requête agrégée.
+
+    Sans cette annotation, le serializer appelait ``obj.registrations.count()``
+    pour CHAQUE événement : un N+1 sur un feed paginé (une page de 20 événements
+    = 20 COUNT supplémentaires). ``distinct=True`` immunise le compte contre une
+    éventuelle multiplication de lignes si un filtre venait à joindre une autre
+    relation multivaluée.
+    """
+    return qs.annotate(registration_count=Count("registrations", distinct=True))
 
 
 def _annotate_is_registered(qs: QuerySet, user) -> QuerySet:
@@ -31,7 +43,7 @@ def event_list(*, scope_type: str | None = None, event_type: str | None = None, 
         qs = qs.filter(scope_type=scope_type)
     if event_type:
         qs = qs.filter(event_type=event_type)
-    return qs.order_by("start_at")
+    return _annotate_registration_count(qs).order_by("start_at")
 
 
 def event_list_for_user(*, user, event_type: str | None = None, upcoming_only: bool = True) -> QuerySet:
@@ -47,6 +59,7 @@ def event_list_for_user(*, user, event_type: str | None = None, upcoming_only: b
         qs = qs.filter(event_type=event_type)
     qs = get_scoped_queryset(qs, user)
     qs = _annotate_is_registered(qs, user)
+    qs = _annotate_registration_count(qs)
     return qs.order_by("start_at")
 
 
@@ -56,6 +69,7 @@ def event_get(*, event_id: int, user=None):
 
     qs = Event.objects.prefetch_related("registrations__user").select_related("organizer")
     qs = _annotate_is_registered(qs, user)
+    qs = _annotate_registration_count(qs)
     try:
         return qs.get(pk=event_id)
     except Event.DoesNotExist:

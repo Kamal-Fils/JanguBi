@@ -283,6 +283,114 @@ def test_event_create_still_rejects_an_end_before_start():
         )
 
 
+# ---------------------------------------------------------------------------
+# Jauge max_participants — TOCTOU
+# ---------------------------------------------------------------------------
+
+def _capped_event(*, seats):
+    church = ChurchFactory()
+    priest = _clergy_attached_to(church, PastoralRole.PRETRE)
+    event = _create_parish_event(priest, church.parish)
+    event.max_participants = seats
+    event.save(update_fields=["max_participants"])
+    return event
+
+
+@pytest.mark.django_db
+def test_event_register_takes_a_row_lock_on_the_event():
+    """Le garde-fou anti-TOCTOU est ARMÉ : l'événement est relu en
+    ``SELECT ... FOR UPDATE`` avant le comptage des places.
+
+    C'est une assertion sur le MÉCANISME, pas sur la course elle-même : elle est
+    déterministe, et elle échoue si quelqu'un retire le verrou en refactorant —
+    ce qui rouvrirait silencieusement la surréservation.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    event = _capped_event(seats=2)
+
+    with CaptureQueriesContext(connection) as ctx:
+        event_register(event=event, user=BaseUserFactory())
+
+    locking = [q["sql"] for q in ctx.captured_queries if "FOR UPDATE" in q["sql"].upper()]
+    assert locking, "l'événement doit être relu en SELECT ... FOR UPDATE"
+    assert any("agenda_event" in sql for sql in locking), (
+        "le verrou doit porter sur la ligne ÉVÉNEMENT (la ressource contendue)"
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_registrations_cannot_oversell_the_last_seat():
+    """Deux inscriptions VRAIMENT concurrentes sur la dernière place : une seule
+    passe. Sans verrou, les deux transactions lisent ``count < max`` avant que
+    l'une n'ait committé, et la jauge est franchie.
+
+    ``transaction=True`` est indispensable : chaque thread a sa propre connexion
+    et doit committer pour que l'autre voie son insertion.
+    """
+    import threading
+
+    from django.db import connection as default_connection
+
+    from apps.agenda.models import EventRegistration
+
+    event = _capped_event(seats=1)
+    candidates = [BaseUserFactory(), BaseUserFactory()]
+    start = threading.Barrier(len(candidates))
+    outcomes: list[str] = []
+    lock = threading.Lock()
+
+    def attempt(candidate):
+        try:
+            start.wait(timeout=10)  # les deux threads entrent ensemble
+            try:
+                event_register(event=event, user=candidate)
+                result = "inscrit"
+            except ApplicationError:
+                result = "complet"
+            with lock:
+                outcomes.append(result)
+        finally:
+            # Une connexion par thread : on la referme, sinon la purge de fin de
+            # test se bloque sur des connexions encore ouvertes.
+            default_connection.close()
+
+    threads = [threading.Thread(target=attempt, args=(c,)) for c in candidates]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+        assert not thread.is_alive(), "inscription bloquée : verrou non relâché"
+
+    assert sorted(outcomes) == ["complet", "inscrit"]
+    assert EventRegistration.objects.filter(event=event).count() == 1
+
+
+@pytest.mark.django_db
+def test_event_register_still_refuses_a_second_registration_of_the_same_user():
+    event = _capped_event(seats=10)
+    user = BaseUserFactory()
+    event_register(event=event, user=user)
+
+    with pytest.raises(ApplicationError):
+        event_register(event=event, user=user)
+
+
+@pytest.mark.django_db
+def test_event_register_reads_the_cancellation_from_the_locked_row():
+    # L'instance reçue peut avoir été chargée AVANT une annulation déjà committée :
+    # c'est la ligne verrouillée qui fait foi.
+    church = ChurchFactory()
+    priest = _clergy_attached_to(church, PastoralRole.PRETRE)
+    event = _create_parish_event(priest, church.parish)
+    stale = Event.objects.get(pk=event.pk)  # instance chargée avant l'annulation
+    event_cancel(event=event, actor=priest)
+
+    with pytest.raises(ApplicationError):
+        event_register(event=stale, user=BaseUserFactory())
+
+
 @pytest.mark.django_db
 def test_event_model_reports_cancellation():
     event = Event(title="x", event_type="other", start_at=timezone.now(), end_at=timezone.now())

@@ -8,11 +8,11 @@ from apps.users.enums import PastoralRole
 from apps.users.models import BaseUser
 
 # Clergé pouvant PUBLIER une réflexion (matrice §16 : diacre/religieux EXCLUS).
-_PUBLISHER_PASTORAL_ROLES = {
+_PUBLISHER_PASTORAL_ROLES = frozenset({
     PastoralRole.PRETRE,
     PastoralRole.EVEQUE,
     PastoralRole.ARCHEVEQUE,
-}
+})
 
 
 def is_reflection_editor(user: BaseUser) -> bool:
@@ -54,16 +54,37 @@ def _check_scope_authority(
     scope_diocese_id: int | None,
     scope_church_id: int | None,
 ) -> None:
-    """L'auteur doit avoir une autorité territoriale RÉELLE (RoleAssignment) sur la
-    portée — ferme l'injection inter-paroisses/diocèses (un curé de A ne publie pas
-    sur B). Réutilise l'autorité de scoping partagée."""
+    """L'auteur doit avoir une autorité territoriale RÉELLE sur la portée — ferme
+    l'injection inter-paroisses/diocèses (un curé de A ne publie pas sur B).
+
+    Deux voies indépendantes, l'une suffit :
+    - PASTORALE (``user_has_pastoral_authority``) : le prêtre publie sur SA
+      paroisse du seul fait de sa charge. Un curé validé peut porter
+      ``pastoral_role=PRETRE`` sans aucune ``RoleAssignment`` ; sans cette voie, la
+      publication d'une réflexion — son acte propre — lui était refusée.
+    - ADMINISTRATIVE (``RoleAssignment`` via ``user_can_admin_*``).
+
+    Les deux sont fail-closed : la portée doit tomber dans un territoire réel.
+    """
     from apps.users.scoping import (
         accessible_province_ids,
         is_global_admin,
         user_can_admin_church,
         user_can_admin_diocese,
         user_can_admin_parish,
+        user_has_pastoral_authority,
     )
+
+    if user_has_pastoral_authority(
+        user=user,
+        scope_type=scope_type,
+        scope_parish_id=scope_parish_id,
+        scope_diocese_id=scope_diocese_id,
+        scope_church_id=scope_church_id,
+        # Matrice §16 : le diacre et le religieux ne publient pas de réflexion.
+        allowed_roles=_PUBLISHER_PASTORAL_ROLES,
+    ):
+        return
 
     ST = PastoralReflection.ScopeType
     if scope_type == ST.PARISH:
