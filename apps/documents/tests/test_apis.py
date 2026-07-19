@@ -34,8 +34,14 @@ def _completed_fidele(parish=None):
 
 
 def _make_cure(parish):
-    """Curé : user.role='fidele' + RoleAssignment(parish_admin) sur `parish`."""
-    user = BaseUserFactory(role=UserRole.FIDELE)
+    """Curé : prêtre (pastoral_role) + RoleAssignment(parish_admin) sur `parish`.
+
+    Le rôle pastoral est indispensable : valider et déposer sont des actes de
+    SIGNATURE réservés au clergé (`_check_signing_authority`). Sans lui, la
+    fixture décrivait un administrateur digital laïc, pas un curé — et le
+    scénario métier central échouait pour une raison qui n'existe pas en vrai.
+    """
+    user = BaseUserFactory(role=UserRole.FIDELE, pastoral_role=PastoralRole.PRETRE)
     RoleAssignment.objects.create(
         user=user,
         role=UserRole.PARISH_ADMIN,
