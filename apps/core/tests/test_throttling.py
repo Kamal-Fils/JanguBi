@@ -80,14 +80,31 @@ def test_distinct_clients_keep_distinct_identities(throttle, factory):
     assert throttle.get_ident(alice) != throttle.get_ident(bob)
 
 
-def test_login_rate_comes_from_settings(throttle):
-    """La classe redéfinissait THROTTLE_RATES en dur, ce qui rendait le réglage
-    par settings inopérant alors que la docstring l'annonçait."""
-    # Arrange & Act
-    rate = throttle.get_rate()
+def test_class_does_not_hardcode_its_own_rate():
+    """La classe redéfinissait `THROTTLE_RATES` en dur, ce qui rendait le
+    réglage par settings inopérant alors que sa docstring l'annonçait."""
+    assert "THROTTLE_RATES" not in LoginRateThrottle.__dict__, (
+        "THROTTLE_RATES ne doit plus être redéfini sur la classe : le taux vient "
+        "des settings."
+    )
 
-    # Assert
-    assert rate == api_settings.DEFAULT_THROTTLE_RATES["login"]
-    assert "LoginRateThrottle" not in LoginRateThrottle.__dict__.get(
-        "THROTTLE_RATES", {}
-    ), "THROTTLE_RATES ne doit plus être redéfini localement."
+
+def test_login_scope_is_declared_in_active_settings(throttle):
+    """La portée `login` doit exister dans les réglages ACTIFS, quels qu'ils soient.
+
+    Ce test vient d'une panne réelle : le taux a été déplacé de la classe vers
+    `DEFAULT_THROTTLE_RATES` (base.py), mais `config/django/test.py` REMPLACE ce
+    dictionnaire au lieu de le compléter. La portée manquait donc sous les
+    réglages de test, et DRF levait `ImproperlyConfigured: No default throttle
+    rate set for 'login' scope` — tous les tests de connexion tombaient. Rouge en
+    CI, invisible en local, qui tourne sous `base`.
+
+    On n'assère pas une VALEUR (la suite neutralise volontairement les quotas à
+    `None`), mais la PRÉSENCE de la clé : c'est elle dont l'absence casse tout.
+    """
+    assert "login" in api_settings.DEFAULT_THROTTLE_RATES, (
+        "La portée 'login' doit être déclarée dans DEFAULT_THROTTLE_RATES de "
+        "CHAQUE module de réglages — test.py remplace le dictionnaire de base."
+    )
+    # Ne doit pas lever : c'est exactement l'appel qui échouait.
+    throttle.get_rate()

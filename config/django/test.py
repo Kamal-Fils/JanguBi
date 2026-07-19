@@ -34,9 +34,20 @@ RAG_GENERATION_ENABLED = False
 # Throttling désactivé par défaut dans la suite (évite des 429 parasites entre
 # tests via le cache locmem partagé). Les tests de throttling ré-activent un
 # rate explicite via @override_settings.
+#
+# ⚠️ Ce dictionnaire REMPLACE celui de `base.py`, il ne le complète pas : toute
+# portée déclarée là-bas doit être reprise ici, sinon la classe de throttle
+# correspondante lève `ImproperlyConfigured: No default throttle rate set` et
+# fait tomber tous les tests qui touchent l'endpoint. C'est arrivé en ajoutant
+# la portée `login` — invisible en local (réglages `base`), rouge en CI.
 REST_FRAMEWORK = {
     **REST_FRAMEWORK,  # noqa: F405
-    "DEFAULT_THROTTLE_RATES": {"anon": None, "user": None, "rag": None},
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": None,
+        "user": None,
+        "rag": None,
+        "login": None,
+    },
 }
 
 # Mot de passe plus rapide à hasher en test
