@@ -201,6 +201,68 @@ def test_event_list_includes_is_registered(fidele_client, pretre_client):
 
 
 @pytest.mark.django_db
+def test_event_list_query_count_does_not_grow_with_the_number_of_events(
+    fidele_client, pretre_client
+):
+    """N+1 : le coût d'une page ne doit pas dépendre du nombre d'événements qu'elle
+    contient.
+
+    ``registration_count`` était calculé par le serializer via
+    ``obj.registrations.count()`` — un COUNT par événement, sur un feed paginé.
+    On compare donc une page à 1 événement et une page à 12, et on exige
+    l'ÉGALITÉ du nombre de requêtes. On ne fige PAS un nombre absolu : il dépend
+    de l'authentification et du scoping, et un tel test se périmerait au premier
+    changement sans rien prouver de plus.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from apps.agenda.models import EventRegistration
+
+    # limit=50 : les 12 événements tiennent sur UNE page (PAGE_SIZE vaut 10).
+    url = f"{reverse('api:agenda:event-list-create')}?limit=50"
+    organizer = pretre_client._user
+
+    def _register_on(event):
+        # Des inscrits réels : c'est bien le comptage par événement qu'on mesure.
+        EventRegistration.objects.create(event=event, user=organizer)
+
+    def _query_count():
+        with CaptureQueriesContext(connection) as ctx:
+            resp = fidele_client.get(url)
+        assert resp.status_code == status.HTTP_200_OK
+        return len(ctx.captured_queries)
+
+    _register_on(_make_global_event(organizer, "Évt 00"))
+    fidele_client.get(url)  # requête de chauffe (caches paresseux du framework)
+    baseline = _query_count()
+
+    for i in range(1, 12):
+        _register_on(_make_global_event(organizer, f"Évt {i:02d}"))
+
+    assert fidele_client.get(url).data["count"] == 12
+    assert _query_count() == baseline
+
+
+@pytest.mark.django_db
+def test_event_list_reports_the_registration_count(fidele_client, pretre_client):
+    """Garde-fou de l'annotation : optimiser le comptage ne doit pas fausser sa
+    valeur (une annotation muette qui renverrait 0 passerait le test de N+1)."""
+    event = _make_global_event(pretre_client._user, "Compté")
+    assert fidele_client.post(
+        reverse("api:agenda:event-register", kwargs={"event_id": event.pk})
+    ).status_code == status.HTTP_201_CREATED
+
+    listing = fidele_client.get(reverse("api:agenda:event-list-create"))
+    detail = fidele_client.get(
+        reverse("api:agenda:event-detail", kwargs={"event_id": event.pk})
+    )
+
+    assert listing.data["results"][0]["registration_count"] == 1
+    assert detail.data["registration_count"] == 1
+
+
+@pytest.mark.django_db
 def test_event_detail_includes_is_registered(fidele_client, pretre_client):
     event = _make_global_event(pretre_client._user)
     reg_url = reverse("api:agenda:event-register", kwargs={"event_id": event.pk})

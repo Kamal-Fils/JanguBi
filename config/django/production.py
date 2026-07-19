@@ -50,11 +50,26 @@ STORAGES = {
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["django", "localhost", "127.0.0.1"])
 
 CORS_ALLOW_ALL_ORIGINS = env.bool("CORS_ALLOW_ALL_ORIGINS", default=False)
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+
+# ⚠️ `CORS_ORIGIN_WHITELIST` est un réglage MORT : django-cors-headers ne lit que
+# `CORS_ALLOWED_ORIGINS`. Vérifié — avec `DJANGO_CORS_ORIGIN_WHITELIST` renseigné
+# et `CORS_ALLOWED_ORIGINS` vide, la bibliothèque résout une liste VIDE et
+# n'autorise donc aucune origine. Le nom est conservé pour compatibilité, mais il
+# ne décide de rien : c'est le second qui compte.
+#
+# L'enjeu a grandi avec le passage du refresh token en cookie : le navigateur
+# n'envoie un cookie cross-origin que si l'origine est explicitement autorisée
+# ET `Access-Control-Allow-Credentials: true`. Une origine manquante ne produit
+# aucune erreur serveur — la connexion échoue silencieusement côté navigateur.
+#
+# D'où le repli ci-dessous : si `CORS_ALLOWED_ORIGINS` n'est pas fourni, on
+# reprend la valeur historique plutôt que de laisser une liste vide. Il ne peut
+# qu'élargir vers ce qui était DÉJÀ voulu, jamais restreindre.
 CORS_ORIGIN_WHITELIST = env.list(
     "DJANGO_CORS_ORIGIN_WHITELIST",
     default=env.list("CORS_ORIGIN_WHITELIST", default=[]),
 )
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=CORS_ORIGIN_WHITELIST)
 CORS_ALLOWED_ORIGIN_REGEXES = env.list("CORS_ALLOWED_ORIGIN_REGEXES", default=[])
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
@@ -69,6 +84,11 @@ WS_ALLOWED_ORIGINS = env.list(
 )
 
 SESSION_COOKIE_SECURE = env.bool("SESSION_COOKIE_SECURE", default=True)
+
+# Le cookie porteur du refresh token (7 jours) ne doit JAMAIS transiter en clair.
+# Cf. config/settings/jwt.py pour la contrainte SameSite si le front change de
+# domaine enregistrable.
+JWT_REFRESH_COOKIE_SECURE = env.bool("JWT_REFRESH_COOKIE_SECURE", default=True)
 # Le cookie CSRF doit lui aussi être réservé à HTTPS : sans ce réglage il partait
 # en clair, ce qui annule l'intérêt d'un cookie de session sécurisé.
 CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=True)

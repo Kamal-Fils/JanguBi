@@ -15,8 +15,6 @@ _PASTORAL_ORGANIZER_ROLES = frozenset({
     PastoralRole.EVEQUE,
     PastoralRole.ARCHEVEQUE,
 })
-# Rôles dont l'autorité pastorale porte au-delà de la paroisse.
-_PASTORAL_DIOCESAN_ROLES = frozenset({PastoralRole.EVEQUE, PastoralRole.ARCHEVEQUE})
 
 
 def _can_create_event(user) -> bool:
@@ -42,97 +40,6 @@ def _check_event_scope_consistency(scope_type, scope_parish_id, scope_diocese_id
         raise ApplicationError("Un événement global ne doit pas avoir de portée territoriale.")
 
 
-def _pastoral_diocese_ids(user, *, membership_diocese_ids: set[int]) -> set[int]:
-    """Diocèses couverts par le rôle PASTORAL : l'évêque couvre le sien,
-    l'archevêque toute sa province. Dérivé de SON rattachement, jamais d'une
-    donnée du client.
-
-    On part des diocèses issus des appartenances (requête fraîche) plutôt que du
-    seul ``user.diocese_id`` : cette colonne est dénormalisée par signal via
-    ``.update()``, donc une instance ``BaseUser`` déjà chargée peut la porter
-    périmée. Elle reste prise en compte, en complément.
-    """
-    from apps.org.models import Diocese
-
-    role = getattr(user, "pastoral_role", None)
-    if role not in _PASTORAL_DIOCESAN_ROLES:
-        return set()
-
-    diocese_ids = set(membership_diocese_ids)
-    if user.diocese_id:
-        diocese_ids.add(user.diocese_id)
-
-    if role == PastoralRole.ARCHEVEQUE:
-        province_ids = {
-            pid
-            for pid in Diocese.objects.filter(id__in=diocese_ids).values_list(
-                "province_id", flat=True
-            )
-            if pid is not None
-        }
-        if user.province_id:
-            province_ids.add(user.province_id)
-        if province_ids:
-            diocese_ids |= set(
-                Diocese.objects.filter(province_id__in=province_ids).values_list("id", flat=True)
-            )
-    return diocese_ids
-
-
-def _has_pastoral_authority(
-    *, user, scope_type, scope_parish_id, scope_diocese_id, scope_church_id
-) -> bool:
-    """Autorité issue du rôle PASTORAL, orthogonale à la dimension admin
-    (``UserRole`` / ``RoleAssignment``) : un curé porte ``pastoral_role=PRETRE``
-    sans forcément de capacité administrative (cf. ``clergy_accounts
-    ._resolve_capacity`` : « sans cible exploitable, aucune affectation scopée
-    n'est créée »). Il reste pourtant l'acteur naturel d'un événement paroissial.
-
-    FAIL-CLOSED : la portée demandée doit tomber dans le territoire d'appartenance
-    RÉEL de l'utilisateur (``Membership`` → get_scope_ids, diocèse/province
-    dérivés). Un identifiant arbitraire venu du client n'ouvre jamais de droit, et
-    la portée GLOBAL n'est jamais accordée par cette voie.
-    """
-    from apps.agenda.models import Event
-    from apps.org.models import Church, Parish
-
-    if getattr(user, "pastoral_role", None) not in _PASTORAL_ORGANIZER_ROLES:
-        return False
-
-    scope = user.get_scope_ids()
-    parish_ids = set(scope["parish_ids"])
-    church_ids = set(scope["church_ids"])
-    diocese_ids = _pastoral_diocese_ids(
-        user, membership_diocese_ids=set(scope["diocese_ids"])
-    )
-
-    if scope_type == Event.ScopeType.PARISH:
-        if scope_parish_id is None:
-            return False
-        if scope_parish_id in parish_ids:
-            return True
-        return bool(diocese_ids) and Parish.objects.filter(
-            pk=scope_parish_id, diocese_id__in=diocese_ids
-        ).exists()
-
-    if scope_type == Event.ScopeType.CHURCH:
-        if scope_church_id is None:
-            return False
-        if scope_church_id in church_ids:
-            return True
-        # Toute église de sa paroisse (curé) ou de son diocèse (évêque).
-        qs = Church.objects.filter(pk=scope_church_id)
-        if parish_ids and qs.filter(parish_id__in=parish_ids).exists():
-            return True
-        return bool(diocese_ids) and qs.filter(parish__diocese_id__in=diocese_ids).exists()
-
-    if scope_type == Event.ScopeType.DIOCESE:
-        return scope_diocese_id is not None and scope_diocese_id in diocese_ids
-
-    # GLOBAL : réservé aux administrateurs province / national.
-    return False
-
-
 def _check_event_scope_authority(
     *, user, scope_type, scope_parish_id, scope_diocese_id, scope_church_id
 ):
@@ -140,7 +47,8 @@ def _check_event_scope_authority(
     règle RG-CONT 3b : church_admin sur X OU autorité sur la paroisse de X.
 
     Deux voies indépendantes : la capacité ADMIN (``RoleAssignment``) et le rôle
-    PASTORAL (voir ``_has_pastoral_authority``). L'une suffit."""
+    PASTORAL (``user_has_pastoral_authority``, module canonique du cloisonnement
+    ``apps.users.scoping``). L'une suffit."""
     from apps.agenda.models import Event
     from apps.users.scoping import (
         accessible_province_ids,
@@ -148,14 +56,16 @@ def _check_event_scope_authority(
         user_can_admin_church,
         user_can_admin_diocese,
         user_can_admin_parish,
+        user_has_pastoral_authority,
     )
 
-    if _has_pastoral_authority(
+    if user_has_pastoral_authority(
         user=user,
         scope_type=scope_type,
         scope_parish_id=scope_parish_id,
         scope_diocese_id=scope_diocese_id,
         scope_church_id=scope_church_id,
+        allowed_roles=_PASTORAL_ORGANIZER_ROLES,
     ):
         return
 
@@ -335,15 +245,39 @@ def event_cancel(*, event, actor):
 
 @transaction.atomic
 def event_register(*, event, user):
-    from apps.agenda.models import EventRegistration
+    """Inscription à un événement, sous VERROU de la ligne événement.
 
-    if event.cancelled_at is not None:
+    ``max_participants`` est une jauge « lire puis écrire » : sans verrou, deux
+    inscriptions concurrentes sur la dernière place lisent toutes deux
+    ``count < max``, puis insèrent toutes deux — la jauge est franchie en silence
+    (TOCTOU). On relit donc l'événement en ``SELECT ... FOR UPDATE`` : la seconde
+    transaction attend la première, recompte, et voit l'événement complet.
+
+    Verrou plutôt que contrainte en base : PostgreSQL ne sait pas exprimer
+    « COUNT(registrations) <= event.max_participants » dans un CHECK (agrégat
+    inter-tables) ; il faudrait un TRIGGER ou un compteur dénormalisé à maintenir
+    en cohérence — deux sources de vérité pour la même quantité. Le verrou ne
+    porte que sur UN événement et l'inscription est une écriture rare : la
+    contention est négligeable.
+
+    On lit aussi ``cancelled_at`` sur la ligne VERROUILLÉE, et non sur l'instance
+    reçue : celle-ci peut avoir été chargée avant une annulation déjà committée.
+    """
+    from apps.agenda.models import Event, EventRegistration
+
+    locked_event = Event.objects.select_for_update().filter(pk=event.pk).first()
+    if locked_event is None:
+        raise ApplicationError("Événement introuvable.")
+    if locked_event.cancelled_at is not None:
         raise ApplicationError("Cet événement a été annulé.")
-    if event.max_participants is not None:
-        count = event.registrations.count()
-        if count >= event.max_participants:
+    if locked_event.max_participants is not None:
+        count = EventRegistration.objects.filter(event_id=locked_event.pk).count()
+        if count >= locked_event.max_participants:
             raise ApplicationError("Cet événement est complet.")
-    registration, created = EventRegistration.objects.get_or_create(event=event, user=user)
+
+    registration, created = EventRegistration.objects.get_or_create(
+        event=locked_event, user=user
+    )
     if not created:
         raise ApplicationError("Vous êtes déjà inscrit à cet événement.")
     return registration

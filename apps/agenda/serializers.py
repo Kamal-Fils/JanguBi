@@ -53,10 +53,17 @@ class EventOutputSerializer(serializers.Serializer):
     def get_organizer_email(self, obj):
         return obj.organizer.email if obj.organizer_id else None
 
-    def get_registration_count(self, obj):
-        if hasattr(obj, "registrations"):
-            return obj.registrations.count()
-        return 0
+    def get_registration_count(self, obj) -> int:
+        # Valeur posée par l'annotation du selector : UNE requête agrégée pour
+        # toute la page, au lieu d'un COUNT par événement (N+1).
+        annotated = getattr(obj, "registration_count", None)
+        if annotated is not None:
+            return annotated
+        # Repli pour un objet non annoté — typiquement l'événement fraîchement
+        # créé renvoyé par le POST, qui ne passe par aucun selector.
+        if obj.pk is None:
+            return 0
+        return obj.registrations.count()
 
 
 class RegistrationOutputSerializer(serializers.Serializer):

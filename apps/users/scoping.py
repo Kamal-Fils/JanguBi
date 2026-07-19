@@ -1,9 +1,18 @@
 """
 Autorité de scoping territorial (lecture seule).
 
-Source de vérité du cloisonnement RBAC : qui peut administrer quoi, à quel
-niveau territorial, en fonction de ses ``RoleAssignment`` actifs. Consommé par
-les selectors et les classes de permission de toutes les apps.
+Source de vérité du cloisonnement RBAC : qui peut agir sur quoi, à quel niveau
+territorial. Consommé par les selectors et les classes de permission de toutes
+les apps.
+
+L'autorité se résout selon DEUX dimensions orthogonales, dont **l'une suffit** :
+
+- **administrative** — ``RoleAssignment`` actives (``user_can_admin_*``,
+  ``accessible_*_ids``, ``is_any_admin``) ;
+- **pastorale** — la charge elle-même (``user_has_pastoral_authority``), dérivée
+  du ``pastoral_role`` et des appartenances réelles (``Membership``). Un curé
+  validé peut porter ``pastoral_role=PRETRE`` sans aucune ``RoleAssignment`` : la
+  seule voie administrative lui refusait alors sa propre paroisse.
 
 Convention : les fonctions ``accessible_*_ids`` renvoient ``None`` pour signifier
 « aucune restriction » (administrateur global / super_admin), ou un ``set`` d'IDs
@@ -252,6 +261,131 @@ def user_can_admin_province(user, province_id: int) -> bool:
     return active_role_assignments(user).filter(
         scope=RoleScope.PROVINCE, province_id=province_id
     ).exists()
+
+
+# ---------------------------------------------------------------------------
+# Autorité PASTORALE (dimension orthogonale à RoleAssignment)
+# ---------------------------------------------------------------------------
+
+# Rôles pastoraux dont la charge porte une autorité TERRITORIALE. Le religieux et
+# le fidèle n'en portent aucune : ils n'organisent ni ne publient (matrice §16).
+# Plafond absolu de la voie pastorale — aucun appelant ne peut l'élargir.
+PASTORAL_TERRITORIAL_ROLES = frozenset({
+    PastoralRole.DIACRE,
+    PastoralRole.PRETRE,
+    PastoralRole.EVEQUE,
+    PastoralRole.ARCHEVEQUE,
+})
+
+# Rôles dont l'autorité pastorale déborde la paroisse.
+_PASTORAL_DIOCESAN_ROLES = frozenset({PastoralRole.EVEQUE, PastoralRole.ARCHEVEQUE})
+
+
+def _pastoral_diocese_ids(user, *, membership_diocese_ids: set[int]) -> set[int]:
+    """Diocèses couverts par le rôle PASTORAL : l'évêque couvre le sien,
+    l'archevêque toute sa province. Dérivé de SON rattachement, jamais d'une
+    donnée du client.
+
+    On part des diocèses issus des appartenances (requête fraîche) plutôt que du
+    seul ``user.diocese_id`` : cette colonne est dénormalisée par signal via
+    ``.update()``, donc une instance ``BaseUser`` déjà chargée peut la porter
+    périmée. Elle reste prise en compte, en complément.
+    """
+    role = getattr(user, "pastoral_role", None)
+    if role not in _PASTORAL_DIOCESAN_ROLES:
+        return set()
+
+    diocese_ids = set(membership_diocese_ids)
+    if user.diocese_id:
+        diocese_ids.add(user.diocese_id)
+
+    if role == PastoralRole.ARCHEVEQUE:
+        province_ids = {
+            pid
+            for pid in Diocese.objects.filter(id__in=diocese_ids).values_list(
+                "province_id", flat=True
+            )
+            if pid is not None
+        }
+        if user.province_id:
+            province_ids.add(user.province_id)
+        if province_ids:
+            diocese_ids |= set(
+                Diocese.objects.filter(province_id__in=province_ids).values_list("id", flat=True)
+            )
+    return diocese_ids
+
+
+def user_has_pastoral_authority(
+    *,
+    user,
+    scope_type: str,
+    scope_parish_id: int | None = None,
+    scope_diocese_id: int | None = None,
+    scope_church_id: int | None = None,
+    allowed_roles: frozenset = PASTORAL_TERRITORIAL_ROLES,
+) -> bool:
+    """Autorité issue du rôle PASTORAL, orthogonale à la dimension administrative
+    (``UserRole`` / ``RoleAssignment``).
+
+    Motivation : un curé validé porte ``pastoral_role=PRETRE`` sans forcément de
+    capacité administrative (cf. ``services_clergy._resolve_capacity`` : « sans
+    cible exploitable, aucune affectation scopée n'est créée »). Il reste pourtant
+    l'acteur naturel des actes de SA paroisse — événement d'agenda comme réflexion
+    pastorale. Sans cette voie, ``user_can_admin_parish`` lui refusait sa propre
+    paroisse. Les appelants combinent donc les deux voies : **l'une suffit**.
+
+    ``allowed_roles`` restreint la voie aux rôles que l'ACTE concerne (matrice
+    §16) : l'agenda admet le diacre (il organise un événement), la réflexion
+    pastorale ne l'admet pas (il ne publie pas). L'ensemble est TOUJOURS intersecté
+    avec ``PASTORAL_TERRITORIAL_ROLES`` : aucun appelant ne peut ouvrir cette voie
+    au religieux ni au fidèle, même en le demandant explicitement.
+
+    FAIL-CLOSED : la portée demandée doit tomber dans le territoire d'appartenance
+    RÉEL de l'utilisateur (``Membership`` → ``get_scope_ids``, diocèse/province
+    dérivés). Un identifiant arbitraire venu du client n'ouvre jamais de droit, et
+    la portée GLOBAL n'est JAMAIS accordée par cette voie — elle reste réservée aux
+    administrateurs province / national.
+
+    ``scope_type`` emploie le vocabulaire partagé (``SCOPE_*``), dont les valeurs
+    sont celles des ``ScopeType`` de chaque modèle scopé (Event, PastoralReflection).
+    """
+    role = getattr(user, "pastoral_role", None)
+    if role not in (frozenset(allowed_roles) & PASTORAL_TERRITORIAL_ROLES):
+        return False
+
+    scope = user.get_scope_ids()
+    parish_ids = set(scope["parish_ids"])
+    church_ids = set(scope["church_ids"])
+    diocese_ids = _pastoral_diocese_ids(
+        user, membership_diocese_ids=set(scope["diocese_ids"])
+    )
+
+    if scope_type == SCOPE_PARISH:
+        if scope_parish_id is None:
+            return False
+        if scope_parish_id in parish_ids:
+            return True
+        return bool(diocese_ids) and Parish.objects.filter(
+            pk=scope_parish_id, diocese_id__in=diocese_ids
+        ).exists()
+
+    if scope_type == SCOPE_CHURCH:
+        if scope_church_id is None:
+            return False
+        if scope_church_id in church_ids:
+            return True
+        # Toute église de sa paroisse (curé) ou de son diocèse (évêque).
+        qs = Church.objects.filter(pk=scope_church_id)
+        if parish_ids and qs.filter(parish_id__in=parish_ids).exists():
+            return True
+        return bool(diocese_ids) and qs.filter(parish__diocese_id__in=diocese_ids).exists()
+
+    if scope_type == SCOPE_DIOCESE:
+        return scope_diocese_id is not None and scope_diocese_id in diocese_ids
+
+    # GLOBAL : réservé aux administrateurs province / national.
+    return False
 
 
 # ---------------------------------------------------------------------------

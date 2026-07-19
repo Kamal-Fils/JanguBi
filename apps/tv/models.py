@@ -21,6 +21,10 @@ class Category(BaseModel):
         return self.name
 
     def save(self, *args, **kwargs):
+        # Filet pour les créations directes par l'ORM (amorçage, factories) : le
+        # slug n'est dérivé du nom que s'il est absent, donc UNE SEULE FOIS. Un
+        # renommage ultérieur ne le régénère pas — c'est un identifiant stable,
+        # clé d'URL et référence des vidéos (cf. services.category_update).
         if not self.slug:
             self.slug = slugify(self.name)
         super().save(*args, **kwargs)
