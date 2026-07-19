@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from django.db.models import Q, QuerySet
+from django.db.models import Count, Prefetch, Q, QuerySet
 
 from apps.core.exceptions import ApplicationError
 from apps.documents.models import (
@@ -25,8 +25,15 @@ _ADMIN_ROLES = {
 def document_request_list(*, user: BaseUser, filters: Optional[dict] = None) -> QuerySet[DocumentRequest]:
     filters = filters or {}
     # target_parish__diocese : sortie B5c (nom/diocèse via la FK) sans N+1.
+    # attachments : le sérialiseur de liste expose l'URL du document final —
+    # sans ce prefetch, chaque demande déclencherait sa propre requête.
     qs = DocumentRequest.objects.select_related(
         "requester", "assigned_to", "target_parish__diocese"
+    ).prefetch_related(
+        Prefetch(
+            "attachments",
+            queryset=DocumentRequestAttachment.objects.select_related("file"),
+        )
     )
 
     # Source de vérité d'autorité = RoleAssignment (is_any_admin / accessible_parish_ids),
@@ -63,6 +70,28 @@ def document_request_list(*, user: BaseUser, filters: Optional[dict] = None) -> 
         qs = qs.filter(assigned_to_id=assigned_to_id)
 
     return qs.order_by("-created_at")
+
+
+def document_request_status_counts(*, user: BaseUser, filters: Optional[dict] = None) -> dict:
+    """Nombre de demandes par statut sur le périmètre d'autorité de `user`.
+
+    Réutilise `document_request_list` pour hériter exactement du même scoping
+    et des mêmes filtres, à une exception près : le filtre `status` est ignoré,
+    sinon les autres statuts seraient comptés à zéro alors qu'ils existent.
+
+    Les six statuts sont toujours présents (à 0 le cas échéant) pour que le
+    client n'ait pas à distinguer « aucune demande » de « clé absente ».
+    """
+    filters = {k: v for k, v in (filters or {}).items() if k != "status"}
+    qs = document_request_list(user=user, filters=filters)
+
+    counts = {status.value: 0 for status in DocumentRequest.Status}
+    # Une seule requête agrégée, et `order_by()` neutralise le tri par défaut
+    # qui casserait le GROUP BY.
+    for row in qs.order_by().values("status").annotate(total=Count("id")):
+        counts[row["status"]] = row["total"]
+
+    return {"counts": counts, "total": sum(counts.values())}
 
 
 def document_request_get(*, request_id: UUID, user: BaseUser) -> DocumentRequest:

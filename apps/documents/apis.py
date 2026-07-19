@@ -22,6 +22,7 @@ from apps.documents.selectors import (
     document_request_get_for_admin,
     document_request_internal_note_list,
     document_request_list,
+    document_request_status_counts,
     document_request_status_log_list,
 )
 from apps.documents.serializers import (
@@ -29,6 +30,7 @@ from apps.documents.serializers import (
     DocumentRequestCreateInputSerializer,
     DocumentRequestDetailOutputSerializer,
     DocumentRequestListOutputSerializer,
+    DocumentRequestStatusCountsOutputSerializer,
     DocumentRequestSupplementInputSerializer,
     InternalNoteCreateInputSerializer,
     InternalNoteOutputSerializer,
@@ -206,6 +208,35 @@ class AdminDocumentRequestListApi(ApiAuthMixin, APIView):
             request=request,
             view=self,
         )
+
+
+class AdminDocumentRequestStatusCountsApi(ApiAuthMixin, APIView):
+    permission_classes = [IsAuthenticated, IsAnyAdmin]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("document_type", OpenApiTypes.STR, description="Filtrer par type de document"),
+            OpenApiParameter("parish_name", OpenApiTypes.STR, description="Filtrer par nom de paroisse"),
+            OpenApiParameter("search", OpenApiTypes.STR, description="Recherche textuelle"),
+            OpenApiParameter("assigned_to_id", OpenApiTypes.INT, description="Filtrer par agent assigné"),
+        ],
+        responses={200: DocumentRequestStatusCountsOutputSerializer},
+        tags=["documents"],
+        summary="Compter les demandes par statut sur son périmètre (admin)",
+        description=(
+            "Renvoie les six statuts, à 0 le cas échéant. Le filtre `status` est "
+            "volontairement ignoré : les comptages porteraient sinon à zéro sur "
+            "tous les autres statuts."
+        ),
+    )
+    def get(self, request):
+        filters = {
+            k: v
+            for k, v in request.query_params.items()
+            if k in ("document_type", "parish_name", "search", "assigned_to_id")
+        }
+        data = document_request_status_counts(user=request.user, filters=filters)
+        return Response(DocumentRequestStatusCountsOutputSerializer(data).data)
 
 
 class AdminDocumentRequestDetailApi(ApiAuthMixin, APIView):
