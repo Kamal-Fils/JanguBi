@@ -68,6 +68,7 @@ class CommunityRosaryListCreateApi(ApiAuthMixin, APIView):
 
 class CommunityRosaryJoinApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: CommunityRosaryOutputSerializer},
         tags=["Chapelet"],
         summary="Rejoindre un chapelet communautaire",
@@ -109,6 +110,7 @@ class CommunityRosaryIntentionApi(ApiAuthMixin, APIView):
 
 class CommunityRosaryEndApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: CommunityRosaryOutputSerializer},
         tags=["Chapelet"],
         summary="Terminer un chapelet communautaire (initiateur seulement)",

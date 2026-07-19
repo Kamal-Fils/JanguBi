@@ -103,7 +103,7 @@ class PriestProfileCreateApi(ApiAuthMixin, APIView):
 class PriestProfileCguApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsPriestProfileOwner]
 
-    @extend_schema(responses={200: PriestProfileOutputSerializer}, tags=["messaging"], summary="Accepter les CGU prêtre")
+    @extend_schema(request=None, responses={200: PriestProfileOutputSerializer}, tags=["messaging"], summary="Accepter les CGU prêtre")
     def post(self, request):
         try:
             profile = priest_profile_accept_cgu(priest_profile=request.user.priest_profile)
@@ -149,7 +149,7 @@ class MessagingCguApi(ApiAuthMixin, APIView):
         }
         return Response(MessagingCguStatusSerializer(data).data)
 
-    @extend_schema(responses={200: MessagingCguStatusSerializer}, tags=["messaging"], summary="Accepter les CGU de messagerie (global, idempotent)")
+    @extend_schema(request=None, responses={200: MessagingCguStatusSerializer}, tags=["messaging"], summary="Accepter les CGU de messagerie (global, idempotent)")
     def post(self, request):
         acceptance = messaging_cgu_accept(user=request.user)
         data = {"accepted": True, "accepted_at": acceptance.accepted_at}
@@ -188,7 +188,7 @@ class ConversationCguApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={200: ConversationOutputSerializer}, tags=["messaging"], summary="Accepter les CGU de messagerie")
+    @extend_schema(request=None, responses={200: ConversationOutputSerializer}, tags=["messaging"], summary="Accepter les CGU de messagerie")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -203,7 +203,7 @@ class ConversationArchiveApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={200: ConversationOutputSerializer}, tags=["messaging"], summary="Archiver une conversation")
+    @extend_schema(request=None, responses={200: ConversationOutputSerializer}, tags=["messaging"], summary="Archiver une conversation")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -234,7 +234,7 @@ class ConversationExportApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={201: ExportOutputSerializer}, tags=["messaging"], summary="Demander l'export d'une conversation")
+    @extend_schema(request=None, responses={201: ExportOutputSerializer}, tags=["messaging"], summary="Demander l'export d'une conversation")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -309,7 +309,7 @@ class MessageReadApi(ApiAuthMixin, APIView):
     def get_permissions(self):
         return [IsAuthenticated(), IsParticipant()]
 
-    @extend_schema(responses={200: None}, tags=["messaging"], summary="Marquer les messages comme lus")
+    @extend_schema(request=None, responses={200: None}, tags=["messaging"], summary="Marquer les messages comme lus")
     def post(self, request, conversation_id: UUID):
         conversation = get_object_or_404(Conversation, id=conversation_id)
         self.check_object_permissions(request, conversation)
@@ -412,7 +412,7 @@ class NotificationListApi(ApiAuthMixin, APIView):
 
 
 class NotificationReadApi(ApiAuthMixin, APIView):
-    @extend_schema(responses={200: NotificationOutputSerializer}, tags=["messaging"], summary="Marquer une notification comme lue")
+    @extend_schema(request=None, responses={200: NotificationOutputSerializer}, tags=["messaging"], summary="Marquer une notification comme lue")
     def post(self, request, notification_id: UUID):
         from apps.messaging.models import Notification
 
@@ -426,6 +426,7 @@ class NotificationReadApi(ApiAuthMixin, APIView):
 
 class NotificationReadAllApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: NotificationUnreadCountSerializer},
         tags=["notifications"],
         summary="Marquer toutes mes notifications comme lues",
@@ -548,6 +549,7 @@ class ClergicalMessageSentApi(ApiAuthMixin, APIView):
 
 class ClergicalMessageReadApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: ClergicalMessageOutputSerializer},
         tags=["messaging"],
         summary="Marquer un message inter-clergé comme lu",

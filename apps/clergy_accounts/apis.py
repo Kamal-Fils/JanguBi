@@ -101,6 +101,7 @@ class InvitationDetailApi(ApiAuthMixin, APIView):
 
 class InvitationRevokeApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: InvitationOutputSerializer},
         tags=["clergy-accounts"],
         summary="Révoquer une invitation",

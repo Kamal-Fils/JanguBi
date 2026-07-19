@@ -239,6 +239,7 @@ class ReadingPlanDetailApi(ApiAuthMixin, APIView):
         return Response(ReadingPlanOutputSerializer(plan).data)
 
     @extend_schema(
+        request=None,
         responses={200: ReadingPlanOutputSerializer},
         tags=["Bible — Avancé"],
         summary="Publier un plan de lecture",

@@ -138,6 +138,7 @@ class MembershipMeDeleteApi(ApiAuthMixin, APIView):
 
 class MembershipMeSetPrimaryApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: MembershipMeSerializer},
         tags=["users"],
         summary="Définir une de mes appartenances comme principale",

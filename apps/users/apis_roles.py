@@ -172,6 +172,7 @@ class RoleAssignmentListApi(ApiAuthMixin, APIView):
 
 class RoleAssignmentRevokeApi(ApiAuthMixin, APIView):
     @extend_schema(
+        request=None,
         responses={200: RoleAssignmentOutputSerializer},
         tags=["users"],
         summary="Révoquer une affectation de rôle",

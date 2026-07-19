@@ -111,6 +111,7 @@ class TransferApproveApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
     @extend_schema(
+        request=None,
         responses={200: TransferOutputSerializer},
         tags=["transfers"],
         summary="Approuver un transfert (admin paroisse d'origine)",
@@ -173,6 +174,7 @@ class TransferAcknowledgeApi(ApiAuthMixin, APIView):
     permission_classes = [IsAuthenticated, IsAnyAdmin]
 
     @extend_schema(
+        request=None,
         responses={200: TransferOutputSerializer},
         tags=["transfers"],
         summary="Accuser réception et finaliser un transfert (admin destination)",
