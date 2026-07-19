@@ -316,9 +316,17 @@ def user_toggle_active(
     performed_by: BaseUser,
     ip: str | None = None,
 ) -> BaseUser:
-    """Active ou désactive un compte. Réservé aux rôles admin."""
+    """Active ou désactive un compte. Réservé aux rôles admin, dans leur périmètre."""
+    from apps.users.selectors import user_is_in_scope_of
+
     if performed_by.role not in _ADMIN_ROLES:
         raise ApplicationError("Permission refusée.")
+
+    # Cloisonnement territorial : sans cette garde, un admin diocésain pouvait
+    # désactiver n'importe quel compte de la plateforme, y compris hors de son
+    # diocèse et jusqu'aux responsables d'autres territoires.
+    if not user_is_in_scope_of(target=user, admin=performed_by):
+        raise ApplicationError("Cet utilisateur n'appartient pas à votre périmètre.")
 
     if user == performed_by:
         raise ApplicationError("Vous ne pouvez pas modifier votre propre statut d'activation.")
@@ -343,9 +351,19 @@ def user_soft_delete(
     performed_by: BaseUser,
     ip: str | None = None,
 ) -> BaseUser:
-    """Suppression douce : désactive + anonymise les données personnelles."""
-    if performed_by.role not in _ADMIN_ROLES and performed_by != user:
-        raise ApplicationError("Permission refusée.")
+    """Suppression douce : désactive + anonymise les données personnelles.
+
+    Opération IRRÉVERSIBLE sur l'identité (email, téléphone, nom écrasés, mot de
+    passe invalidé, session révoquée) : elle exige donc soit d'agir sur son
+    propre compte, soit une autorité territoriale réelle sur la personne visée.
+    """
+    from apps.users.selectors import user_is_in_scope_of
+
+    if performed_by != user:
+        if performed_by.role not in _ADMIN_ROLES:
+            raise ApplicationError("Permission refusée.")
+        if not user_is_in_scope_of(target=user, admin=performed_by):
+            raise ApplicationError("Cet utilisateur n'appartient pas à votre périmètre.")
 
     user.is_active = False
     user.email = f"deleted_{user.id}@deleted.invalid"

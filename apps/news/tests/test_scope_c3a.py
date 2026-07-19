@@ -6,21 +6,30 @@ du feed sur toutes les appartenances, la création scope église/paroisse (réso
 INT→FK), et la résolution/flag de la migration data.
 """
 
+import inspect
+
 import pytest
 
+from apps.core.exceptions import ApplicationError
 from apps.news.migration_ops import resolve_scope_fk
 from apps.news.models import Article
 from apps.news.selectors import article_list_for_user
-from apps.news.services import article_create
+from apps.news.services import (
+    article_create,
+    article_delete,
+    article_unpublish,
+    article_update,
+)
 from apps.org.models import Diocese, Parish
 from apps.org.tests.factories import ChurchFactory, DioceseFactory, ParishFactory
 from apps.users.enums import PastoralRole, RoleScope, UserRole
 from apps.users.models import RoleAssignment
 from apps.users.services_memberships import membership_create
-from apps.users.tests.factories import BaseUserFactory
+from apps.users.tests.factories import BaseUserFactory, SuperAdminFactory
 
 from .factories import (
     ArticleCategoryFactory,
+    ParishArticleFactory,
     PublishedArticleFactory,
     PublishedChurchArticleFactory,
     PublishedDioceseArticleFactory,
@@ -175,8 +184,6 @@ def test_article_create_church_scope_other_parish_forbidden():
     cure_a = _cure_of_parish(parish_a)
     cat = ArticleCategoryFactory()
 
-    from apps.core.exceptions import ApplicationError
-
     with pytest.raises(ApplicationError):
         article_create(
             author=cure_a,
@@ -191,6 +198,167 @@ def test_article_create_church_scope_other_parish_forbidden():
 # ---------------------------------------------------------------------------
 # Migration data — résolution / flag
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Autorité de portée sur un article DÉJÀ persisté — update / unpublish / delete
+#
+# Régression sécurité : ces trois services ne faisaient que `_check_editor`
+# (« est un éditeur quelconque »), sans vérifier l'autorité territoriale. Un curé
+# de la paroisse A pouvait donc réécrire, dépublier ou supprimer le contenu de la
+# paroisse B, d'un diocèse, ou de la portée globale.
+# ---------------------------------------------------------------------------
+
+
+def _eveque_of_diocese(diocese):
+    user = BaseUserFactory(role=UserRole.FIDELE, pastoral_role=PastoralRole.EVEQUE)
+    RoleAssignment.objects.create(
+        user=user,
+        role=UserRole.DIOCESE_ADMIN,
+        scope=RoleScope.DIOCESE,
+        diocese=diocese,
+        is_active=True,
+    )
+    return user
+
+
+@pytest.mark.django_db
+def test_cure_cannot_update_article_of_other_parish():
+    cure_a = _cure_of_parish(ParishFactory())
+    article_b = ParishArticleFactory(scope_parish=ParishFactory())
+
+    with pytest.raises(ApplicationError, match="autorité"):
+        article_update(article=article_b, editor=cure_a, title="Détournement")
+
+    article_b.refresh_from_db()
+    assert article_b.title != "Détournement"
+
+
+@pytest.mark.django_db
+def test_cure_cannot_unpublish_article_of_other_parish():
+    cure_a = _cure_of_parish(ParishFactory())
+    article_b = PublishedParishArticleFactory(scope_parish=ParishFactory())
+
+    with pytest.raises(ApplicationError, match="autorité"):
+        article_unpublish(article=article_b, editor=cure_a, reason="Censure")
+
+    article_b.refresh_from_db()
+    assert article_b.status == Article.Status.PUBLISHED
+
+
+@pytest.mark.django_db
+def test_cure_cannot_delete_article_of_other_parish():
+    cure_a = _cure_of_parish(ParishFactory())
+    article_b = ParishArticleFactory(scope_parish=ParishFactory())
+
+    with pytest.raises(ApplicationError, match="autorité"):
+        article_delete(article=article_b, editor=cure_a)
+
+    assert Article.objects.filter(pk=article_b.pk).exists()
+
+
+@pytest.mark.django_db
+def test_cure_cannot_unpublish_diocese_scoped_article():
+    # Escalade verticale : le curé n'a pas autorité sur le diocèse au-dessus de lui.
+    parish = ParishFactory()
+    cure = _cure_of_parish(parish)
+    article = PublishedDioceseArticleFactory(scope_diocese=parish.diocese)
+
+    with pytest.raises(ApplicationError, match="autorité"):
+        article_unpublish(article=article, editor=cure)
+
+
+@pytest.mark.django_db
+def test_cure_can_update_unpublish_and_delete_own_parish_article():
+    # Contrôle positif : sur SA paroisse, le curé garde la main de bout en bout.
+    parish = ParishFactory()
+    cure = _cure_of_parish(parish)
+
+    draft = ParishArticleFactory(scope_parish=parish)
+    assert article_update(article=draft, editor=cure, title="Titre revu").title == "Titre revu"
+
+    published = PublishedParishArticleFactory(scope_parish=parish)
+    assert (
+        article_unpublish(article=published, editor=cure).status == Article.Status.UNPUBLISHED
+    )
+
+    article_delete(article=draft, editor=cure)
+    assert not Article.objects.filter(pk=draft.pk).exists()
+
+
+@pytest.mark.django_db
+def test_global_admin_can_update_and_delete_any_parish_article():
+    admin = SuperAdminFactory()
+    article = ParishArticleFactory(scope_parish=ParishFactory())
+
+    assert article_update(article=article, editor=admin, title="Modéré").title == "Modéré"
+
+    article_delete(article=article, editor=admin)
+    assert not Article.objects.filter(pk=article.pk).exists()
+
+
+# --- Lettres pastorales : acte d'évêque, y compris pour retirer/réécrire -----
+
+
+@pytest.mark.django_db
+def test_cure_cannot_update_parish_scoped_pastoral_letter():
+    # Le curé a bien autorité sur la paroisse, mais une lettre pastorale reste
+    # réservée à l'évêque — sinon il réécrit la parole de son évêque chez lui.
+    parish = ParishFactory()
+    cure = _cure_of_parish(parish)
+    letter = ParishArticleFactory(
+        scope_parish=parish, content_type=Article.ContentType.PASTORAL_LETTER
+    )
+
+    with pytest.raises(ApplicationError, match="lettre pastorale"):
+        article_update(article=letter, editor=cure, title="Réécriture")
+
+
+@pytest.mark.django_db
+def test_cure_cannot_unpublish_parish_scoped_pastoral_letter():
+    parish = ParishFactory()
+    cure = _cure_of_parish(parish)
+    letter = PublishedParishArticleFactory(
+        scope_parish=parish, content_type=Article.ContentType.PASTORAL_LETTER
+    )
+
+    with pytest.raises(ApplicationError, match="lettre pastorale"):
+        article_unpublish(article=letter, editor=cure)
+
+    letter.refresh_from_db()
+    assert letter.status == Article.Status.PUBLISHED
+
+
+@pytest.mark.django_db
+def test_eveque_can_update_own_diocese_pastoral_letter():
+    diocese = DioceseFactory()
+    eveque = _eveque_of_diocese(diocese)
+    letter = PublishedDioceseArticleFactory(
+        scope_diocese=diocese, content_type=Article.ContentType.PASTORAL_LETTER
+    )
+
+    updated = article_update(article=letter, editor=eveque, title="Lettre révisée")
+
+    assert updated.title == "Lettre révisée"
+
+
+# --- Invariant : la portée n'est PAS modifiable via article_update -----------
+
+
+def test_article_update_ne_permet_pas_de_changer_la_portee():
+    """Garde-fou de conception (cf. `_check_article_authority`).
+
+    `_check_article_authority` ne vérifie QUE la portée courante de l'article.
+    C'est suffisant tant que la portée est immuable après création. Si un jour
+    un paramètre de portée apparaît ici, ce test casse et impose de vérifier
+    l'autorité sur l'ANCIENNE **et** la NOUVELLE portée.
+    """
+    params = set(inspect.signature(article_update).parameters)
+    scope_params = {p for p in params if p.startswith("scope")}
+    assert scope_params == set(), (
+        f"article_update expose désormais {scope_params} : la portée devient modifiable. "
+        "Il faut vérifier l'autorité sur l'ancienne ET la nouvelle portée."
+    )
 
 
 @pytest.mark.django_db

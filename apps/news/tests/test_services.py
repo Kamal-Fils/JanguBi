@@ -186,14 +186,20 @@ def test_article_create_raises_if_category_inactive():
 
 
 # ---------------------------------------------------------------------------
-# article_update
+# article_update / article_unpublish / article_delete
+#
+# NB éditeur : ces articles sont de portée GLOBALE (ArticleFactory). Depuis que
+# update/unpublish/delete vérifient l'autorité territoriale (comme create et
+# publish le faisaient déjà), l'éditeur doit être un admin GLOBAL — un simple
+# parish_admin n'a pas autorité sur la portée globale. Cf. les tests de
+# cloisonnement dans test_scope_c3a.py.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 def test_article_update_title_and_content():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = ArticleFactory(author=editor)
 
     # Act
@@ -212,7 +218,7 @@ def test_article_update_title_and_content():
 @pytest.mark.django_db
 def test_article_update_category():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = ArticleFactory(author=editor)
     new_category = ArticleCategoryFactory()
 
@@ -226,7 +232,7 @@ def test_article_update_category():
 @pytest.mark.django_db
 def test_article_update_raises_if_unpublished():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = ArticleFactory(author=editor, status=Article.Status.UNPUBLISHED)
 
     # Act & Assert
@@ -294,7 +300,7 @@ def test_article_publish_raises_if_fidele():
 @pytest.mark.django_db
 def test_article_unpublish_sets_status_and_reason():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = PublishedArticleFactory(author=editor)
 
     # Act
@@ -312,7 +318,7 @@ def test_article_unpublish_sets_status_and_reason():
 @pytest.mark.django_db
 def test_article_unpublish_without_reason_succeeds():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = PublishedArticleFactory(author=editor)
 
     # Act
@@ -326,7 +332,7 @@ def test_article_unpublish_without_reason_succeeds():
 @pytest.mark.django_db
 def test_article_unpublish_raises_if_not_published():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = ArticleFactory(author=editor, status=Article.Status.DRAFT)
 
     # Act & Assert
@@ -342,7 +348,7 @@ def test_article_unpublish_raises_if_not_published():
 @pytest.mark.django_db
 def test_article_delete_draft_success():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = ArticleFactory(author=editor)
     article_id = article.id
 
@@ -356,7 +362,7 @@ def test_article_delete_draft_success():
 @pytest.mark.django_db
 def test_article_delete_unpublished_success():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = ArticleFactory(author=editor, status=Article.Status.UNPUBLISHED)
     article_id = article.id
 
@@ -370,7 +376,7 @@ def test_article_delete_unpublished_success():
 @pytest.mark.django_db
 def test_article_delete_published_raises():
     # Arrange
-    editor = StaffUserFactory()
+    editor = SuperAdminFactory()
     article = PublishedArticleFactory(author=editor)
 
     # Act & Assert

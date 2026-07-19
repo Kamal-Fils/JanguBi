@@ -19,8 +19,8 @@ from apps.news.models import Article
 from apps.news.permissions import CanUnpublishArticle, IsArticleEditor
 from apps.news.selectors import (
     article_get,
-    article_list,
     article_list_for_diocese,
+    article_list_for_editor,
     article_list_for_parish,
     article_list_for_user,
     article_list_global,
@@ -419,7 +419,11 @@ class AdminArticleListApi(ApiAuthMixin, APIView):
         summary="[Admin] Lister tous les articles (tous statuts)",
     )
     def get(self, request):
-        qs = article_list(
+        # Scopé à l'autorité de l'éditeur : la liste admin exposait auparavant
+        # tous les articles de la plateforme, y compris les brouillons et les
+        # lettres pastorales d'autres diocèses.
+        qs = article_list_for_editor(
+            editor=request.user,
             status=request.query_params.get("status", "") or "",
             scope_type=request.query_params.get("scope_type") or None,
             category_slug=request.query_params.get("category") or None,
