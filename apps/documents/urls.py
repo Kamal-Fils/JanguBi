@@ -13,12 +13,15 @@ from apps.documents.apis import (
     AdminValidateApi,
     DocumentRequestDetailApi,
     DocumentRequestListCreateApi,
+    DocumentRequestOptionsApi,
     DocumentRequestSupplementApi,
 )
 
 urlpatterns = [
     # Fidèle
     path("requests/", DocumentRequestListCreateApi.as_view(), name="document-request-list-create"),
+    # Référentiel du formulaire — littéral avant la route <uuid:request_id>.
+    path("requests/options/", DocumentRequestOptionsApi.as_view(), name="document-request-options"),
     path("requests/<uuid:request_id>/", DocumentRequestDetailApi.as_view(), name="document-request-detail"),
     path("requests/<uuid:request_id>/supplement/", DocumentRequestSupplementApi.as_view(), name="document-request-supplement"),
     # Admin back-office

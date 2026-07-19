@@ -17,6 +17,10 @@ class DocumentRequest(BaseModel):
         CONFIRMATION = "confirmation", _("Attestation de confirmation")
         RELIGIOUS_MARRIAGE = "religious_marriage", _("Attestation de mariage religieux")
         GODPARENT = "godparent", _("Attestation parrain / marraine")
+        # Échappatoire : le registre paroissial contient des actes qui ne rentrent
+        # dans aucune des cinq catégories ci-dessus. Le libellé réel est saisi par
+        # le demandeur dans `document_type_free` (obligatoire dans ce cas).
+        OTHER = "other", _("Autre document")
 
     class RequestReason(models.TextChoices):
         RELIGIOUS_MARRIAGE = "religious_marriage", _("Mariage religieux")
@@ -45,6 +49,9 @@ class DocumentRequest(BaseModel):
         related_name="document_requests",
     )
     document_type = models.CharField(max_length=30, choices=DocumentType.choices, db_index=True)
+    # Précision libre, obligatoire uniquement quand document_type == OTHER. Calqué
+    # sur reason_free : même longueur, même contrat (jamais NULL, chaîne vide sinon).
+    document_type_free = models.CharField(max_length=255, blank=True, default="")
     reason = models.CharField(max_length=30, choices=RequestReason.choices)
     reason_free = models.CharField(max_length=255, blank=True, default="")
     status = models.CharField(

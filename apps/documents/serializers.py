@@ -25,6 +25,12 @@ def _user_display_name(user) -> str:
 
 class DocumentRequestCreateInputSerializer(serializers.Serializer):
     document_type = serializers.ChoiceField(choices=DocumentRequest.DocumentType.choices)
+    # Précision libre exigée quand le choix est « Autre » — l'obligation est portée
+    # par le service (apps.documents.services), qui est aussi la voie d'appel des
+    # tests et de toute future intégration.
+    document_type_free = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default=""
+    )
     reason = serializers.ChoiceField(choices=DocumentRequest.RequestReason.choices)
     reason_free = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
 
@@ -136,6 +142,7 @@ class DocumentRequestListOutputSerializer(_FkParishDisplayMixin, serializers.Mod
             "reference",
             "document_type",
             "document_type_label",
+            "document_type_free",
             "reason",
             "status",
             "status_label",
@@ -246,6 +253,7 @@ class DocumentRequestDetailOutputSerializer(_FkParishDisplayMixin, serializers.M
             "reference",
             "document_type",
             "document_type_label",
+            "document_type_free",
             "reason",
             "reason_label",
             "reason_free",
@@ -281,3 +289,35 @@ class DocumentRequestDetailOutputSerializer(_FkParishDisplayMixin, serializers.M
         if obj.assigned_to is None:
             return None
         return _user_display_name(obj.assigned_to)
+
+
+class DocumentRequestReasonOptionSerializer(serializers.Serializer):
+    """Un motif de demande : valeur technique + libellé affichable."""
+
+    value = serializers.CharField(help_text="Valeur à renvoyer dans le champ `reason`.")
+    label = serializers.CharField(  # type: ignore[assignment]  # drf-stubs : collision avec l'attribut Field.label
+        help_text="Libellé affichable (français)."
+    )
+
+
+class DocumentRequestTypeOptionSerializer(serializers.Serializer):
+    """Un type de document, avec les motifs recevables pour ce type."""
+
+    value = serializers.CharField(help_text="Valeur à renvoyer dans le champ `document_type`.")
+    label = serializers.CharField(  # type: ignore[assignment]  # drf-stubs : collision avec l'attribut Field.label
+        help_text="Libellé affichable (français)."
+    )
+    requires_precision = serializers.BooleanField(
+        help_text="Si vrai, `document_type_free` est obligatoire (cas « Autre document »)."
+    )
+    allowed_reasons = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Valeurs de `reason` recevables avec ce type de document.",
+    )
+
+
+class DocumentRequestOptionsOutputSerializer(serializers.Serializer):
+    """Référentiel du formulaire de demande — source unique de la règle type ↔ motif."""
+
+    document_types = DocumentRequestTypeOptionSerializer(many=True)
+    reasons = DocumentRequestReasonOptionSerializer(many=True)

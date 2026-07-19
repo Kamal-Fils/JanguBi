@@ -26,6 +26,7 @@ from apps.documents.services import (
     document_request_validate,
 )
 from apps.org.tests.factories import ParishFactory
+from apps.users.enums import PastoralRole
 from apps.users.tests.factories import (
     BaseUserFactory,
     ProfileFactory,
@@ -44,6 +45,16 @@ def _requester_with_parish():
     user = BaseUserFactory()
     ProfileFactory(user=user, primary_parish=ParishFactory())
     return user
+
+
+def _priest_agent():
+    """Agent signataire valide : prêtre (peut valider/déposer — Niv.2)."""
+    return StaffUserFactory(pastoral_role=PastoralRole.PRETRE)
+
+
+def _bishop_agent():
+    """Agent épiscopal : évêque (peut signer les documents diocésains — Niv.3)."""
+    return StaffUserFactory(pastoral_role=PastoralRole.EVEQUE)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -95,6 +106,165 @@ def test_document_request_create_success():
     assert result.reference.startswith("DOC-")
     assert result.document_type == DocumentRequest.DocumentType.BAPTISM
     assert result.consent_given is True
+
+
+# --- « Autre » : le choix n'est valide qu'accompagné de sa précision libre ----
+
+
+@pytest.mark.django_db
+def test_create_other_document_type_requires_precision():
+    # Arrange
+    requester = _requester_with_parish()
+    data = _data_with_parish(
+        document_type=DocumentRequest.DocumentType.OTHER,
+        document_type_free="   ",  # blancs seuls : ne renseigne rien
+    )
+
+    # Act & Assert
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="préciser le document"):
+            document_request_create(requester=requester, data=data)
+
+
+@pytest.mark.django_db
+def test_create_other_document_type_with_precision_succeeds():
+    # Arrange
+    requester = _requester_with_parish()
+    data = _data_with_parish(
+        document_type=DocumentRequest.DocumentType.OTHER,
+        document_type_free="Certificat de profession religieuse",
+    )
+
+    # Act
+    with patch("apps.documents.services.transaction.on_commit"):
+        result = document_request_create(requester=requester, data=data)
+
+    # Assert
+    assert result.document_type == DocumentRequest.DocumentType.OTHER
+    assert result.document_type_free == "Certificat de profession religieuse"
+
+
+@pytest.mark.django_db
+def test_create_other_reason_requires_precision():
+    # Arrange
+    requester = _requester_with_parish()
+    data = _data_with_parish(reason=DocumentRequest.RequestReason.OTHER, reason_free="")
+
+    # Act & Assert
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="préciser le motif"):
+            document_request_create(requester=requester, data=data)
+
+
+@pytest.mark.django_db
+def test_create_other_reason_with_precision_succeeds():
+    # Arrange
+    requester = _requester_with_parish()
+    data = _data_with_parish(
+        reason=DocumentRequest.RequestReason.OTHER,
+        reason_free="Dossier de naturalisation",
+    )
+
+    # Act
+    with patch("apps.documents.services.transaction.on_commit"):
+        result = document_request_create(requester=requester, data=data)
+
+    # Assert
+    assert result.reason_free == "Dossier de naturalisation"
+
+
+@pytest.mark.django_db
+def test_precisions_are_dropped_when_choice_is_not_other():
+    """Un texte résiduel d'un aller-retour du formulaire ne doit pas être stocké."""
+    # Arrange — type/motif normaux, mais précisions présentes dans le payload
+    requester = _requester_with_parish()
+    data = _data_with_parish(
+        document_type=DocumentRequest.DocumentType.BAPTISM,
+        document_type_free="texte résiduel",
+        reason=DocumentRequest.RequestReason.PERSONAL,
+        reason_free="autre texte résiduel",
+    )
+
+    # Act
+    with patch("apps.documents.services.transaction.on_commit"):
+        result = document_request_create(requester=requester, data=data)
+
+    # Assert
+    assert result.document_type_free == ""
+    assert result.reason_free == ""
+
+
+# --- Cohérence pastorale type ↔ motif (apps.documents.constants) -------------
+
+
+@pytest.mark.django_db
+def test_create_rejects_godparent_reason_on_marriage_certificate():
+    """Le cas signalé par le client : mariage religieux + parrain/marraine."""
+    # Arrange
+    requester = _requester_with_parish()
+    data = _data_with_parish(
+        document_type=DocumentRequest.DocumentType.RELIGIOUS_MARRIAGE,
+        reason=DocumentRequest.RequestReason.GODPARENT,
+        document_details={
+            "spouse_full_name_groom": "Jean Diop",
+            "spouse_full_name_bride": "Marie Faye",
+        },
+    )
+
+    # Act & Assert
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="ne correspond pas au document"):
+            document_request_create(requester=requester, data=data)
+
+
+@pytest.mark.django_db
+def test_create_rejects_marriage_reason_on_first_communion():
+    # Arrange
+    requester = _requester_with_parish()
+    data = _data_with_parish(
+        document_type=DocumentRequest.DocumentType.FIRST_COMMUNION,
+        reason=DocumentRequest.RequestReason.RELIGIOUS_MARRIAGE,
+    )
+
+    # Act & Assert
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="ne correspond pas au document"):
+            document_request_create(requester=requester, data=data)
+
+
+@pytest.mark.django_db
+def test_create_accepts_godparent_reason_on_baptism_certificate():
+    # Arrange — le baptême est bien la pièce demandée pour un parrainage
+    requester = _requester_with_parish()
+    data = _data_with_parish(
+        document_type=DocumentRequest.DocumentType.BAPTISM,
+        reason=DocumentRequest.RequestReason.GODPARENT,
+    )
+
+    # Act
+    with patch("apps.documents.services.transaction.on_commit"):
+        result = document_request_create(requester=requester, data=data)
+
+    # Assert
+    assert result.reason == DocumentRequest.RequestReason.GODPARENT
+
+
+@pytest.mark.django_db
+def test_create_accepts_any_reason_on_other_document_type():
+    # Arrange — catégorie ouverte : aucune restriction de motif
+    requester = _requester_with_parish()
+    data = _data_with_parish(
+        document_type=DocumentRequest.DocumentType.OTHER,
+        document_type_free="Attestation de profession de foi",
+        reason=DocumentRequest.RequestReason.GODPARENT,
+    )
+
+    # Act
+    with patch("apps.documents.services.transaction.on_commit"):
+        result = document_request_create(requester=requester, data=data)
+
+    # Assert
+    assert result.reason == DocumentRequest.RequestReason.GODPARENT
 
 
 # --- A5 — pas de repli silencieux sur la paroisse cible ---------------------
@@ -430,8 +600,8 @@ def test_document_request_submit_supplement_raises_on_invalid_transition():
 
 @pytest.mark.django_db
 def test_document_request_validate_success():
-    # Arrange
-    agent = StaffUserFactory()
+    # Arrange — la signature (Niv.2) exige un prêtre.
+    agent = _priest_agent()
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.UNDER_VERIFICATION)
 
     # Act
@@ -445,7 +615,7 @@ def test_document_request_validate_success():
 @pytest.mark.django_db
 def test_document_request_validate_creates_log():
     # Arrange
-    agent = StaffUserFactory()
+    agent = _priest_agent()
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.UNDER_VERIFICATION)
 
     # Act
@@ -463,13 +633,82 @@ def test_document_request_validate_creates_log():
 @pytest.mark.django_db
 def test_document_request_validate_raises_on_invalid_transition():
     # Arrange
-    agent = StaffUserFactory()
+    agent = _priest_agent()
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.SUBMITTED)
 
     # Act & Assert
     with patch("apps.documents.services.transaction.on_commit"):
         with pytest.raises(ApplicationError, match="Transition invalide"):
             document_request_validate(request_obj=doc_request, agent=agent)
+
+
+# --- Signature réservée au clergé (permissions-matrix.md §Documents) ---------
+
+
+@pytest.mark.django_db
+def test_document_request_validate_blocked_for_deacon():
+    # Un diacre (church_admin + pastoral_role=diacre) ne peut PAS signer (Niv.2).
+    agent = StaffUserFactory(role="church_admin", pastoral_role=PastoralRole.DIACRE)
+    doc_request = DocumentRequestFactory(status=DocumentRequest.Status.UNDER_VERIFICATION)
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="réservé au clergé"):
+            document_request_validate(request_obj=doc_request, agent=agent)
+    doc_request.refresh_from_db()
+    assert doc_request.status == DocumentRequest.Status.UNDER_VERIFICATION
+
+
+@pytest.mark.django_db
+def test_document_request_validate_blocked_for_lay_admin():
+    # Un parish_admin laïc (aucun pastoral_role) ne peut PAS signer.
+    agent = StaffUserFactory()  # parish_admin, pastoral_role=None
+    doc_request = DocumentRequestFactory(status=DocumentRequest.Status.UNDER_VERIFICATION)
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="réservé au clergé"):
+            document_request_validate(request_obj=doc_request, agent=agent)
+
+
+@pytest.mark.django_db
+def test_document_request_validate_blocked_for_super_admin_without_pastoral_role():
+    # Le super-admin (pastoral_role=None) n'est pas un signataire pastoral.
+    from apps.users.tests.factories import SuperAdminFactory
+
+    agent = SuperAdminFactory()
+    doc_request = DocumentRequestFactory(status=DocumentRequest.Status.UNDER_VERIFICATION)
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="réservé au clergé"):
+            document_request_validate(request_obj=doc_request, agent=agent)
+
+
+@pytest.mark.django_db
+def test_document_request_validate_diocesan_type_requires_bishop():
+    # Confirmation = document diocésain (Niv.3) : un prêtre ne suffit pas.
+    priest = _priest_agent()
+    doc_request = DocumentRequestFactory(
+        status=DocumentRequest.Status.UNDER_VERIFICATION,
+        document_type=DocumentRequest.DocumentType.CONFIRMATION,
+    )
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="épiscopale"):
+            document_request_validate(request_obj=doc_request, agent=priest)
+
+
+@pytest.mark.django_db
+def test_document_request_validate_diocesan_type_succeeds_for_bishop():
+    # L'évêque peut signer un document diocésain (Niv.3).
+    bishop = _bishop_agent()
+    doc_request = DocumentRequestFactory(
+        status=DocumentRequest.Status.UNDER_VERIFICATION,
+        document_type=DocumentRequest.DocumentType.CONFIRMATION,
+    )
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        result = document_request_validate(request_obj=doc_request, agent=bishop)
+
+    assert result.status == DocumentRequest.Status.VALIDATED
 
 
 # ---------------------------------------------------------------------------
@@ -529,8 +768,8 @@ def test_document_request_reject_raises_on_invalid_transition():
 
 @pytest.mark.django_db
 def test_document_request_deposit_document_success():
-    # Arrange
-    agent = StaffUserFactory()
+    # Arrange — le dépôt final (signature) exige un prêtre.
+    agent = _priest_agent()
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.VALIDATED)
     valid_file = ValidFileFactory(uploaded_by=agent)
 
@@ -552,9 +791,25 @@ def test_document_request_deposit_document_success():
 
 
 @pytest.mark.django_db
+def test_document_request_deposit_document_blocked_for_lay_admin():
+    # Un parish_admin laïc (aucun pastoral_role) ne peut PAS déposer le document final.
+    agent = StaffUserFactory()  # parish_admin, pastoral_role=None
+    doc_request = DocumentRequestFactory(status=DocumentRequest.Status.VALIDATED)
+    valid_file = ValidFileFactory(uploaded_by=agent)
+
+    with patch("apps.documents.services.transaction.on_commit"):
+        with pytest.raises(ApplicationError, match="réservé au clergé"):
+            document_request_deposit_document(
+                request_obj=doc_request, agent=agent, file_id=valid_file.id
+            )
+    doc_request.refresh_from_db()
+    assert doc_request.status == DocumentRequest.Status.VALIDATED
+
+
+@pytest.mark.django_db
 def test_document_request_deposit_document_raises_on_invalid_transition():
     # Arrange
-    agent = StaffUserFactory()
+    agent = _priest_agent()
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.SUBMITTED)
     valid_file = ValidFileFactory(uploaded_by=agent)
 
@@ -569,7 +824,7 @@ def test_document_request_deposit_document_raises_on_invalid_transition():
 @pytest.mark.django_db
 def test_document_request_deposit_document_raises_when_file_not_finalized():
     # Arrange
-    agent = StaffUserFactory()
+    agent = _priest_agent()
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.VALIDATED)
     invalid_file = InvalidFileFactory(uploaded_by=agent)
 
@@ -584,7 +839,7 @@ def test_document_request_deposit_document_raises_when_file_not_finalized():
 @pytest.mark.django_db
 def test_document_request_deposit_document_raises_when_file_not_found():
     # Arrange
-    agent = StaffUserFactory()
+    agent = _priest_agent()
     doc_request = DocumentRequestFactory(status=DocumentRequest.Status.VALIDATED)
 
     # Act & Assert

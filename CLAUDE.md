@@ -30,6 +30,40 @@ tasks.py       → Tâches Celery. Import services dans le corps de la fonction.
 
 ---
 
+## Vérification AVANT push (CI locale — OBLIGATOIRE)
+
+> **Règle :** ne jamais pusher sur `develop` / `stage` / `main` sans avoir fait
+> passer le gate CI **en local d'abord**. Le job `build` de la CI GitHub
+> (install + ruff + mypy + pytest) est ce qui conditionne le déploiement : s'il
+> échoue, rien ne se déploie. On veut attraper ça **avant** le push, pas après.
+
+```bash
+make act          # = act push --job build  → rejoue EXACTEMENT le job CI (ruff + mypy + pytest) en conteneur
+make ci-docker    # build l'image de prod (docker/production.Dockerfile) sans push — valide le Dockerfile
+```
+
+Si `make act` ne peut pas s'exécuter (le conteneur act n'a **pas de réseau** →
+`yarn/pip install` échoue avec `ENETUNREACH`, cas d'un sandbox sans Internet),
+rejouer le gate **directement**, ce qui couvre les mêmes étapes :
+
+```bash
+source .venv/bin/activate         # le venv hôte a ruff + mypy (pas besoin de DB)
+ruff check apps/ config/
+mypy apps/ config/
+make test                          # = docker compose exec django pytest  (a besoin de la stack `make up` pour la DB)
+```
+
+- **ruff + mypy** tournent sur l'hôte sans DB.
+- **pytest** a besoin d'une DB Postgres : soit via `make act` (conteneur), soit
+  via `make up` puis `make test` (stack Docker complète). Pas de DB locale → pas
+  de pytest local : dans ce cas, **pusher uniquement après** ruff+mypy verts, et
+  surveiller le run CI GitHub (`gh run watch`) — le déploiement est bloqué tant
+  que le job `build` (pytest) n'est pas vert.
+
+Ne pusher que si **tout est vert**. `main` ne se pousse qu'après revue de staging.
+
+---
+
 ## Modèle de rôles (deux dimensions orthogonales)
 
 ### Dimension 1 — Rôles pastoraux (`PastoralRole` — à implémenter)
