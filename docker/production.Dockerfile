@@ -95,10 +95,16 @@ COPY --chown=appuser:appuser . /app
 # sur collectstatic au runtime. En le faisant au build (en tant que root), le
 # dossier est créé et peuplé une fois pour toutes. WhiteNoise utilise le
 # CompressedManifestStaticFilesStorage : sans cette collecte, l'app renvoie 500.
-# production.py exige SECRET_KEY à l'import → valeur JETABLE, utilisée uniquement
-# le temps de cette commande (le vrai .env la surcharge au runtime). On rend
-# ensuite staticfiles à appuser pour qu'un `collectstatic` manuel reste possible.
+# production.py exige SECRET_KEY *et* MESSAGING_ENCRYPTION_KEY à l'import →
+# valeurs JETABLES, utilisées uniquement le temps de cette commande (le vrai
+# .env les surcharge au runtime). Elles doivent être DIFFÉRENTES l'une de
+# l'autre : le garde-fou refuse une clé de chiffrement égale à SECRET_KEY, pour
+# qu'une rotation de secret ne rende jamais l'historique pastoral illisible.
+# Aucune de ces valeurs ne chiffre quoi que ce soit — collectstatic ne touche
+# pas la base. On rend ensuite staticfiles à appuser pour qu'un `collectstatic`
+# manuel reste possible.
 RUN SECRET_KEY="collectstatic-build-only" \
+    MESSAGING_ENCRYPTION_KEY="collectstatic-build-only-messaging" \
     DJANGO_SETTINGS_MODULE=config.django.production \
     python manage.py collectstatic --noinput \
  && chown -R appuser:appuser /app/staticfiles
