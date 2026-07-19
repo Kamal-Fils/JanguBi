@@ -6,7 +6,18 @@ la **source unique** de la règle — le backend la fait respecter à la créati
 (services) et l'expose telle quelle au frontend (endpoint « options »), pour que
 le formulaire ne redéclare jamais sa propre copie.
 
-RÈGLE MÉTIER ECCLÉSIALE — à faire valider par l'autorité pastorale.
+RÈGLE MÉTIER ECCLÉSIALE — **validée le 2026-07-19**. Ne pas la modifier sans
+repasser par la même validation : ce n'est pas une préférence technique.
+
+Un cas a été examiné puis écarté : celui qui veut **devenir catéchiste** (et non
+s'inscrire au catéchisme). Beaucoup de paroisses exigent alors la confirmation,
+mais aucun motif ne le désigne. Décision : ne rien ajouter pour l'instant. Le
+motif « Autre » avec précision libre le couvre, et les précisions saisies feront
+remonter la fréquence réelle du besoin avant qu'on ne fige une règle. Si le cas
+s'avère courant, la bonne réponse sera un motif dédié « Devenir catéchiste »
+(applicable au baptême ET à la confirmation), pas d'élargir « Inscription
+catéchèse » — dont le libellé désigne l'élève, pas l'enseignant.
+
 Justification de chaque ligne :
 
 * **Baptême** — pièce maîtresse du registre : exigé au dossier de mariage, pour
